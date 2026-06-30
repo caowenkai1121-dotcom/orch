@@ -11,6 +11,13 @@ function open(file) {
       PRIMARY KEY(task_id, step_id));
     CREATE TABLE IF NOT EXISTS logs(
       id INTEGER PRIMARY KEY, task_id INTEGER, step_id TEXT, line TEXT);
+    CREATE TABLE IF NOT EXISTS agents(
+      id TEXT PRIMARY KEY, name TEXT, command TEXT, args TEXT,
+      model TEXT, caps TEXT, color TEXT, avatar TEXT, dept TEXT);
+    CREATE TABLE IF NOT EXISTS people(
+      id TEXT PRIMARY KEY, name TEXT, email TEXT, role TEXT, color TEXT, av TEXT);
+    CREATE TABLE IF NOT EXISTS person_agents(
+      person_id TEXT, agent_id TEXT, PRIMARY KEY(person_id, agent_id));
   `);
   return {
     createTask(text, project) {
@@ -56,6 +63,36 @@ function open(file) {
          JOIN steps s ON s.task_id=l.task_id AND s.step_id=l.step_id
          WHERE s.agent=? ORDER BY l.id DESC LIMIT ?`
       ).all(agent, limit || 40).reverse();
+    },
+    listAgents() { return db.prepare('SELECT * FROM agents').all(); },
+    addAgent(d) {
+      const id = d.id || (String(d.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent') + '-' + (db.prepare('SELECT COUNT(*) n FROM agents').get().n + 1);
+      db.prepare('INSERT OR REPLACE INTO agents(id,name,command,args,model,caps,color,avatar,dept) VALUES(?,?,?,?,?,?,?,?,?)')
+        .run(id, d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev');
+      return id;
+    },
+    listPeople() { return db.prepare('SELECT * FROM people').all(); },
+    addPerson(d) {
+      const id = d.id || 'p-' + (db.prepare('SELECT COUNT(*) n FROM people').get().n + 1);
+      db.prepare('INSERT OR REPLACE INTO people(id,name,email,role,color,av) VALUES(?,?,?,?,?,?)')
+        .run(id, d.name || id, d.email || '', d.role || '成员', d.color || '#E0922E', (d.name || '人').slice(0, 1).toUpperCase());
+      return id;
+    },
+    setPersonAgents(pid, ids) {
+      db.prepare('DELETE FROM person_agents WHERE person_id=?').run(pid);
+      const ins = db.prepare('INSERT OR IGNORE INTO person_agents(person_id,agent_id) VALUES(?,?)');
+      (ids || []).forEach((a) => ins.run(pid, a));
+    },
+    listPersonAgents(pid) { return db.prepare('SELECT agent_id FROM person_agents WHERE person_id=?').all(pid).map((r) => r.agent_id); },
+    seed() {
+      if (db.prepare('SELECT COUNT(*) n FROM agents').get().n === 0) {
+        this.addAgent({ id: 'claude', name: 'Claude', command: 'claude', args: ['-p', '--dangerously-skip-permissions'], model: 'claude CLI', caps: ['代码生成', '重构', '单元测试'], color: '#7C6FD9', avatar: 'C', dept: 'dev' });
+        this.addAgent({ id: 'codex', name: 'Codex', command: 'codex', args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check'], model: 'codex CLI', caps: ['功能验证', '回归测试', '沙箱执行'], color: '#4F8BE8', avatar: 'X', dept: 'qa' });
+      }
+      if (db.prepare('SELECT COUNT(*) n FROM people').get().n === 0) {
+        const op = process.env.USERNAME || process.env.USER || 'operator';
+        this.addPerson({ id: 'op', name: op, role: '操作者', email: op + '@local' });
+      }
     },
     db,
   };
