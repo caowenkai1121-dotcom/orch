@@ -79,7 +79,7 @@
       </button>
     </nav>
 
-    <div style="border-top:1px solid #EEEDE8;padding:10px 12px;display:flex;align-items:center;gap:10px;">
+    <div onClick="{{ pickWho }}" style-hover="background:#F2F0EA" style="border-top:1px solid #EEEDE8;padding:10px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;">
       <div style="width:28px;height:28px;border-radius:50%;background:#E0922E;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ opAv }}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12.5px;font-weight:600;">{{ opName }}</div>
@@ -100,8 +100,8 @@
 
       <div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;border:1px solid #E6E3DC;border-radius:9px;background:#fff;width:240px;">
         <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="#B6B1A7" stroke-width="1.6"><circle cx="8" cy="8" r="5"></circle><path d="M12 12l3 3"></path></svg>
-        <span style="font-size:13px;color:#B6B1A7;">搜索 Agent、任务、项目…</span>
-        <span style="margin-left:auto;font-size:11px;color:#C9C5BB;font-family:'JetBrains Mono',monospace;border:1px solid #ECEAE4;border-radius:5px;padding:1px 5px;">⌘K</span>
+        <input id="search" onKeyDown="{{ onSearchKey }}" placeholder="搜索 Agent、任务、项目…回车" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:13px;font-family:inherit;color:#1A1814;">
+        <span style="font-size:11px;color:#C9C5BB;font-family:'JetBrains Mono',monospace;border:1px solid #ECEAE4;border-radius:5px;padding:1px 5px;">⏎</span>
       </div>
 
       <div style="display:flex;align-items:center;gap:7px;height:32px;padding:0 11px 0 10px;border-radius:8px;background:#FFF6D6;border:1px solid #F3E2A0;">
@@ -145,7 +145,7 @@
 
         <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-bottom:16px;">
 
-          <div style="background:#fff;border:1px solid #E9E7E1;border-radius:16px;box-shadow:0 1px 2px rgba(20,18,14,.04);display:flex;flex-direction:column;min-height:380px;">
+          <div style="background:#fff;border:1px solid #E9E7E1;border-radius:16px;box-shadow:0 1px 2px rgba(20,18,14,.04);display:flex;flex-direction:column;min-width:0;min-height:380px;">
             <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 18px 12px;border-bottom:1px solid #F0EEE9;">
               <div style="display:flex;align-items:center;gap:9px;"><span style="font-size:14.5px;font-weight:650;">实时编排活动</span><span style="position:relative;display:inline-flex;width:7px;height:7px;"><span style="position:absolute;inset:0;border-radius:50%;background:{{ acc }};animation:ping 1.8s ease-out infinite;"></span><span style="position:relative;width:7px;height:7px;border-radius:50%;background:{{ acc }};"></span></span></div>
               <span style="font-size:12px;color:#B6B1A7;">Agent 之间的任务流转</span>
@@ -165,7 +165,7 @@
             </div>
           </div>
 
-          <div style="background:#fff;border:1px solid #E9E7E1;border-radius:16px;box-shadow:0 1px 2px rgba(20,18,14,.04);display:flex;flex-direction:column;min-height:380px;">
+          <div style="background:#fff;border:1px solid #E9E7E1;border-radius:16px;box-shadow:0 1px 2px rgba(20,18,14,.04);display:flex;flex-direction:column;min-width:0;min-height:380px;">
             <div style="padding:15px 18px 12px;border-bottom:1px solid #F0EEE9;"><span style="font-size:14.5px;font-weight:650;">运行中的 Agent</span></div>
             <div style="flex:1;overflow-y:auto;padding:8px;">
               <sc-for list="{{ activeAgents }}" as="a" hint-placeholder-count="5">
@@ -477,7 +477,7 @@
             <div style="display:flex;align-items:center;gap:10px;"><h1 style="font-size:20px;font-weight:700;margin:0;">{{ agent.name }}</h1><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:7px;background:{{ agent.sBg }};color:{{ agent.sC }};"><span style="width:6px;height:6px;border-radius:50%;background:{{ agent.sDot }};"></span>{{ agent.sLabel }}</span></div>
             <div style="font-size:12.5px;color:#8A857C;margin-top:4px;font-family:'JetBrains Mono',monospace;">{{ agent.typeLabel }} · {{ agent.model }} · 当前任务 {{ agent.task }}</div>
           </div>
-          <div style="display:flex;gap:8px;"><button style="height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;" style-hover="background:#FAF9F6">暂停</button><button style="height:34px;padding:0 13px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">指派任务</button></div>
+          <div style="display:flex;gap:8px;"><button onClick="{{ editCurAgent }}" style="height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;" style-hover="background:#FAF9F6">编辑</button><button onClick="{{ delCurAgent }}" style="height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #F1CBA6;color:#B4541E;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">删除</button></div>
         </div>
 
         <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:16px;">
@@ -583,7 +583,7 @@
       <!-- ====================== PROJECTS LIST ====================== -->
       <sc-if value="{{ isProjects }}">
       <div style="padding:26px 30px 40px;max-width:1180px;">
-        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px;"><div><h1 style="font-size:21px;font-weight:700;margin:0;">项目</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">按项目隔离 · 成员、Agent 与数据互不可见</div></div></div>
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:8px;"><div><h1 style="font-size:21px;font-weight:700;margin:0;">项目</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">按项目隔离 · 任务归属各自项目</div></div><button onClick="{{ newProject }}" style="height:34px;padding:0 14px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:13px;cursor:pointer;font-family:inherit;">+ 新建项目</button></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px;">
           <sc-for list="{{ projects }}" as="p" hint-placeholder-count="4">
             <button onClick="{{ p.open }}" style-hover="border-color:#D9D5CC;transform:translateY(-1px)" style="text-align:left;cursor:pointer;background:#fff;border:1px solid #E9E7E1;border-radius:15px;padding:18px;font-family:inherit;box-shadow:0 1px 2px rgba(20,18,14,.04);transition:transform .15s ease,border-color .15s ease;">
@@ -679,6 +679,24 @@
       </div>
       </sc-if>
 
+      <sc-if value="{{ isSearch }}">
+      <div style="padding:26px 30px 40px;max-width:1080px;">
+        <div style="margin-bottom:18px;"><h1 style="font-size:21px;font-weight:700;margin:0;">搜索 "{{ q }}"</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">{{ searchSummary }}</div></div>
+        <sc-for list="{{ searchGroups }}" as="g" hint-placeholder-count="4">
+          <div style="margin-bottom:18px;">
+            <div style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#A39E94;margin-bottom:8px;">{{ g.label }}</div>
+            <div style="background:#fff;border:1px solid #E9E7E1;border-radius:12px;overflow:hidden;">
+              <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="3">
+                <button onClick="{{ it.open }}" style-hover="background:#FAF9F6" style="width:100%;text-align:left;border:none;border-bottom:1px solid #F2F0EB;background:transparent;cursor:pointer;display:flex;align-items:center;gap:10px;padding:11px 16px;font-family:inherit;">
+                  <span style="font-size:13.5px;font-weight:600;">{{ it.title }}</span><span style="font-size:12px;color:#A39E94;">{{ it.sub }}</span>
+                </button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      </sc-if>
+
     </main>
   </div>
 </div>
@@ -687,7 +705,11 @@
     <div style="background:#fff;border-radius:16px;padding:22px;width:480px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
       <div style="font-size:16px;font-weight:700;margin-bottom:14px;">新建任务</div>
       <textarea id="nt-text" placeholder="描述目标,例如:开发一个电商公司官网首页" style="width:100%;height:90px;border:1px solid #E6E3DC;border-radius:9px;padding:10px;font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
-      <input id="nt-proj" placeholder="项目(可选)" style="width:100%;margin-top:10px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
+      <select id="nt-proj-sel" style="width:100%;margin-top:10px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
+        <option value="">默认项目</option>
+        <sc-for list="{{ projOpts }}" as="p" hint-placeholder-count="3"><option value="{{ p.name }}">{{ p.name }}</option></sc-for>
+      </select>
+      <input id="nt-proj-new" placeholder="或填新项目名(优先)" style="width:100%;margin-top:8px;height:32px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:12.5px;box-sizing:border-box;">
       <div style="display:flex;gap:14px;margin-top:12px;font-size:13px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="nt-mode" value="llm" checked>智能拆解(LLM)</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="nt-mode" value="template">模板(开发→验证)</label>
@@ -703,15 +725,15 @@
   <sc-if value="{{ modalAgent }}">
   <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50;">
     <div style="background:#fff;border-radius:16px;padding:22px;width:460px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
-      <div style="font-size:16px;font-weight:700;margin-bottom:14px;">新建 Agent</div>
-      <input id="na-name" placeholder="名字,如 Gemini 开发" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-cmd" placeholder="命令,如 gemini" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-args" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-model" placeholder="模型(可选)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-caps" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+      <div style="font-size:16px;font-weight:700;margin-bottom:14px;">{{ agentModalTitle }}</div>
+      <input id="na-name" value="{{ naName }}" placeholder="名字,如 Gemini 开发" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-cmd" value="{{ naCmd }}" placeholder="命令,如 gemini" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-args" value="{{ naArgs }}" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-model" value="{{ naModel }}" placeholder="模型(可选)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-caps" value="{{ naCaps }}" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
       <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
-        <button onClick="{{ submitAgent }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">创建</button>
+        <button onClick="{{ submitAgent }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">{{ agentSubmitLabel }}</button>
       </div>
     </div>
   </div>
@@ -736,6 +758,34 @@
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
         <button onClick="{{ submitPerson }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">保存</button>
       </div>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ modalProject }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50;">
+    <div style="background:#fff;border-radius:16px;padding:22px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:14px;">新建项目</div>
+      <input id="pr-name" placeholder="项目名称" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="pr-client" placeholder="客户(可选)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+      <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
+        <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
+        <button onClick="{{ submitProject }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">创建</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ modalWho }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50;">
+    <div style="background:#fff;border-radius:16px;padding:18px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:15px;font-weight:700;margin-bottom:12px;">切换当前身份</div>
+      <sc-for list="{{ whoList }}" as="w" hint-placeholder-count="3">
+        <button onClick="{{ w.pick }}" style-hover="background:#FAF9F6" style="width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border:none;border-radius:9px;background:transparent;cursor:pointer;font-family:inherit;text-align:left;">
+          <span style="width:26px;height:26px;flex:none;border-radius:50%;background:{{ w.color }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ w.av }}</span>
+          <span style="flex:1;min-width:0;"><span style="font-size:13px;font-weight:600;">{{ w.name }}</span> <span style="font-size:11.5px;color:#A39E94;">{{ w.role }}</span></span>
+          <span style="font-size:11px;color:#A39E94;font-family:'JetBrains Mono',monospace;">{{ w.agents }} agent</span>
+        </button>
+      </sc-for>
     </div>
   </div>
   </sc-if>

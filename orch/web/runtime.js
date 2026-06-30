@@ -19,6 +19,7 @@
   }
   const strip = (s) => s.replace(/[{}]/g, '');
   function dispatchClick(e) { const f = e.currentTarget._onclick; if (typeof f === 'function') f(e); }
+  function dispatchKey(e) { const f = e.currentTarget._onkeydown; if (typeof f === 'function') f(e); }
   function enterHover(e) {
     const el = e.currentTarget;
     el.setAttribute('data-base', el.getAttribute('style') || '');
@@ -71,6 +72,9 @@
         // handler 存节点属性,监听器读当前值;morph 会同步,避免列表重排后点错
         el._onclick = resolve(strip(val), scopes);
         el.addEventListener('click', dispatchClick);
+      } else if (name === 'onkeydown') {
+        el._onkeydown = resolve(strip(val), scopes);
+        el.addEventListener('keydown', dispatchKey);
       } else if (name === 'style-hover') {
         el._hover = val;
         el.addEventListener('mouseenter', enterHover);
@@ -116,6 +120,7 @@
       if (o.getAttribute(na[i].name) !== na[i].value) o.setAttribute(na[i].name, na[i].value);
     }
     o._onclick = nw._onclick; // 同步最新 handler 到保留的旧节点
+    o._onkeydown = nw._onkeydown;
     o._hover = nw._hover;
     morph(o, nw);
   }
