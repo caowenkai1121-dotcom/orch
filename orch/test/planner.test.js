@@ -17,7 +17,7 @@ test('无模板时调 LLM 出 plan', async () => {
   const fakeClaude = { async run() {
     return { output: '```json\n{"steps":[{"id":"x","agent":"claude","prompt":"p","deps":[]}]}\n```', success: true };
   } };
-  // 用空模板目录强制走 LLM
-  const plan = await makePlan('任意', { templatesDir: __dirname, claude: fakeClaude });
+  // LLM 模式需传 mode + agents
+  const plan = await makePlan('任意', { mode: 'llm', agents: ['claude'], templatesDir: __dirname, claude: fakeClaude });
   assert.equal(plan.steps[0].id, 'x');
 });

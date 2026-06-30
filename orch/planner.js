@@ -30,17 +30,41 @@ function extractJson(s) {
   return JSON.parse(m ? m[0] : s);
 }
 
-async function fromLLM(text, claude) {
+function collectIds(steps, acc) {
+  steps.forEach((s) => { acc.push(s.id); if (s.body) collectIds(s.body, acc); });
+  return acc;
+}
+function validate(plan, agentIds) {
+  if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return false;
+  const ids = collectIds(plan.steps, []);
+  const checkStep = (s) => {
+    if (s.type === 'loop') return Array.isArray(s.body) && s.body.length && s.body.every(checkStep);
+    if (!agentIds.includes(s.agent)) return false;
+    if (s.deps && s.deps.some((d) => !ids.includes(d))) return false;
+    return true;
+  };
+  return plan.steps.every(checkStep);
+}
+async function fromLLM(text, claude, agentIds) {
   const prompt = `把下面的开发任务拆成 JSON,字段 steps,每步 {id,agent,prompt,deps}。`
-    + `agent 取值 claude 或 codex。只输出 JSON。任务: ${text}`;
+    + `agent 只能取这些 id 之一: ${agentIds.join(', ')}。`
+    + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示开发↔验证改测循环。`
+    + `多个无依赖的步骤会并行。只输出 JSON,不要解释。任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
   const plan = extractJson(output);
   plan.task = text;
   return plan;
 }
 
-async function makePlan(text, { templatesDir, claude }) {
-  return fromTemplate(text, templatesDir) || await fromLLM(text, claude);
+async function makePlan(text, opts) {
+  const { mode, agents, templatesDir, claude } = opts;
+  if (mode === 'llm' && claude && agents && agents.length) {
+    try {
+      const plan = await fromLLM(text, claude, agents);
+      if (validate(plan, agents)) return plan;
+    } catch (e) { /* 落到模板 */ }
+  }
+  return fromTemplate(text, templatesDir) || { task: text, steps: [] };
 }
 
-module.exports = { fromTemplate, fromLLM, makePlan };
+module.exports = { fromTemplate, fromLLM, makePlan, validate };
