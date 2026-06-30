@@ -80,10 +80,10 @@
     </nav>
 
     <div style="border-top:1px solid #EEEDE8;padding:10px 12px;display:flex;align-items:center;gap:10px;">
-      <div style="width:28px;height:28px;border-radius:50%;background:#E0922E;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">张</div>
+      <div style="width:28px;height:28px;border-radius:50%;background:#E0922E;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ opAv }}</div>
       <div style="flex:1;min-width:0;">
-        <div style="font-size:12.5px;font-weight:600;">张远</div>
-        <div style="font-size:11px;color:#A39E94;">产品负责人 · Acme</div>
+        <div style="font-size:12.5px;font-weight:600;">{{ opName }}</div>
+        <div style="font-size:11px;color:#A39E94;">{{ opRole }}</div>
       </div>
       <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="#B6B1A7" stroke-width="1.5"><path d="M3.5 6.5h11M3.5 11.5h11"></path></svg>
     </div>
@@ -122,8 +122,8 @@
       <div style="padding:26px 30px 40px;max-width:1320px;">
         <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:22px;">
           <div>
-            <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;">下午好，张远 👋</div>
-            <div style="font-size:13.5px;color:#8A857C;margin-top:4px;">编排器正在统筹 <b style="color:#1A1814;">9 个 Agent</b> · 跨 6 个部门 · 周四 6 月 30 日 <span style="font-family:'JetBrains Mono',monospace;color:#A39E94;">{{ clock }}</span></div>
+            <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;">你好，{{ opName }} 👋</div>
+            <div style="font-size:13.5px;color:#8A857C;margin-top:4px;">编排器正在统筹 <b style="color:#1A1814;">{{ agentTotal }} 个 Agent</b> · 跨 {{ deptTotal }} 个部门 · {{ today }} <span style="font-family:'JetBrains Mono',monospace;color:#A39E94;">{{ clock }}</span></div>
           </div>
           <button onClick="{{ goOrch }}" style-hover="background:#F2F0EA" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;color:#1A1814;">打开编排画布
             <svg width="14" height="14" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 9h8M9.5 5l4 4-4 4"></path></svg>
@@ -231,7 +231,7 @@
         <div style="flex:none;display:flex;align-items:center;gap:16px;padding:16px 28px 14px;border-bottom:1px solid #E9E7E1;background:#FBFAF8;">
           <div style="flex:1;min-width:0;">
             <div style="font-size:18px;font-weight:700;letter-spacing:-.01em;">编排画布</div>
-            <div style="font-size:12.5px;color:#8A857C;margin-top:3px;display:flex;align-items:center;gap:8px;"><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:6px;background:#fff;border:1px solid #E9E7E1;font-weight:600;color:#3C3933;">任务 · 登录模块 + 引导视频</span><span style="color:#C9C5BB;">·</span><span>项目 Acme Web 重构</span></div>
+            <div style="font-size:12.5px;color:#8A857C;margin-top:3px;display:flex;align-items:center;gap:8px;"><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:6px;background:#fff;border:1px solid #E9E7E1;font-weight:600;color:#3C3933;">任务 · {{ activeTitle }}</span><span style="color:#C9C5BB;">·</span><span>项目 {{ activeProj }}</span></div>
           </div>
           <div style="display:flex;align-items:center;padding:3px;background:#F0EEE9;border-radius:10px;gap:2px;">
             <button onClick="{{ setGraph }}" style="display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;background:{{ modeGraph.bg }};color:{{ modeGraph.fg }};box-shadow:{{ modeGraph.sh }};">
@@ -350,11 +350,11 @@
             <div>
               <div style="background:#fff;border:1px solid #E9E7E1;border-radius:15px;padding:16px 17px;box-shadow:0 1px 2px rgba(20,18,14,.04);margin-bottom:16px;">
                 <div style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#A39E94;margin-bottom:9px;">描述目标 · 编排器自动拆解</div>
-                <div style="font-size:15px;line-height:1.5;color:#2A2722;background:#FAF9F6;border:1px solid #EEEDE7;border-radius:11px;padding:13px 14px;">把登录模块重构并通过<b>全部回归测试</b>，同时为新功能产出一支 30 秒<b>引导视频</b>。</div>
+                <div style="font-size:15px;line-height:1.5;color:#2A2722;background:#FAF9F6;border:1px solid #EEEDE7;border-radius:11px;padding:13px 14px;">{{ activeTitle }}</div>
                 <div style="display:flex;align-items:center;gap:9px;margin-top:12px;">
                   <button style="display:flex;align-items:center;gap:7px;height:36px;padding:0 15px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:13px;cursor:pointer;font-family:inherit;">
                     <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M9 2.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L9 14.2 5.8 15l.6-3.6-2.6-2.5 3.6-.5z"></path></svg>重新编排</button>
-                  <span style="font-size:12.5px;color:#8A857C;">已生成 <b style="color:#1A1814;">7</b> 个步骤 · 涉及 <b style="color:#1A1814;">5</b> 个 Agent · 含 1 个验证回退环</span>
+                  <span style="font-size:12.5px;color:#8A857C;">已生成 <b style="color:#1A1814;">{{ planCount }}</b> 个步骤 · 涉及 <b style="color:#1A1814;">{{ planAgents }}</b> 个 Agent · 含验证回退环</span>
                 </div>
               </div>
 
@@ -387,9 +387,9 @@
             <div>
               <div style="background:#fff;border:1px solid #E9E7E1;border-radius:15px;padding:16px 17px;box-shadow:0 1px 2px rgba(20,18,14,.04);margin-bottom:16px;position:sticky;top:0;">
                 <div style="font-size:13.5px;font-weight:650;margin-bottom:13px;">编排概要</div>
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">参与 Agent</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">5</span></div>
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">预计完成</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">~ 38 分钟</span></div>
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">预估成本</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">¥ 18.6</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">参与 Agent</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">{{ planAgents }}</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">计划步骤</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">{{ planCount }}</span></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">预估成本</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">—</span></div>
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;"><span style="font-size:12.5px;color:#8A857C;">回退环</span><span style="font-size:13px;font-weight:600;color:#B4541E;">开发 ↺ 验证</span></div>
                 <button style="width:100%;height:38px;margin-top:14px;border-radius:10px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:13.5px;cursor:pointer;font-family:inherit;">批准并运行</button>
                 <button style="width:100%;height:34px;margin-top:8px;border-radius:10px;background:#fff;color:#3C3933;border:1px solid #E6E3DC;font-weight:600;font-size:13px;cursor:pointer;font-family:inherit;" style-hover="background:#FAF9F6">逐步审批模式</button>
@@ -397,11 +397,8 @@
               <div style="background:#1A1814;border-radius:15px;padding:14px 16px;font-family:'JetBrains Mono',monospace;">
                 <div style="font-size:11px;color:#8A857C;margin-bottom:8px;letter-spacing:.05em;">编排器日志</div>
                 <div style="font-size:11.5px;line-height:1.7;color:#C9C5BB;">
-                  <div><span style="color:#7A7569;">14:20</span> 接收目标，解析为 2 条产出</div>
-                  <div><span style="color:#7A7569;">14:20</span> <span style="color:{{ acc }};">规划</span> 开发→验证 回退环</div>
-                  <div><span style="color:#7A7569;">14:21</span> 分配 Claude / Codex</div>
-                  <div><span style="color:#7A7569;">14:21</span> 设计链：文案→设计→视频</div>
-                  <div><span style="color:#7A7569;">14:21</span> 等待审批… <span style="border-left:6px solid {{ acc }};animation:blink 1.1s step-end infinite;">&nbsp;</span></div>
+                  <sc-for list="{{ orchLog }}" as="l" hint-placeholder-count="6"><div><span style="color:#7A7569;">{{ l.time }}</span> <span style="color:{{ l.c }};">{{ l.a }}</span> {{ l.txt }}</div></sc-for>
+                  <div style="color:{{ acc }};">▸ <span style="border-left:6px solid {{ acc }};animation:blink 1.1s step-end infinite;">&nbsp;</span></div>
                 </div>
               </div>
             </div>
@@ -419,15 +416,15 @@
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:12px;font-family:'JetBrains Mono',monospace;color:#A39E94;">{{ task.id }}</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:7px;background:{{ task.sBg }};color:{{ task.sC }};"><span style="width:6px;height:6px;border-radius:50%;background:{{ task.sDot }};"></span>{{ task.sLabel }}</span></div>
             <h1 style="font-size:21px;font-weight:700;letter-spacing:-.01em;margin:9px 0 6px;">{{ task.title }}</h1>
-            <div style="font-size:13px;color:#8A857C;">项目 <b style="color:#3C3933;">{{ task.proj }}</b> · 由 <b style="color:#3C3933;">张远</b> 创建 · 编排器统筹的 <b style="color:#3C3933;">开发 ↺ 验证</b> 接力</div>
+            <div style="font-size:13px;color:#8A857C;">项目 <b style="color:#3C3933;">{{ task.proj }}</b> · 由 <b style="color:#3C3933;">{{ opName }}</b> 创建 · 编排器统筹的 <b style="color:#3C3933;">开发 ↺ 验证</b> 接力</div>
           </div>
         </div>
 
         <div style="display:flex;gap:10px;margin:18px 0 22px;">
-          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">接力轮次</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">4</div></div>
-          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">参与 Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">3</div></div>
-          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">总耗时</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">20m</div></div>
-          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">回归通过</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;color:#1F7A46;">24/24</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">接力步骤</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskRounds }}</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">参与 Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskAgentN }}</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">状态</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ task.sLabel }}</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">项目</div><div style="font-size:15px;font-weight:700;margin-top:6px;">{{ task.proj }}</div></div>
         </div>
 
         <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 14px;"><span style="font-size:13.5px;font-weight:650;">接力过程记录</span><span style="font-size:11.5px;color:#A39E94;">每一次 Agent 之间的移交都被完整记录</span></div>
@@ -649,7 +646,7 @@
       <!-- ====================== AGENTS ROSTER ====================== -->
       <sc-if value="{{ isAgents }}">
       <div style="padding:26px 30px 40px;max-width:1240px;">
-        <div style="margin-bottom:18px;"><h1 style="font-size:21px;font-weight:700;margin:0;">Agent 团队</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">9 个 Agent · 由 Claude、Codex 及通用图像/视频 Agent 组成</div></div>
+        <div style="margin-bottom:18px;"><h1 style="font-size:21px;font-weight:700;margin:0;">Agent 团队</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">{{ agentTotal }} 个 Agent · Claude 与 Codex</div></div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px;">
           <sc-for list="{{ agents }}" as="a" hint-placeholder-count="9">
             <button onClick="{{ a.open }}" style-hover="border-color:#D9D5CC;transform:translateY(-1px)" style="text-align:left;cursor:pointer;background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:15px;font-family:inherit;box-shadow:0 1px 2px rgba(20,18,14,.04);transition:transform .15s ease,border-color .15s ease;">

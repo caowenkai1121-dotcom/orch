@@ -315,124 +315,117 @@ class MaestroBase extends RT.Component {
 }
 
 
-// ============ 真后端接线:在原型 MaestroBase 上叠加 orch 真实数据 ============
+// ============ 全真数据接线:用 orch 真实数据替换原型所有 mock 数组 ============
 class Maestro extends MaestroBase {
   componentDidMount() {
-    this.live = { tasks: [], detail: {}, logs: {}, activity: [] };
-    super.componentDidMount();
-    this.fetchTasks();
+    // 不调 super:跳过 mock 种子与 mock tick。真实数据全部从后端拉。
+    this.live = { relay: {}, plan: {}, activeId: null, counts: {} };
+    this.AGENTS = []; this.DEPTS = []; this.BOARDS = {}; this.PROJECTS = []; this.TASKS = []; this.PEOPLE = [];
+    this.state.activity = []; this.state.log = {};
+    const now = new Date();
+    this.state.clockS = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    this.fetchAll();
     this.openWS();
+    this._poll = setInterval(() => { this.state.clockS += 4; this.fetchAll(); }, 4000);
   }
+  startTimer() {} // 关闭原型的 mock 动画 tick
+
+  // —— 防御:真实数据可能为空,基类找不到对象时给安全占位 ——
+  decA(a) { if (!a) return { name: '—', action: '未启用', pct: '0%', avatar: '·', color: '#C9C5BB', status: 'idle', sLabel: '空闲', sC: '#6B6760', sBg: '#F1EFEA', sDot: '#C9C4BA', open: () => {} }; return super.decA(a); }
+  decTask(t) { if (!t) return { id: '', title: '暂无任务', proj: '—', sLabel: '', sC: '#6B6760', sBg: '#F1EFEA', sDot: '#C9C4BA', steps: [] }; return super.decTask(t); }
+  decP(p) { if (!p) return { id: '', name: '暂无项目', client: '—', pct: '0%', barColor: '#C9C5BB', sBg: '#F1EFEA', sC: '#6B6760', status: '—', deptDots: [], deptChips: [], deptN: 0, agentCount: 0, taskCount: 0, tasks: [], open: () => {} }; return super.decP(p); }
+  decD(d) { if (!d) return { id: '', name: '—', glyph: '·', color: '#C9C5BB', soft: '#F1EFEA', desc: '', lead: '—', tasks: 0, agentCount: 0, doneWeek: 0, successAvg: '—', isDesign: false, agents: [], board: { todo: [], doing: [], done: [], todoN: 0, doingN: 0, doneN: 0 }, statusDot: '#C9C4BA', statusTxt: '—', nbg: 'transparent', nfg: '#57534E', nw: '500', nbar: 'none', open: () => {} }; return super.decD(d); }
 
   scheduleRender() {
     if (this._pending) return;
     this._pending = true;
-    setTimeout(() => { this._pending = false; this.setState({}); }, 250);
-  }
-
-  mapStatusKey(s) {
-    return ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
-  }
-  realMini(agent) {
-    return ({ claude: { color: '#7C6FD9', avatar: 'C' }, codex: { color: '#4F8BE8', avatar: 'X' } })[agent]
-      || { color: '#A39E94', avatar: 'A' };
-  }
-  agentName(a) { return a === 'claude' ? 'Claude' : (a === 'codex' ? 'Codex' : (a || '—')); }
-
-  realRow(t) {
-    const sm = this.statusMeta(this.mapStatusKey(t.status));
-    const det = this.live.detail[t.id];
-    const seen = {}, assignees = [];
-    if (det && det.steps) det.steps.forEach((s) => { if (s.agent && !seen[s.agent]) { seen[s.agent] = 1; assignees.push(this.realMini(s.agent)); } });
-    return {
-      id: '#' + t.id, title: t.text, proj: 'orch · 真实', updated: '实时',
-      sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, assignees,
-      open: () => this.go('task', { taskId: t.id }),
-    };
-  }
-
-  realTaskVals(id) {
-    const t = this.live.tasks.find((x) => x.id === id);
-    const det = this.live.detail[id];
-    const logs = this.live.logs[id] || [];
-    const sm = this.statusMeta(this.mapStatusKey(t ? t.status : 'pending'));
-    const steps = ((det && det.steps) || []).map((s) => {
-      const m = this.statusMeta(this.mapStatusKey(s.status));
-      const mini = this.realMini(s.agent);
-      let last = null;
-      for (let i = logs.length - 1; i >= 0; i--) if (logs[i].stepId === s.step_id) { last = logs[i].line; break; }
-      return {
-        who: this.agentName(s.agent), avatar: mini.avatar, color: mini.color,
-        title: s.step_id, desc: last ? String(last) : ('状态: ' + s.status), time: '', dur: '',
-        sLabel: m.label, sC: m.c, sBg: m.bg, sDot: m.dot,
-        back: false, hasCode: false, hasReport: false, barPct: '0%', barColor: '#2E9E5B',
-      };
-    });
-    return { id: '#' + id, title: t ? t.text : ('任务 ' + id), proj: 'orch · 真实', sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, steps };
+    setTimeout(() => { this._pending = false; this.setState({}); }, 200);
   }
 
   renderVals() {
+    // 渲染前把基类用到的 RELAY(当前任务) / PLAN(活动任务) 同步成真实数据
+    this.RELAY = (typeof this.state.taskId === 'number' && this.live.relay[this.state.taskId]) || [];
+    const activeId = this.live.activeId != null ? this.live.activeId : (this.TASKS[0] && this.TASKS[0].id);
+    this.PLAN = (activeId != null && this.live.plan[activeId]) || [];
     const v = super.renderVals();
-    // 任务列表:真实任务排在最前
-    const realRows = this.live.tasks.map((t) => this.realRow(t));
-    v.tasksList = realRows.concat(v.tasksList);
-    // 总控台指标:进行中任务用真实数
-    const running = this.live.tasks.filter((t) => t.status === 'running').length;
-    if (v.metrics[1]) v.metrics[1] = { ...v.metrics[1], v: '' + running, s: '真实任务 ' + this.live.tasks.length + ' 个' };
-    // 实时活动:真实日志流并入
-    v.activity = this.live.activity.concat(v.activity).slice(0, 18);
-    // 真实任务详情(taskId 为数字)
-    if (typeof this.state.taskId === 'number') {
-      v.task = this.realTaskVals(this.state.taskId);
-      v.crumbLeaf = v.task.title;
-    }
-    // 新建任务 → 真下发
+    v.metrics = this.realMetrics();
+    v.cv = this.realCv();
+    v.orchLog = (this.state.activity || []).slice(0, 8).map((e) => ({ time: e.time, c: e.c, a: e.a, txt: e.t }));
     v.newTask = () => this.promptNewTask();
+    // 真实文案绑定(替换原型写死的 张远/9个Agent/Acme 等)
+    const op = this.PEOPLE[0] || { name: '操作者', av: '操', role: '操作者' };
+    v.opName = op.name; v.opAv = op.av; v.opRole = (op.role || '操作者') + ' · orch';
+    v.agentTotal = this.AGENTS.length; v.deptTotal = this.DEPTS.length; v.today = this.todayStr();
+    const at = this.TASKS[0];
+    v.activeTitle = at ? at.title : '暂无任务'; v.activeProj = at ? at.proj : '—';
+    v.planCount = this.PLAN.length;
+    v.planAgents = new Set(this.PLAN.map((p) => p.agent)).size;
+    const r = this.RELAY || [];
+    v.taskRounds = r.length; v.taskAgentN = new Set(r.map((x) => x.who)).size;
     return v;
+  }
+
+  todayStr() {
+    const d = new Date();
+    const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+    return wk + ' ' + (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日';
+  }
+  realMetrics() {
+    const c = this.live.counts || {};
+    return [
+      { k: '运行中 Agent', v: '' + (c.runningAgents || 0), s: '共 ' + (c.totalAgents || 0) + ' 个', dot: this.acc() },
+      { k: '进行中任务', v: '' + (c.runningTasks || 0), s: '真实任务 ' + (c.totalTasks || 0) + ' 个', dot: '#4F8BE8' },
+      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '累计运行', dot: '#2E9E5B' },
+      { k: '失败 / 待处理', v: '' + (c.failed || 0), s: (c.failed || 0) + ' 个失败', dot: '#E0922E' },
+    ];
+  }
+  realCv() {
+    const find = (id) => this.AGENTS.find((a) => a.id === id);
+    return { dev: this.decA(find('claude')), qa: this.decA(find('codex')), content: this.decA(null), design: this.decA(null), video: this.decA(null) };
   }
 
   go(screen, extra) {
     super.go(screen, extra);
-    if (screen === 'task' && extra && typeof extra.taskId === 'number') this.fetchDetail(extra.taskId);
+    if (screen === 'task' && extra && typeof extra.taskId === 'number') this.fetchRelay(extra.taskId);
+    if (screen === 'agent' && extra && extra.agentId) this.fetchAgentLog(extra.agentId);
   }
 
   promptNewTask() {
     const text = window.prompt('给编排器下发任务(走 claude 开发 → codex 验证 模板):');
     if (!text || !text.trim()) return;
     fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
-      .then((r) => r.json()).then(() => { this.go('tasks'); setTimeout(() => this.fetchTasks(), 300); })
-      .catch(() => {});
+      .then((r) => r.json()).then(() => { this.go('tasks'); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
 
-  fetchTasks() {
-    fetch('/tasks').then((r) => r.json()).then((list) => {
-      this.live.tasks = list || [];
-      this.live.tasks.forEach((t) => { if (!this.live.detail[t.id]) this.fetchDetail(t.id); });
+  fetchAll() {
+    fetch('/api/all').then((r) => r.json()).then((d) => {
+      if (!d) return;
+      this.AGENTS = d.agents || []; this.DEPTS = d.depts || []; this.BOARDS = d.boards || {};
+      this.PROJECTS = d.projects || []; this.TASKS = d.tasks || []; this.PEOPLE = d.people || [];
+      this.live.counts = d.counts || {};
+      this.state.activity = d.activity || [];
+      const active = this.TASKS[0] && this.TASKS[0].id;
+      if (active != null) { this.live.activeId = active; if (!this.live.plan[active]) this.fetchPlan(active); }
+      if (typeof this.state.taskId === 'number' && !this.live.relay[this.state.taskId]) this.fetchRelay(this.state.taskId);
       this.scheduleRender();
     }).catch(() => {});
   }
-  fetchDetail(id) {
-    fetch('/task/' + id).then((r) => r.json()).then((d) => { if (d) this.live.detail[id] = d; this.scheduleRender(); }).catch(() => {});
-    fetch('/task/' + id + '/logs').then((r) => r.json()).then((rows) => {
-      if (rows) this.live.logs[id] = rows.map((r) => ({ stepId: r.step_id, line: r.line }));
-      this.scheduleRender();
-    }).catch(() => {});
-  }
+  fetchRelay(id) { fetch('/api/relay/' + id).then((r) => r.json()).then((s) => { this.live.relay[id] = s || []; this.scheduleRender(); }).catch(() => {}); }
+  fetchPlan(id) { fetch('/api/plan/' + id).then((r) => r.json()).then((s) => { this.live.plan[id] = s || []; this.scheduleRender(); }).catch(() => {}); }
+  fetchAgentLog(id) { fetch('/api/agentlog/' + id).then((r) => r.json()).then((lines) => { this.state.log[id] = lines || []; this.scheduleRender(); }).catch(() => {}); }
 
   openWS() {
     try {
       const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
       ws.onmessage = (ev) => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
-        if (m.type === 'log') {
-          const id = m.taskId;
-          (this.live.logs[id] = this.live.logs[id] || []).push({ stepId: m.stepId, line: m.data });
-          this.live.activity.unshift({ a: '#' + id + ' ' + (m.stepId || ''), c: '#1A1814', t: String(m.data).slice(0, 80), dot: this.acc(), soft: '#FFF6D6', time: '刚刚' });
-          this.live.activity = this.live.activity.slice(0, 18);
+        if (m.type === 'activity') {
+          this.state.activity = [m.data].concat(this.state.activity).slice(0, 18);
           this.scheduleRender();
-        } else if (m.type === 'plan' || m.type === 'task' || m.type === 'status') {
-          this.fetchTasks();
-          if (typeof this.state.taskId === 'number') this.fetchDetail(this.state.taskId);
+        } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'log') {
+          this.fetchAll();
+          if (typeof this.state.taskId === 'number') this.fetchRelay(this.state.taskId);
+          if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
         }
       };
       ws.onclose = () => { setTimeout(() => this.openWS(), 2000); };

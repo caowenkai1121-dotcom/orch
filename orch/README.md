@@ -11,8 +11,9 @@ npm start              # 起 http://localhost:3000
 ```
 
 浏览器开 `http://localhost:3000`，进入 **Maestro 编排工作台**：点右上「新建任务」下发，
-在「任务」列表看真实任务排在最前，点进去看 Claude→Codex 接力过程与实时日志；
-「总控台」「编排画布」展示概览。(部门/项目/人员为演示数据,后端未对接。)
+任务列表/详情看 Claude→Codex 接力与实时日志，总控台看真实指标与实时编排活动流，
+编排画布看真实执行计划。**全部为 orch 真实数据**：agent=真实适配器(Claude/Codex),
+部门=按 agent 角色派生(开发/QA),项目=按任务 project 字段聚合,人员=当前操作者。
 
 > 真跑需要本机已登录 `claude` 和 `codex` CLI（`claude -p`、`codex exec` 无头模式）。
 > codex 较慢（约 100s/步），属正常。
@@ -48,7 +49,8 @@ npm test              # node --test 全量,6 文件 12 用例
 ## 结构
 
 ```
-server.js     入口:express + ws,起服务
+server.js     入口:express + ws,起服务,真实活动流广播
+api.js        把真实 tasks/steps/logs 派生成 Maestro 前端数据(agents/部门/项目/人员)
 runner.js     串起 出plan→执行→落库,事件实时广播
 planner.js    模板匹配 / 调 LLM 出 plan
 engine.js     调度 + 循环(核心)
