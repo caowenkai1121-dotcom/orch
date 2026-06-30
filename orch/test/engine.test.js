@@ -49,3 +49,18 @@ test('loop 重试到 pass', async () => {
   assert.equal(done.loop.success, true);
   assert.equal(n, 2); // 跑了两轮
 });
+
+test('上游通过则 loop 被跳过(没坏不修)', async () => {
+  let ran = 0;
+  const a = { async run({ prompt, onLine }) { onLine(prompt); return { output: 'ok', success: true }; } };
+  const body = { async run({ prompt, onLine }) { ran++; onLine(prompt); return { output: prompt, success: true }; } };
+  const plan = { steps: [
+    { id: 'test', agent: 'a', prompt: 'test', deps: [] },
+    { id: 'loop', type: 'loop', until: 'pass', max: 3, deps: ['test'], body: [
+      { id: 'fix', agent: 'b', prompt: 'fix' },
+    ] },
+  ] };
+  const done = await runPlan(plan, mkCtx({ a, b: body }));
+  assert.equal(done.loop.success, true);
+  assert.equal(ran, 0); // test 通过,loop body 一次没跑
+});

@@ -1,7 +1,9 @@
 async function runStep(step, ctx, prevOutput) {
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
-  const prompt = step.prompt.replace('{prev}', prevOutput || '');
+  // 只取上游输出末尾,防止整段日志塞进命令行参数撑爆 Windows ~32KB 上限
+  // ponytail: 截断够用;要全量上下文再改成走 stdin/临时文件
+  const prompt = step.prompt.replace('{prev}', (prevOutput || '').slice(-4000));
   const workdir = await ctx.workspace.make(step.id);
   ctx.onStatus(step.id, 'running');
   const res = await adapter.run({
@@ -37,9 +39,18 @@ async function runPlan(plan, ctx) {
     await Promise.all(wave.map(async (s) => {
       started.add(s.id);
       const prev = s.deps.length ? done[s.deps[0]]?.output : '';
-      done[s.id] = s.type === 'loop'
-        ? await runLoop(s, ctx, prev)
-        : await runStep(s, ctx, prev);
+      if (s.type === 'loop') {
+        // 上游(如 test)已通过则跳过改测循环:没坏就不修
+        const depOk = s.deps.length && done[s.deps[0]] && done[s.deps[0]].success;
+        if (depOk) {
+          ctx.onStatus(s.id, 'done');
+          done[s.id] = { output: prev, success: true };
+        } else {
+          done[s.id] = await runLoop(s, ctx, prev);
+        }
+      } else {
+        done[s.id] = await runStep(s, ctx, prev);
+      }
     }));
   }
   return done;
