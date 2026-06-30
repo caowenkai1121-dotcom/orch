@@ -51,6 +51,7 @@ function buildAll(store) {
     const tot = done + fail;
     return {
       id, name: r.label, type: id, dept: r.dept,
+      color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',
       task: cur ? cur.text : '—', taskId: cur ? cur.id : '',
       action: running ? (lastLine(running.task_id, running.step_id) || ('执行 ' + running.step_id)) : '空闲 · 等待任务',

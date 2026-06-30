@@ -26,16 +26,22 @@ npm start              # 起 http://localhost:3000
 ## 怎么运作
 
 - 一份 **plan**（步骤 + 依赖 + 派给谁）是核心。模板和 LLM 都只是生成 plan 的方式。
-- 引擎拓扑调度：无依赖的步骤并发跑，有依赖的串行，`loop` 步骤做 Codex↔Claude 改测循环（上游测试已过则自动跳过）。
-- 同一任务各步骤共享一个工作目录，顺序产物（dev→test→fix）天然可见。
-  （真验证发现 per-step worktree 会让下游看不到上游产物，故改共享；真正的并行隔离留作未来 opt-in。）
+- 下发任务时选模式：**智能拆解(LLM)** 让 Claude 把目标拆成多步、自动指派可用 agent（能跑出"建站"这类多步流程）；**模板** 走固定 开发→验证→改测循环。
+- 引擎拓扑调度：无依赖的步骤并发跑，有依赖的串行，`loop` 步骤做改测循环（上游测试已过则自动跳过）。
+- 同一任务各步骤共享一个工作目录，顺序产物天然可见。多任务并发跑，同一 agent 可跨任务/步骤并发——在 **Agent 详情页的实时控制台**看它所有并发活动，每行标 `[T任务·步骤]`。
+
+## 新建 / 配置（界面里点）
+
+- **新建任务**：右上「新建任务」或画布上的下发按钮 → 填目标、选模式 → 下发。
+- **新建 Agent**：Agent 团队页「+ 新建 Agent」→ 填名字/命令/参数/能力 → 即时可派任务。agent = 一条 CLI 定义（如 `gemini -p`），自主模式参数自填。
+- **新建人员 + 分配**：人员页「+ 新建人员」勾选 agent；或某人「分配」改归属。纯组织元数据，不限制执行。
 
 ## 改 / 扩展
 
 | 想干啥 | 改哪 |
 |--------|------|
 | 加预设工作流 | 往 `templates/` 加个 `.yaml`（照抄 `dev-test-fix.yaml`，`match` 为关键词，空串=兜底） |
-| 加新 agent（gemini/aider…） | 往 `adapters/` 加个文件，导出 `run({prompt,workdir,onLine})=>{output,success}`，再在 `server.js` 的 `adapters` 注册 |
+| 加新 agent | 界面「+ 新建 Agent」（落库，通用 CLI 适配器驱动）；或改 seed |
 | 调循环上限 | 模板里 `max` |
 
 ## 测试
@@ -56,7 +62,7 @@ planner.js    模板匹配 / 调 LLM 出 plan
 engine.js     调度 + 循环(核心)
 workspace.js  工作区(共享目录)
 store.js      SQLite 单文件
-adapters/     claude / codex / echo + cli.js(公共 spawn 封装)
+adapters/     generic.js(数据驱动,按 agent 定义跑) + cli.js(spawn 封装) + echo(测试)
 templates/    预设工作流 yaml
 web/          Maestro 前端:index.html(模板) + runtime.js(迷你dc运行时) + app.js(逻辑+真接线)
 ```

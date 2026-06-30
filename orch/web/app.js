@@ -321,7 +321,7 @@ class Maestro extends MaestroBase {
     // 不调 super:跳过 mock 种子与 mock tick。真实数据全部从后端拉。
     this.live = { relay: {}, plan: {}, activeId: null, counts: {} };
     this.AGENTS = []; this.DEPTS = []; this.BOARDS = {}; this.PROJECTS = []; this.TASKS = []; this.PEOPLE = [];
-    this.state.activity = []; this.state.log = {};
+    this.state.activity = []; this.state.log = {}; this.state.console = {}; this.state.modal = null;
     const now = new Date();
     this.state.clockS = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     this.fetchAll();
@@ -331,7 +331,14 @@ class Maestro extends MaestroBase {
   startTimer() {} // 关闭原型的 mock 动画 tick
 
   // —— 防御:真实数据可能为空,基类找不到对象时给安全占位 ——
-  decA(a) { if (!a) return { name: '—', action: '未启用', pct: '0%', avatar: '·', color: '#C9C5BB', status: 'idle', sLabel: '空闲', sC: '#6B6760', sBg: '#F1EFEA', sDot: '#C9C4BA', open: () => {} }; return super.decA(a); }
+  decA(a) {
+    if (!a) return { name: '—', action: '未启用', pct: '0%', avatar: '·', color: '#C9C5BB', soft: '#F1EFEA', typeLabel: '', status: 'idle', sLabel: '空闲', sC: '#6B6760', sBg: '#F1EFEA', sDot: '#C9C4BA', open: () => {} };
+    // 用 agent 自带 color/avatar(支持自定义 agent),不依赖写死的 TYPES
+    const sm = this.statusMeta(a.status);
+    const p = this.state.prog[a.id] == null ? a.progress : this.state.prog[a.id];
+    const act = this.state.actionTxt[a.id] || a.action;
+    return { ...a, color: a.color, soft: a.soft || ((a.color || '#7C6FD9') + '2b'), avatar: a.avatar, typeLabel: a.model || a.name, sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, pct: (p || 0) + '%', action: act, open: () => this.go('agent', { agentId: a.id }) };
+  }
   decTask(t) { if (!t) return { id: '', title: '暂无任务', proj: '—', sLabel: '', sC: '#6B6760', sBg: '#F1EFEA', sDot: '#C9C4BA', steps: [] }; return super.decTask(t); }
   decP(p) { if (!p) return { id: '', name: '暂无项目', client: '—', pct: '0%', barColor: '#C9C5BB', sBg: '#F1EFEA', sC: '#6B6760', status: '—', deptDots: [], deptChips: [], deptN: 0, agentCount: 0, taskCount: 0, tasks: [], open: () => {} }; return super.decP(p); }
   decD(d) { if (!d) return { id: '', name: '—', glyph: '·', color: '#C9C5BB', soft: '#F1EFEA', desc: '', lead: '—', tasks: 0, agentCount: 0, doneWeek: 0, successAvg: '—', isDesign: false, agents: [], board: { todo: [], doing: [], done: [], todoN: 0, doingN: 0, doneN: 0 }, statusDot: '#C9C4BA', statusTxt: '—', nbg: 'transparent', nfg: '#57534E', nw: '500', nbar: 'none', open: () => {} }; return super.decD(d); }
@@ -351,7 +358,19 @@ class Maestro extends MaestroBase {
     v.metrics = this.realMetrics();
     v.cv = this.realCv();
     v.orchLog = (this.state.activity || []).slice(0, 8).map((e) => ({ time: e.time, c: e.c, a: e.a, txt: e.t }));
-    v.newTask = () => this.promptNewTask();
+    // 弹窗 + 表单提交
+    v.newTask = () => this.newTask();
+    v.newAgent = () => this.newAgent();
+    v.newPerson = () => this.newPerson();
+    v.closeModal = () => this.closeModal();
+    v.submitTask = () => this.submitTask();
+    v.submitAgent = () => this.submitAgent();
+    v.submitPerson = () => this.submitPerson();
+    v.modalTask = this.state.modal === 'task';
+    v.modalAgent = this.state.modal === 'agent';
+    v.modalPerson = this.state.modal === 'person';
+    v.modalPersonNew = this.state.modal === 'person' && !this.state.assignPid;
+    v.modalPersonTitle = this.state.assignPid ? '分配 Agent' : '新建人员';
     // 真实文案绑定(替换原型写死的 张远/9个Agent/Acme 等)
     const op = this.PEOPLE[0] || { name: '操作者', av: '操', role: '操作者' };
     v.opName = op.name; v.opAv = op.av; v.opRole = (op.role || '操作者') + ' · orch';
@@ -362,6 +381,9 @@ class Maestro extends MaestroBase {
     v.planAgents = new Set(this.PLAN.map((p) => p.agent)).size;
     const r = this.RELAY || [];
     v.taskRounds = r.length; v.taskAgentN = new Set(r.map((x) => x.who)).size;
+    // 人员行分配按钮 + 每 agent 实时控制台
+    (v.people || []).forEach((p) => { p.assign = () => this.assignPerson(p.id); });
+    v.agentLog = (this.state.console && this.state.console[this.state.agentId]) || this.state.log[this.state.agentId] || [];
     return v;
   }
 
@@ -387,14 +409,52 @@ class Maestro extends MaestroBase {
   go(screen, extra) {
     super.go(screen, extra);
     if (screen === 'task' && extra && typeof extra.taskId === 'number') this.fetchRelay(extra.taskId);
-    if (screen === 'agent' && extra && extra.agentId) this.fetchAgentLog(extra.agentId);
+    if (screen === 'agent' && extra && extra.agentId) {
+      fetch('/api/agentlog/' + extra.agentId).then((r) => r.json()).then((lines) => {
+        const c = this.state.console || (this.state.console = {});
+        c[extra.agentId] = lines || [];
+        this.scheduleRender();
+      }).catch(() => {});
+    }
   }
 
-  promptNewTask() {
-    const text = window.prompt('给编排器下发任务(走 claude 开发 → codex 验证 模板):');
-    if (!text || !text.trim()) return;
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
-      .then((r) => r.json()).then(() => { this.go('tasks'); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+  // —— 弹窗 ——
+  newTask() { this.setState({ modal: 'task' }); }
+  newAgent() { this.setState({ modal: 'agent' }); }
+  newPerson() { this.setState({ modal: 'person', assignPid: null }); }
+  assignPerson(pid) { this.setState({ modal: 'person', assignPid: pid }); }
+  closeModal() { this.setState({ modal: null, assignPid: null }); }
+
+  submitTask() {
+    const text = (document.getElementById('nt-text') || {}).value || '';
+    if (!text.trim()) return;
+    const proj = (document.getElementById('nt-proj') || {}).value || '';
+    const modeEl = document.querySelector('input[name="nt-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'llm';
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project: proj, mode }) })
+      .then((r) => r.json()).then(() => { this.setState({ modal: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+  }
+  submitAgent() {
+    const g = (id) => (document.getElementById(id) || {}).value || '';
+    const name = g('na-name'), command = g('na-cmd');
+    if (!name.trim() || !command.trim()) return;
+    const body = { name: name.trim(), command: command.trim(), args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean) };
+    fetch('/api/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+      .then((r) => r.json()).then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
+  }
+  submitPerson() {
+    const ids = [...document.querySelectorAll('.np-agent:checked')].map((c) => c.value);
+    if (this.state.assignPid) { // 分配模式:只改分配
+      const pid = this.state.assignPid;
+      fetch('/api/people/' + pid + '/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: ids }) })
+        .then(() => { this.setState({ modal: null, assignPid: null }); this.fetchAll(); }).catch(() => {});
+      return;
+    }
+    const g = (id) => (document.getElementById(id) || {}).value || '';
+    if (!g('np-name').trim()) return;
+    fetch('/api/people', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: g('np-name').trim(), email: g('np-email'), role: g('np-role') }) })
+      .then((r) => r.json()).then((d) => { if (ids.length && d.id) return fetch('/api/people/' + d.id + '/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: ids }) }); })
+      .then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
   }
 
   fetchAll() {
@@ -422,7 +482,14 @@ class Maestro extends MaestroBase {
         if (m.type === 'activity') {
           this.state.activity = [m.data].concat(this.state.activity).slice(0, 18);
           this.scheduleRender();
-        } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'log') {
+        } else if (m.type === 'log') {
+          if (m.agent) { // 累积到每 agent 实时控制台,标注来源 task/step
+            const c = this.state.console || (this.state.console = {});
+            (c[m.agent] = c[m.agent] || []).push('[T' + m.taskId + '·' + (m.stepId || '') + '] ' + m.data);
+            c[m.agent] = c[m.agent].slice(-200);
+            this.scheduleRender();
+          }
+        } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents') {
           this.fetchAll();
           if (typeof this.state.taskId === 'number') this.fetchRelay(this.state.taskId);
           if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
