@@ -10,8 +10,9 @@ npm install
 npm start              # 起 http://localhost:3000
 ```
 
-浏览器开 `http://localhost:3000`，输入任务（如"写个把摄氏转华氏的函数并测试"）→ 发。
-左侧看步骤状态变色，右侧看实时日志。
+浏览器开 `http://localhost:3000`，进入 **Maestro 编排工作台**：点右上「新建任务」下发，
+在「任务」列表看真实任务排在最前，点进去看 Claude→Codex 接力过程与实时日志；
+「总控台」「编排画布」展示概览。(部门/项目/人员为演示数据,后端未对接。)
 
 > 真跑需要本机已登录 `claude` 和 `codex` CLI（`claude -p`、`codex exec` 无头模式）。
 > codex 较慢（约 100s/步），属正常。
@@ -55,5 +56,5 @@ workspace.js  工作区(共享目录)
 store.js      SQLite 单文件
 adapters/     claude / codex / echo + cli.js(公共 spawn 封装)
 templates/    预设工作流 yaml
-web/          单页前端
+web/          Maestro 前端:index.html(模板) + runtime.js(迷你dc运行时) + app.js(逻辑+真接线)
 ```

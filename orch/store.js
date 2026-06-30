@@ -42,6 +42,9 @@ function open(file) {
     listTasks() {
       return db.prepare('SELECT id,text,status FROM tasks ORDER BY id DESC').all();
     },
+    getLogs(taskId) {
+      return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);
+    },
     db,
   };
 }

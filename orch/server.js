@@ -21,6 +21,7 @@ app.use(express.static(path.join(__dirname, 'web')));
 
 app.get('/tasks', (req, res) => res.json(store.listTasks()));
 app.get('/task/:id', (req, res) => res.json(store.getTask(Number(req.params.id))));
+app.get('/task/:id/logs', (req, res) => res.json(store.getLogs(Number(req.params.id))));
 app.post('/task', (req, res) => {
   const id = store.createTask(req.body.text);
   res.json({ id });
