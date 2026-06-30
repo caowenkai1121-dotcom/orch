@@ -21,11 +21,11 @@ async function runTask(taskId, deps) {
     workspace,
     onLog: (stepId, line) => {
       store.addLog(taskId, stepId, line);
-      emit(onEvent, taskId, stepId, 'log', line);
+      emit(onEvent, taskId, stepId, 'log', line, agentOf[stepId]);
     },
     onStatus: (stepId, status) => {
       store.setStep(taskId, stepId, agentOf[stepId] || '', status, null);
-      emit(onEvent, taskId, stepId, 'status', status);
+      emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]);
     },
   };
 
@@ -41,8 +41,8 @@ async function runTask(taskId, deps) {
   }
 }
 
-function emit(onEvent, taskId, stepId, type, data) {
-  if (onEvent) onEvent({ taskId, stepId, type, data });
+function emit(onEvent, taskId, stepId, type, data, agent) {
+  if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
 module.exports = { runTask };

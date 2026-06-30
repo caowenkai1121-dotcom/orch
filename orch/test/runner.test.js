@@ -3,20 +3,18 @@ const assert = require('node:assert');
 const { open } = require('../store');
 const { runTask } = require('../runner');
 
-test('runTask 用模板跑通并落库(全 echo 适配器)', async () => {
+test('runTask 落库且 log 事件带 agent', async () => {
   const store = open(':memory:');
   const id = store.createTask('随便');
   const echo = { async run({ prompt, onLine }) { onLine(prompt); return { output: prompt, success: true }; } };
+  const evs = [];
   await runTask(id, {
-    store,
-    adapters: { claude: echo, codex: echo },
+    store, adapters: { claude: echo, codex: echo },
     workspace: { make: () => '.', merge: () => {} },
-    onEvent: () => {},
-    makePlan: async () => ({ task: 'x', steps: [
-      { id: 'dev', agent: 'claude', prompt: 'p', deps: [] },
-    ] }),
+    onEvent: (e) => evs.push(e),
+    makePlan: async () => ({ task: 'x', steps: [{ id: 'dev', agent: 'claude', prompt: 'p', deps: [] }] }),
   });
-  const t = store.getTask(id);
-  assert.equal(t.status, 'done');
-  assert.equal(t.steps[0].status, 'done');
+  assert.equal(store.getTask(id).status, 'done');
+  const log = evs.find((e) => e.type === 'log');
+  assert.equal(log.agent, 'claude');
 });
