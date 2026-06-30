@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8"><title>orch</title>
+<style>
+  body{font:14px/1.5 system-ui;margin:0;display:flex;height:100vh}
+  #side{width:240px;border-right:1px solid #ddd;padding:12px;overflow:auto}
+  #main{flex:1;display:flex;flex-direction:column;padding:12px;overflow:auto}
+  .step{margin:6px 0;padding:6px;border:1px solid #eee;border-radius:6px}
+  .running{border-color:#fa0}.done{border-color:#0a0}.failed{border-color:#f00}
+  pre{background:#111;color:#0f0;padding:8px;border-radius:6px;white-space:pre-wrap;max-height:40vh;overflow:auto}
+  input,button{font:inherit;padding:6px}
+</style>
+</head>
+<body>
+<div id="side">
+  <h3>orch</h3>
+  <input id="t" placeholder="发个任务…" style="width:100%">
+  <button onclick="send()">发</button>
+  <ul id="tasks"></ul>
+</div>
+<div id="main">
+  <div id="steps"></div>
+  <pre id="log"></pre>
+</div>
+<script>
+const steps = {};
+async function send(){
+  const text = document.getElementById('t').value.trim();
+  if(!text) return;
+  await fetch('/task',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text})});
+  document.getElementById('t').value='';
+  document.getElementById('steps').innerHTML='';
+  document.getElementById('log').textContent='';
+}
+function renderPlan(plan){
+  const c=document.getElementById('steps'); c.innerHTML='';
+  const walk=(arr)=>arr.forEach(s=>{
+    if(s.body){walk(s.body);return;}
+    const d=document.createElement('div'); d.className='step'; d.id='s-'+s.id;
+    d.textContent=`[${s.agent}] ${s.id}`; c.appendChild(d); steps[s.id]=d;
+  });
+  walk(plan.steps);
+}
+const ws=new WebSocket('ws://'+location.host);
+ws.onmessage=(e)=>{
+  const ev=JSON.parse(e.data);
+  if(ev.type==='plan') renderPlan(ev.data);
+  if(ev.type==='status'&&steps[ev.stepId]) steps[ev.stepId].className='step '+ev.data;
+  if(ev.type==='log'){
+    const l=document.getElementById('log');
+    l.textContent+=`[${ev.stepId}] ${ev.data}\n`; l.scrollTop=l.scrollHeight;
+  }
+};
+</script>
+</body>
+</html>
