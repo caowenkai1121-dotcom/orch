@@ -3,7 +3,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const { open } = require('./store');
 const { makePlan } = require('./planner');
-const { makeWorkspace } = require('./workspace');
+const { makeWorkspace, taskDir } = require('./workspace');
 const { runTask } = require('./runner');
 const api = require('./api');
 const generic = require('./adapters/generic');
@@ -42,14 +42,22 @@ app.post('/api/agents', (req, res) => {
   broadcastRaw({ type: 'agents' });
   res.json({ id });
 });
+app.put('/api/agents/:id', (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.delete('/api/agents/:id', (req, res) => { store.deleteAgent(req.params.id); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.get('/api/projects', (req, res) => res.json(store.listProjects()));
+app.post('/api/projects', (req, res) => res.json({ id: store.addProject(req.body || {}) }));
 app.post('/api/people', (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
 app.post('/api/people/:id/agents', (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
 
 app.post('/task', (req, res) => {
-  const id = store.createTask(req.body.text, req.body.project);
+  const owner = req.body.user || '操作者';
+  const project = req.body.project || '默认项目';
+  const id = store.createTask(req.body.text, project, owner);
   res.json({ id });
+  let dir = ROOT;
+  try { dir = taskDir(ROOT, owner, project, req.body.text, id); } catch (e) {}
   runTask(id, {
-    store, adapters, workspace,
+    store, adapters, workspace: { make: () => dir },
     makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: store.listAgents().map((a) => a.id), templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
