@@ -13,7 +13,8 @@ function roleMap(store) {
   const m = {};
   store.listAgents().forEach((a) => {
     let caps = []; try { caps = JSON.parse(a.caps); } catch (e) {}
-    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps };
+    let args = []; try { args = JSON.parse(a.args); } catch (e) {}
+    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command };
   });
   return m;
 }
@@ -51,6 +52,7 @@ function buildAll(store) {
     const tot = done + fail;
     return {
       id, name: r.label, type: id, dept: r.dept,
+      command: r.command, args: r.args,
       color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',
       task: cur ? cur.text : '—', taskId: cur ? cur.id : '',
@@ -92,6 +94,11 @@ function buildAll(store) {
       depts: Object.keys(deptSet), agentCount: Object.keys(agSet).length, taskCount: ts.length,
       tasks: ts.map((t) => t.id),
     };
+  });
+
+  // 合并 projects 表里的项目(含无任务的空项目)
+  store.listProjects().forEach((tp) => {
+    if (!projMap[tp.name]) projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [] });
   });
 
   const tasksVm = tasks.map((t) => ({ id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at) }));
