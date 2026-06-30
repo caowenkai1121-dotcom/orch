@@ -14,13 +14,19 @@ npm start              # 起 http://localhost:3000
 左侧看步骤状态变色，右侧看实时日志。
 
 > 真跑需要本机已登录 `claude` 和 `codex` CLI（`claude -p`、`codex exec` 无头模式）。
-> codex 较慢（约 20s/步），属正常。
+> codex 较慢（约 100s/步），属正常。
+
+> ⚠️ **安全**：为让 agent 无人值守自主改文件/跑命令，适配器用了
+> `claude --dangerously-skip-permissions` 和 `codex --dangerously-bypass-approvals-and-sandbox`，
+> 即**绕过所有权限检查、无沙箱**。这是"自主编排器"的固有代价:派下去的任务能对工作目录做任何事。
+> 只在你信任的工作目录/任务上用。
 
 ## 怎么运作
 
 - 一份 **plan**（步骤 + 依赖 + 派给谁）是核心。模板和 LLM 都只是生成 plan 的方式。
-- 引擎拓扑调度：无依赖的步骤并发跑，有依赖的串行，`loop` 步骤做 Codex↔Claude 改测循环。
-- 每步在独立 git worktree 里干活（非 git 仓回退共享目录）。
+- 引擎拓扑调度：无依赖的步骤并发跑，有依赖的串行，`loop` 步骤做 Codex↔Claude 改测循环（上游测试已过则自动跳过）。
+- 同一任务各步骤共享一个工作目录，顺序产物（dev→test→fix）天然可见。
+  （真验证发现 per-step worktree 会让下游看不到上游产物，故改共享；真正的并行隔离留作未来 opt-in。）
 
 ## 改 / 扩展
 
@@ -45,7 +51,7 @@ server.js     入口:express + ws,起服务
 runner.js     串起 出plan→执行→落库,事件实时广播
 planner.js    模板匹配 / 调 LLM 出 plan
 engine.js     调度 + 循环(核心)
-workspace.js  git worktree 隔离
+workspace.js  工作区(共享目录)
 store.js      SQLite 单文件
 adapters/     claude / codex / echo + cli.js(公共 spawn 封装)
 templates/    预设工作流 yaml
