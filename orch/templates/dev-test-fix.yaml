@@ -1,0 +1,22 @@
+match: ""        # 空串=兜底模板,任何任务都匹配(放最后)
+steps:
+  - id: dev
+    agent: claude
+    prompt: "实现以下需求,只改必要文件: {task}"
+    deps: []
+  - id: test
+    agent: codex
+    prompt: "为刚实现的功能写测试并运行,报告失败项"
+    deps: [dev]
+  - id: fixloop
+    type: loop
+    until: pass
+    max: 3
+    deps: [test]
+    body:
+      - id: fix
+        agent: claude
+        prompt: "根据测试失败修复: {prev}"
+      - id: retest
+        agent: codex
+        prompt: "重新运行测试"
