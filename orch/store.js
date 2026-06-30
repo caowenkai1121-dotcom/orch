@@ -5,7 +5,9 @@ function open(file) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS tasks(
       id INTEGER PRIMARY KEY, text TEXT, status TEXT, plan TEXT,
-      project TEXT, created_at TEXT, updated_at TEXT);
+      project TEXT, owner TEXT, created_at TEXT, updated_at TEXT);
+    CREATE TABLE IF NOT EXISTS projects(
+      id TEXT PRIMARY KEY, name TEXT, client TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS steps(
       task_id INTEGER, step_id TEXT, agent TEXT, status TEXT, output TEXT,
       PRIMARY KEY(task_id, step_id));
@@ -20,10 +22,10 @@ function open(file) {
       person_id TEXT, agent_id TEXT, PRIMARY KEY(person_id, agent_id));
   `);
   return {
-    createTask(text, project) {
+    createTask(text, project, owner) {
       const now = new Date().toISOString();
-      return db.prepare('INSERT INTO tasks(text,status,project,created_at,updated_at) VALUES(?,?,?,?,?)')
-        .run(text, 'pending', project || '默认项目', now, now).lastInsertRowid;
+      return db.prepare('INSERT INTO tasks(text,status,project,owner,created_at,updated_at) VALUES(?,?,?,?,?,?)')
+        .run(text, 'pending', project || '默认项目', owner || '操作者', now, now).lastInsertRowid;
     },
     setPlan(id, plan) {
       db.prepare('UPDATE tasks SET plan=? WHERE id=?').run(JSON.stringify(plan), id);
@@ -49,7 +51,7 @@ function open(file) {
       return t;
     },
     listTasks() {
-      return db.prepare('SELECT id,text,status,project,created_at,updated_at FROM tasks ORDER BY id DESC').all();
+      return db.prepare('SELECT id,text,status,project,owner,created_at,updated_at FROM tasks ORDER BY id DESC').all();
     },
     getLogs(taskId) {
       return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);
@@ -84,6 +86,21 @@ function open(file) {
       (ids || []).forEach((a) => ins.run(pid, a));
     },
     listPersonAgents(pid) { return db.prepare('SELECT agent_id FROM person_agents WHERE person_id=?').all(pid).map((r) => r.agent_id); },
+    updateAgent(id, d) {
+      db.prepare('UPDATE agents SET name=?,command=?,args=?,model=?,caps=?,color=?,avatar=?,dept=? WHERE id=?')
+        .run(d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', id);
+    },
+    deleteAgent(id) {
+      db.prepare('DELETE FROM agents WHERE id=?').run(id);
+      db.prepare('DELETE FROM person_agents WHERE agent_id=?').run(id);
+    },
+    addProject(d) {
+      const base = (String(d.name || 'proj').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proj');
+      const id = d.id || base + '-' + (db.prepare('SELECT COUNT(*) n FROM projects').get().n + 1);
+      db.prepare('INSERT OR REPLACE INTO projects(id,name,client,created_at) VALUES(?,?,?,?)').run(id, d.name || id, d.client || '', new Date().toISOString());
+      return id;
+    },
+    listProjects() { return db.prepare('SELECT * FROM projects').all(); },
     seed() {
       if (db.prepare('SELECT COUNT(*) n FROM agents').get().n === 0) {
         this.addAgent({ id: 'claude', name: 'Claude', command: 'claude', args: ['-p', '--dangerously-skip-permissions'], model: 'claude CLI', caps: ['代码生成', '重构', '单元测试'], color: '#7C6FD9', avatar: 'C', dept: 'dev' });
