@@ -16,7 +16,8 @@ async function runStep(step, ctx, prevOutput) {
 
 async function runLoop(step, ctx, prevOutput) {
   let last = { output: prevOutput || '', success: false };
-  for (let i = 0; i < step.max; i++) {
+  const max = step.max || 3; // LLM plan 可能没给 max,兜底 3
+  for (let i = 0; i < max; i++) {
     for (const body of step.body) {
       last = await runStep(body, ctx, last.output);
       if (!last.success) break; // 本轮某步失败,跳出去重来
@@ -39,18 +40,9 @@ async function runPlan(plan, ctx) {
     await Promise.all(wave.map(async (s) => {
       started.add(s.id);
       const prev = s.deps.length ? done[s.deps[0]]?.output : '';
-      if (s.type === 'loop') {
-        // 上游(如 test)已通过则跳过改测循环:没坏就不修
-        const depOk = s.deps.length && done[s.deps[0]] && done[s.deps[0]].success;
-        if (depOk) {
-          ctx.onStatus(s.id, 'done');
-          done[s.id] = { output: prev, success: true };
-        } else {
-          done[s.id] = await runLoop(s, ctx, prev);
-        }
-      } else {
-        done[s.id] = await runStep(s, ctx, prev);
-      }
+      // loop 至少跑一次 body(LLM 把"建→验"放 loop 时必须真跑);
+      // body 内某步失败则重试,until:pass 满足或到 max 停。
+      done[s.id] = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
     }));
   }
   return done;
