@@ -30,9 +30,11 @@ async function runTask(taskId, deps) {
   };
 
   try {
-    await runPlan(plan, ctx);
-    store.setTaskStatus(taskId, 'done');
-    emit(onEvent, taskId, null, 'task', 'done');
+    const done = await runPlan(plan, ctx);
+    // 顶层每步都成功才算 done(含 loop 步骤:跑到 max 仍未 pass 则 success=false)
+    const ok = plan.steps.every((s) => done[s.id] && done[s.id].success);
+    store.setTaskStatus(taskId, ok ? 'done' : 'failed');
+    emit(onEvent, taskId, null, 'task', ok ? 'done' : 'failed');
   } catch (e) {
     store.setTaskStatus(taskId, 'failed');
     emit(onEvent, taskId, null, 'task', 'failed: ' + e.message);
