@@ -1,16 +1,22 @@
-// 把 orch 真实数据(tasks/steps/logs)派生成 Maestro 前端需要的数据形状。全部真实,无假数据。
-// 真实域只有 claude/codex 两个 agent → 两个部门(开发/测试);项目=按 task.project 聚合;人员=操作者。
+// 把 orch 真实数据(tasks/steps/logs + agents/people 库)派生成 Maestro 前端数据形状。全部真实。
+// agent/部门/人员均来自 SQLite;项目=按 task.project 聚合。
 
-const ROLE = {
-  claude: { dept: 'dev', label: 'Claude', model: 'claude CLI', color: '#7C6FD9', av: 'C', caps: ['代码生成', '重构', '单元测试', '文档'] },
-  codex: { dept: 'qa', label: 'Codex', model: 'codex CLI', color: '#4F8BE8', av: 'X', caps: ['功能验证', '回归测试', '沙箱执行'] },
+const DEPT_META = {
+  dev: { name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能' },
+  qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
-const DEPT_DEFS = [
-  { id: 'dev', name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能', agent: 'claude' },
-  { id: 'qa', name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关', agent: 'codex' },
-];
 const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
 const stepSk = (s) => ({ running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
+
+// 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
+function roleMap(store) {
+  const m = {};
+  store.listAgents().forEach((a) => {
+    let caps = []; try { caps = JSON.parse(a.caps); } catch (e) {}
+    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps };
+  });
+  return m;
+}
 
 function rel(iso) {
   if (!iso) return '—';
@@ -25,6 +31,7 @@ function rel(iso) {
 function isToday(iso) { if (!iso) return false; const d = new Date(iso), n = new Date(); return d.toDateString() === n.toDateString(); }
 
 function buildAll(store) {
+  const ROLE = roleMap(store);
   const tasks = store.listTasks();             // 最新在前
   const steps = store.allSteps();
   const byTask = {}; steps.forEach((s) => { (byTask[s.task_id] = byTask[s.task_id] || []).push(s); });
@@ -53,15 +60,19 @@ function buildAll(store) {
     };
   });
 
+  // 部门:按 agent.dept 派生
+  const deptIds = [...new Set(Object.values(ROLE).map((r) => r.dept))];
   const boards = {};
-  const depts = DEPT_DEFS.map((d) => {
-    const ds = steps.filter((s) => s.agent === d.agent);
-    const card = (s) => ({ t: (taskById[s.task_id] ? taskById[s.task_id].text : ('任务 ' + s.task_id)).slice(0, 36), m: ROLE[d.agent].label + ' · ' + s.step_id });
+  const depts = deptIds.map((id) => {
+    const meta = DEPT_META[id] || { name: id, glyph: '·', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '' };
+    const myAgents = Object.keys(ROLE).filter((aid) => ROLE[aid].dept === id);
+    const ds = steps.filter((s) => myAgents.includes(s.agent));
+    const card = (s) => ({ t: (taskById[s.task_id] ? taskById[s.task_id].text : ('任务 ' + s.task_id)).slice(0, 36), m: (ROLE[s.agent] ? ROLE[s.agent].label : s.agent) + ' · ' + s.step_id });
     const done = ds.filter((s) => s.status === 'done');
     const fail = ds.filter((s) => s.status === 'failed');
-    boards[d.id] = { todo: [], doing: ds.filter((s) => s.status === 'running').map(card), done: done.map(card) };
+    boards[id] = { todo: [], doing: ds.filter((s) => s.status === 'running').map(card), done: done.map(card) };
     const tot = done.length + fail.length;
-    return { ...d, lead: '—', tasks: ds.filter((s) => s.status === 'running').length, doneWeek: done.length, successAvg: tot ? Math.round(done.length / tot * 100) + '%' : '—' };
+    return { id, agent: myAgents[0], ...meta, lead: '—', tasks: ds.filter((s) => s.status === 'running').length, doneWeek: done.length, successAvg: tot ? Math.round(done.length / tot * 100) + '%' : '—' };
   });
 
   // 项目:按 task.project 聚合
@@ -84,12 +95,13 @@ function buildAll(store) {
 
   const tasksVm = tasks.map((t) => ({ id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at) }));
 
-  // 人员:真实操作者(从环境取),指标由真实数据派生
-  const op = process.env.USERNAME || process.env.USER || 'operator';
+  // 人员:来自 DB(含分配的 agent)
   const projN = Object.keys(projMap).length;
-  const agN = new Set(steps.map((s) => s.agent).filter((a) => ROLE[a])).size;
   const lastTs = tasks.length ? tasks[0].updated_at : null;
-  const people = [{ name: op, av: op.slice(0, 1).toUpperCase(), color: '#E0922E', role: '操作者', email: op + '@local', projects: projN, agents: agN, last: rel(lastTs) }];
+  const people = store.listPeople().map((p) => {
+    const assigned = store.listPersonAgents(p.id);
+    return { id: p.id, name: p.name, av: p.av, color: p.color, role: p.role, email: p.email, projects: projN, agents: assigned.length, assignedIds: assigned, last: rel(lastTs) };
+  });
 
   return {
     agents, depts, boards, projects, tasks: tasksVm, people,
@@ -105,6 +117,7 @@ function buildAll(store) {
 
 // 任务详情接力链(RELAY 形状,原始 sk,前端再映射)
 function relay(store, id) {
+  const ROLE = roleMap(store);
   const t = store.getTask(id);
   if (!t) return [];
   const logs = store.getLogs(id);
@@ -117,6 +130,7 @@ function relay(store, id) {
 
 // 编排计划(PLAN 形状)
 function plan(store, id) {
+  const ROLE = roleMap(store);
   const t = store.getTask(id);
   if (!t) return [];
   let p = null; try { p = JSON.parse(t.plan); } catch (e) {}
@@ -127,13 +141,12 @@ function plan(store, id) {
     out.push({ n: ++n, title: s.id, agent: r.label, avatar: r.av, color: r.color, sk: 'queued', eta: '', dep: dep || (s.deps && s.deps.length ? '依赖 ' + s.deps.join(',') : '') });
   };
   p.steps.forEach((s) => { if (s.type === 'loop') { (s.body || []).forEach((b) => push(b, '回退环')); } else push(s); });
-  // 用真实 step 状态覆盖 sk
   (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) e.sk = stepSk(st.status); });
   return out;
 }
 
 function agentLog(store, agentId, limit) {
-  return store.recentLogsForAgent(agentId, limit || 40).map((r) => '[' + r.task_id + '·' + r.step_id + '] ' + r.line);
+  return store.recentLogsForAgent(agentId, limit || 40).map((r) => '[T' + r.task_id + '·' + r.step_id + '] ' + r.line);
 }
 
-module.exports = { buildAll, relay, plan, agentLog, ROLE };
+module.exports = { buildAll, relay, plan, agentLog, roleMap };

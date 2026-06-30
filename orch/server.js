@@ -6,13 +6,19 @@ const { makePlan } = require('./planner');
 const { makeWorkspace } = require('./workspace');
 const { runTask } = require('./runner');
 const api = require('./api');
+const generic = require('./adapters/generic');
 
 const ROOT = process.cwd();
 const store = open(path.join(__dirname, 'orch.db'));
-const adapters = {
-  claude: require('./adapters/claude'),
-  codex: require('./adapters/codex'),
-};
+store.seed();
+
+// 适配器注册表从 DB 的 agent 定义构建,新增 agent 后重建
+function buildAdapters() {
+  const m = { echo: require('./adapters/echo') };
+  store.listAgents().forEach((a) => { m[a.id] = generic.make(a); });
+  return m;
+}
+let adapters = buildAdapters();
 const workspace = makeWorkspace(ROOT);
 const templatesDir = path.join(__dirname, 'templates');
 
@@ -30,12 +36,21 @@ app.get('/api/relay/:id', (req, res) => res.json(api.relay(store, Number(req.par
 app.get('/api/plan/:id', (req, res) => res.json(api.plan(store, Number(req.params.id))));
 app.get('/api/agentlog/:id', (req, res) => res.json(api.agentLog(store, req.params.id)));
 
+app.post('/api/agents', (req, res) => {
+  const id = store.addAgent(req.body || {});
+  adapters = buildAdapters();
+  broadcastRaw({ type: 'agents' });
+  res.json({ id });
+});
+app.post('/api/people', (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
+app.post('/api/people/:id/agents', (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
+
 app.post('/task', (req, res) => {
   const id = store.createTask(req.body.text, req.body.project);
   res.json({ id });
   runTask(id, {
     store, adapters, workspace,
-    makePlan: (text) => makePlan(text, { templatesDir, claude: adapters.claude }),
+    makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: store.listAgents().map((a) => a.id), templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
 });
@@ -53,7 +68,7 @@ function toActivity(ev) {
   const { taskId, stepId, type, data } = ev;
   const t = store.getTask(taskId);
   const st = t && t.steps ? t.steps.find((x) => x.step_id === stepId) : null;
-  const role = st && api.ROLE[st.agent];
+  const role = st && api.roleMap(store)[st.agent];
   const who = role ? role.label : '编排器';
   const c = role ? role.color : '#1A1814';
   const time = hhmmss();
