@@ -48,8 +48,11 @@ function validate(plan, agentIds) {
 async function fromLLM(text, claude, agentIds) {
   const prompt = `把下面的开发任务拆成 JSON,字段 steps,每步 {id,agent,prompt,deps}。`
     + `agent 只能取这些 id 之一: ${agentIds.join(', ')}。`
-    + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示开发↔验证改测循环。`
-    + `多个无依赖的步骤会并行。只输出 JSON,不要解释。任务: ${text}`;
+    + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示"实现→验证,失败重试"。`
+    + `多个无依赖的步骤会并行。`
+    + `要求:每步必须自包含、可直接执行,不要假设存在外部设计文档/接口/数据——需要就让该步自己创建(如先建 mock 数据/页面);`
+    + `每步 prompt 明确产出物(创建哪些文件),让 agent 直接动手做完,不要反问。`
+    + `只输出 JSON,不要解释。任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
   const plan = extractJson(output);
   plan.task = text;
