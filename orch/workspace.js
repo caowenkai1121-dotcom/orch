@@ -1,27 +1,10 @@
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-
-function isGitRepo(dir) {
-  return fs.existsSync(path.join(dir, '.git'));
-}
-
+// 共享工作区:同一任务所有步骤共用一个目录,顺序依赖(dev→test→fix)天然可见。
+// 真验证发现 per-step git worktree 会让下游步骤看不到上游产物,且 codex 强制要 git 仓内运行;
+// 故默认共享。真正的并行隔离(每个独立分支一个 worktree + 汇合时 merge)留作未来 opt-in。
 function makeWorkspace(rootRepo) {
-  const git = isGitRepo(rootRepo);
   return {
-    make(stepId) {
-      if (!git) return rootRepo; // 回退:共享目录
-      const dir = path.join(rootRepo, 'worktrees', stepId);
-      const branch = `orch/${stepId}`;
-      if (!fs.existsSync(dir)) {
-        execSync(`git worktree add -B ${branch} "${dir}"`, { cwd: rootRepo });
-      }
-      return dir;
-    },
-    // ponytail: 顺序 merge,无冲突解决;冲突时抛错由上层提示人工处理。
-    merge(stepId) {
-      if (!git) return;
-      execSync(`git merge --no-edit orch/${stepId}`, { cwd: rootRepo });
+    make() {
+      return rootRepo;
     },
   };
 }
