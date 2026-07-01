@@ -755,6 +755,14 @@
           <option value="container">容器(仅自定义agent)</option>
         </select>
       </div>
+      <div style="margin-top:12px;font-size:13px;">
+        <div style="color:#8A857C;margin-bottom:6px;">用哪些 Agent(不选=自动/全部)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          <sc-for list="{{ agents }}" as="a" hint-placeholder-count="2"><label style="display:flex;align-items:center;gap:6px;border:1px solid #ECEAE4;border-radius:7px;padding:4px 9px;cursor:pointer;"><input type="checkbox" class="nt-agent" value="{{ a.id }}">{{ a.name }}</label></sc-for>
+        </div>
+        <input id="nt-orch" placeholder="文字编排(可选): 如 claude 开发、codex 测试" style="width:100%;margin-top:8px;height:32px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:12.5px;box-sizing:border-box;">
+        <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;"><input type="checkbox" id="nt-refine" checked>智能细化需求(先扩写成高质量 brief 再开发)</label>
+      </div>
       <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
         <button onClick="{{ submitTask }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">下发</button>

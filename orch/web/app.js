@@ -561,7 +561,10 @@ class Maestro extends MaestroBase {
     const approve = (document.getElementById('nt-approve') || {}).checked ? 1 : 0;
     const ask = (document.getElementById('nt-ask') || {}).checked ? 1 : 0;
     const isolate = (document.getElementById('nt-isolate') || {}).value || 'none';
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate }) })
+    const agents = [...document.querySelectorAll('.nt-agent:checked')].map((c) => c.value);
+    const orchestration = (document.getElementById('nt-orch') || {}).value || '';
+    const refine = (document.getElementById('nt-refine') || {}).checked ? 1 : 0;
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {
