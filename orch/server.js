@@ -13,6 +13,32 @@ const ROOT = process.cwd();
 const store = open(path.join(__dirname, 'orch.db'));
 store.seed();
 
+// 扫描 data/ 目录,把历史产出(DB 里没有的)导入为已完成任务 → 换库/改代码后仍能看到以前的项目
+function importDataDir() {
+  const dataRoot = path.join(ROOT, 'data');
+  if (!fs.existsSync(dataRoot)) return;
+  const dirs = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && e.name !== '.git' && e.name !== 'node_modules').map((e) => e.name); } catch (e) { return []; } };
+  const seen = new Set(store.listTasks().map((t) => t.dir).filter(Boolean).map((d) => path.resolve(d)));
+  let n = 0;
+  for (const owner of dirs(dataRoot)) {
+    for (const project of dirs(path.join(dataRoot, owner))) {
+      for (const folder of dirs(path.join(dataRoot, owner, project))) {
+        const full = path.resolve(dataRoot, owner, project, folder);
+        if (seen.has(full)) continue;
+        if (!listFilesIn(full).length) continue; // 空目录跳过
+        const text = folder.replace(/-\d+$/, '') || folder;
+        const id = store.createTask(text, project, owner, {});
+        store.setTaskStatus(id, 'done');
+        store.setTaskDir(id, full);
+        store.setStep(id, 'imported', 'claude', 'done', '历史产出(从 data 目录导入)');
+        n++;
+      }
+    }
+  }
+  if (n) console.log('导入历史项目产出:', n, '个任务');
+}
+importDataDir();
+
 // 适配器注册表从 DB 的 agent 定义构建,新增 agent 后重建
 function buildAdapters() {
   const m = { echo: require('./adapters/echo') };
