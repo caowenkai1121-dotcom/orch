@@ -26,34 +26,79 @@ const workspace = makeWorkspace(ROOT);
 const templatesDir = path.join(__dirname, 'templates');
 
 const app = express();
+const auth = require('./auth');
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'web')));
 
-app.get('/tasks', (req, res) => res.json(store.listTasks()));
-app.get('/task/:id', (req, res) => res.json(store.getTask(Number(req.params.id))));
-app.get('/task/:id/logs', (req, res) => res.json(store.getLogs(Number(req.params.id))));
+// 会话:每请求解析当前用户
+app.use((req, res, next) => { req.user = auth.userFromReq(store, req); next(); });
+const pubUser = (u) => ({ id: u.id, name: u.name, av: u.av, color: u.color, role: u.role, admin: !!u.admin });
+app.post('/login', (req, res) => {
+  const r = auth.login(store, (req.body || {}).name, (req.body || {}).password);
+  if (!r) return res.status(401).json({ error: '账号或密码错误' });
+  res.setHeader('Set-Cookie', 'orch_sess=' + r.tok + '; HttpOnly; Path=/; SameSite=Lax');
+  res.json({ ok: true, user: pubUser(r.user) });
+});
+app.post('/logout', (req, res) => { auth.logout(auth.tokenFromReq(req)); res.setHeader('Set-Cookie', 'orch_sess=; HttpOnly; Path=/; Max-Age=0'); res.json({ ok: true }); });
+app.get('/api/me', (req, res) => req.user ? res.json(pubUser(req.user)) : res.status(401).json({ error: 'unauthorized' }));
+app.post('/api/me/password', (req, res) => { if (!req.user) return res.status(401).json({ error: 'unauthorized' }); store.setPassword(req.user.id, (req.body || {}).password || 'admin'); res.json({ ok: true }); });
+// 鉴权闸:此后所有接口都要求登录
+app.use((req, res, next) => { if (req.user) return next(); res.status(401).json({ error: 'unauthorized' }); });
 
-// Maestro 前端的真实数据聚合
-app.get('/api/all', (req, res) => res.json({ ...api.buildAll(store), activity: activity.slice(0, 18) }));
-app.get('/api/relay/:id', (req, res) => res.json(api.relay(store, Number(req.params.id))));
-app.get('/api/plan/:id', (req, res) => res.json(api.plan(store, Number(req.params.id))));
+// 权限助手
+const owns = (u, t) => !!(u && t && (u.admin || t.owner === u.name));
+function visibleProjects(u) { // null=全部可见(管理员)
+  if (!u || u.admin) return null;
+  const set = new Set();
+  store.listTasks().forEach((t) => { if (t.owner === u.name) set.add(t.project || '默认项目'); });
+  store.listGrants().forEach((g) => { if (g.user_id === u.id) set.add(g.project); });
+  store.listProjects().forEach((p) => { if (p.owner === u.id) set.add(p.name); });
+  return set;
+}
+const canSeeTask = (u, t) => { if (!u || !t) return false; if (u.admin || t.owner === u.name) return true; const s = visibleProjects(u); return !!(s && s.has(t.project || '默认项目')); };
+
+app.get('/tasks', (req, res) => res.json(store.listTasks()));
+app.get('/task/:id', (req, res) => { const t = store.getTask(Number(req.params.id)); if (!canSeeTask(req.user, t)) return res.status(403).json({ error: '无权限' }); res.json(t); });
+app.get('/task/:id/logs', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(store.getLogs(Number(req.params.id))); });
+
+// Maestro 前端的真实数据聚合(按当前用户过滤)
+app.get('/api/all', (req, res) => res.json({ ...api.buildAll(store, req.user), activity: activity.slice(0, 18) }));
+app.get('/api/relay/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.relay(store, Number(req.params.id))); });
+app.get('/api/plan/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.plan(store, Number(req.params.id))); });
 app.get('/api/agentlog/:id', (req, res) => res.json(api.agentLog(store, req.params.id)));
 
-app.post('/api/agents', (req, res) => {
+const adminOnly = (req, res, next) => req.user.admin ? next() : res.status(403).json({ error: '需管理员' });
+app.post('/api/agents', adminOnly, (req, res) => {
   const id = store.addAgent(req.body || {});
   adapters = buildAdapters();
   broadcastRaw({ type: 'agents' });
   res.json({ id });
 });
-app.put('/api/agents/:id', (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
-app.delete('/api/agents/:id', (req, res) => { store.deleteAgent(req.params.id); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.put('/api/agents/:id', adminOnly, (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.delete('/api/agents/:id', adminOnly, (req, res) => { store.deleteAgent(req.params.id); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.get('/api/projects', (req, res) => res.json(store.listProjects()));
-app.post('/api/projects', (req, res) => res.json({ id: store.addProject(req.body || {}) }));
-app.post('/api/people', (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
-app.post('/api/people/:id/agents', (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
+app.post('/api/projects', (req, res) => res.json({ id: store.addProject({ ...(req.body || {}), owner: req.user.id }) }));
+app.post('/api/people', adminOnly, (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
+app.post('/api/people/:id/agents', adminOnly, (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
+
+// #3 部门 CRUD + 为部门设置 agent
+app.post('/api/depts', adminOnly, (req, res) => { const id = store.addDept(req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ id }); });
+app.delete('/api/depts/:id', adminOnly, (req, res) => { store.deleteDept(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.post('/api/depts/:id/agents', adminOnly, (req, res) => { ((req.body || {}).agentIds || []).forEach((a) => store.setAgentDept(a, req.params.id)); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+
+// #4 项目授权:项目 owner(有任务在其中)或管理员可授权
+app.post('/api/grant', (req, res) => {
+  const { project, userId, on } = req.body || {};
+  if (!project || !userId) return res.json({ ok: false });
+  const mine = store.listTasks().some((t) => (t.project || '默认项目') === project && t.owner === req.user.name);
+  if (!req.user.admin && !mine) return res.status(403).json({ ok: false, error: '需项目所有者或管理员' });
+  if (on === false) store.revokeProject(project, userId); else store.grantProject(project, userId);
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true });
+});
 
 app.post('/task', (req, res) => {
-  const owner = req.body.user || '操作者';
+  const owner = req.user.name; // 归属=当前登录用户,忽略客户端传值
   const project = req.body.project || '默认项目';
   const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate, ask: req.body.ask });
   const ws = taskWorkspace(store.getTask(id));
@@ -83,6 +128,7 @@ function taskWorkspace(t) {
 app.post('/task/:id/answer', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   const stepId = (req.body && req.body.stepId) || t.blocked_step;
   const answer = (req.body && req.body.answer) || '';
   res.json({ ok: true });
@@ -92,6 +138,7 @@ app.post('/task/:id/answer', (req, res) => {
 // 打开产出目录(系统文件管理器)
 app.post('/task/:id/open', (req, res) => {
   const t = store.getTask(Number(req.params.id)); const dir = t && t.dir;
+  if (!canSeeTask(req.user, t)) return res.status(403).json({ ok: false });
   if (dir) { try { const cmd = process.platform === 'win32' ? 'explorer' : (process.platform === 'darwin' ? 'open' : 'xdg-open'); require('child_process').spawn(cmd, [dir], { detached: true, stdio: 'ignore' }); } catch (e) {} }
   res.json({ ok: !!dir });
 });
@@ -99,6 +146,7 @@ app.post('/task/:id/open', (req, res) => {
 // 列产出文件
 app.get('/api/files/:id', (req, res) => {
   const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.status(403).json([]);
   if (!t || !t.dir) return res.json([]);
   const out = [];
   const walk = (d, rel) => {
@@ -135,6 +183,7 @@ function listFilesIn(dir) {
 app.post('/api/apps', (req, res) => {
   const taskId = Number(req.body && req.body.taskId); const t = store.getTask(taskId);
   if (!t || !t.dir) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   let entry = req.body && req.body.entry;
   if (!entry) { const fl = listFilesIn(t.dir); entry = fl.find((f) => /(^|\/)index\.html$/i.test(f)) || fl.find((f) => /\.html$/i.test(f)) || fl[0]; }
   if (!entry) return res.json({ ok: false, error: '无可发布入口' });
@@ -142,15 +191,20 @@ app.post('/api/apps', (req, res) => {
   broadcastRaw({ type: 'apps' });
   res.json({ id: appId, entry });
 });
-app.delete('/api/apps/:id', (req, res) => { store.deleteApp(Number(req.params.id)); broadcastRaw({ type: 'apps' }); res.json({ ok: true }); });
+app.delete('/api/apps/:id', (req, res) => {
+  const a = store.listApps().find((x) => x.id === Number(req.params.id));
+  if (a && !owns(req.user, store.getTask(a.task_id))) return res.status(403).json({ ok: false });
+  store.deleteApp(Number(req.params.id)); broadcastRaw({ type: 'apps' }); res.json({ ok: true });
+});
 
 // #2 继续开发:复用原任务产出目录,在已有文件上扩展
 app.post('/task/:id/continue', (req, res) => {
   const pid = Number(req.params.id); const p = store.getTask(pid);
   const text = ((req.body && req.body.text) || '').trim();
   if (!p || !text) return res.json({ ok: false });
+  if (!owns(req.user, p)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   const context = '【继续开发已有项目】当前工作目录已有之前产出的文件,请先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
-  const id = store.createTask(text, p.project, p.owner, { isolate: 'none', parent: pid, approve: p.approve, ask: p.ask });
+  const id = store.createTask(text, p.project, req.user.name, { isolate: 'none', parent: pid, approve: p.approve, ask: p.ask });
   const dir = p.dir || ROOT;
   store.setTaskDir(id, dir);
   res.json({ id });
@@ -164,6 +218,7 @@ app.post('/task/:id/continue', (req, res) => {
 // 静态服务产出文件(供预览);防目录穿越
 app.get('/output/:id/*splat', (req, res) => {
   const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.sendStatus(403);
   if (!t || !t.dir) return res.sendStatus(404);
   const rel = [].concat(req.params.splat || []).join('/'); // Express5 命名通配
   const full = path.resolve(t.dir, rel);
@@ -175,6 +230,7 @@ app.get('/output/:id/*splat', (req, res) => {
 app.post('/task/:id/approve', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   let plan = req.body && req.body.plan;
   if (!plan) { try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; } }
   res.json({ ok: true });
@@ -183,7 +239,9 @@ app.post('/task/:id/approve', (req, res) => {
 
 const { execSync } = require('child_process');
 app.post('/task/:id/cancel', (req, res) => {
-  const id = Number(req.params.id); const rec = runs.get(id);
+  const id = Number(req.params.id);
+  if (!owns(req.user, store.getTask(id))) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  const rec = runs.get(id);
   if (rec) {
     rec.cancelled = true;
     // 只杀仍存活的子进程,且按 PID 定向(绝不按镜像名):避免 PID 被回收后误杀无关进程(极端下可能是别的 claude 会话)
