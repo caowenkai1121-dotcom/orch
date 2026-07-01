@@ -351,7 +351,14 @@ class Maestro extends MaestroBase {
 
   renderVals() {
     // 渲染前把基类用到的 RELAY(当前任务) / PLAN(活动任务) 同步成真实数据
-    this.RELAY = (typeof this.state.taskId === 'number' && this.live.relay[this.state.taskId]) || [];
+    const _tid = this.state.taskId;
+    const _tRec = typeof _tid === 'number' && (this.TASKS || []).find((t) => t.id === _tid);
+    if (_tRec && _tRec.sk === 'awaiting') { // 审批态:任务详情用计划预览代替接力记录
+      if (!this.live.plan[_tid]) this.fetchPlan(_tid);
+      this.RELAY = (this.live.plan[_tid] || []).map((p) => ({ who: p.agent, avatar: p.avatar, color: p.color, title: p.title, desc: '待执行' + (p.dep ? (' · ' + p.dep) : ''), time: '', dur: '', sk: 'queued', back: false, hasCode: false, hasReport: false, barPct: '0%', barColor: '#2E9E5B' }));
+    } else {
+      this.RELAY = (typeof _tid === 'number' && this.live.relay[_tid]) || [];
+    }
     const activeId = this.live.activeId != null ? this.live.activeId : (this.TASKS[0] && this.TASKS[0].id);
     this.PLAN = (activeId != null && this.live.plan[activeId]) || [];
     const v = super.renderVals();
@@ -396,6 +403,7 @@ class Maestro extends MaestroBase {
     v.naArgs = ea ? (Array.isArray(ea.args) ? ea.args.join(' ') : '') : '';
     v.naModel = ea && ea.model && ea.model !== '—' ? ea.model : '';
     v.naCaps = ea && ea.caps ? ea.caps.join(',') : '';
+    v.naImage = ea && ea.image ? ea.image : '';
 
     // —— T6: 项目 + 全局搜索 ——
     v.isSearch = this.state.screen === 'search';
@@ -424,6 +432,8 @@ class Maestro extends MaestroBase {
     v.costToday = '$' + ((this.live.usage && this.live.usage.cost) || 0).toFixed(3);
     const curT = typeof this.state.taskId === 'number' && this.TASKS.find((t) => t.id === this.state.taskId);
     v.canCancel = !!(curT && curT.sk === 'working');
+    v.canApprove = !!(curT && curT.sk === 'awaiting');
+    v.approveTask = () => this.approveTask();
     v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok') : '—';
     return v;
   }
@@ -437,6 +447,11 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId;
     if (typeof id !== 'number') return;
     fetch('/task/' + id + '/cancel', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
+  }
+  approveTask() {
+    const id = this.state.taskId;
+    if (typeof id !== 'number') return;
+    fetch('/task/' + id + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(() => this.fetchAll()).catch(() => {});
   }
 
   todayStr() {
@@ -513,14 +528,16 @@ class Maestro extends MaestroBase {
     const modeEl = document.querySelector('input[name="nt-mode"]:checked');
     const mode = modeEl ? modeEl.value : 'llm';
     const user = this.currentName();
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user }) })
+    const approve = (document.getElementById('nt-approve') || {}).checked ? 1 : 0;
+    const isolate = (document.getElementById('nt-isolate') || {}).value || 'none';
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, isolate }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {
     const g = (id) => (document.getElementById(id) || {}).value || '';
     const name = g('na-name'), command = g('na-cmd');
     if (!name.trim() || !command.trim()) return;
-    const body = { name: name.trim(), command: command.trim(), args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean) };
+    const body = { name: name.trim(), command: command.trim(), args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image') };
     const ea = this.state.editAgent;
     if (ea) { body.color = ea.color; body.avatar = ea.avatar; body.dept = ea.dept; }
     fetch(ea ? '/api/agents/' + ea.id : '/api/agents', { method: ea ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
