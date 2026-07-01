@@ -1,4 +1,7 @@
 const Database = require('better-sqlite3');
+const crypto = require('crypto');
+// ponytail: sha256 固定盐,localhost 单机够用;真联网就换 scrypt+每人盐
+const hashPw = (pw) => crypto.createHash('sha256').update('orch:' + (pw || '')).digest('hex');
 
 function open(file) {
   const db = new Database(file);
@@ -22,15 +25,24 @@ function open(file) {
       model TEXT, caps TEXT, color TEXT, avatar TEXT, dept TEXT,
       pricing TEXT, image TEXT);
     CREATE TABLE IF NOT EXISTS people(
-      id TEXT PRIMARY KEY, name TEXT, email TEXT, role TEXT, color TEXT, av TEXT);
+      id TEXT PRIMARY KEY, name TEXT, email TEXT, role TEXT, color TEXT, av TEXT, password TEXT, admin INTEGER);
     CREATE TABLE IF NOT EXISTS person_agents(
       person_id TEXT, agent_id TEXT, PRIMARY KEY(person_id, agent_id));
+    CREATE TABLE IF NOT EXISTS departments(
+      id TEXT PRIMARY KEY, name TEXT, glyph TEXT, color TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS project_grants(
+      project TEXT, user_id TEXT, PRIMARY KEY(project, user_id));
     CREATE TABLE IF NOT EXISTS events(
       id INTEGER PRIMARY KEY, task_id INTEGER, ts TEXT, type TEXT, data TEXT);
     CREATE TABLE IF NOT EXISTS usage(
       id INTEGER PRIMARY KEY, task_id INTEGER, step_id TEXT, agent TEXT,
       input_tokens INTEGER, output_tokens INTEGER, cost REAL, ts TEXT);
   `);
+  // 迁移:给旧库补列
+  const ensureCol = (t, c, type) => { const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r) => r.name); if (!cols.includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${type}`); };
+  ensureCol('people', 'password', 'TEXT');
+  ensureCol('people', 'admin', 'INTEGER');
+  ensureCol('projects', 'owner', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
@@ -101,12 +113,28 @@ function open(file) {
       return id;
     },
     listPeople() { return db.prepare('SELECT * FROM people').all(); },
+    getPerson(id) { return db.prepare('SELECT * FROM people WHERE id=?').get(id); },
     addPerson(d) {
       const id = d.id || 'p-' + (db.prepare('SELECT COUNT(*) n FROM people').get().n + 1);
-      db.prepare('INSERT OR REPLACE INTO people(id,name,email,role,color,av) VALUES(?,?,?,?,?,?)')
-        .run(id, d.name || id, d.email || '', d.role || '成员', d.color || '#E0922E', (d.name || '人').slice(0, 1).toUpperCase());
+      db.prepare('INSERT OR REPLACE INTO people(id,name,email,role,color,av,password,admin) VALUES(?,?,?,?,?,?,?,?)')
+        .run(id, d.name || id, d.email || '', d.role || '成员', d.color || '#E0922E', (d.name || '人').slice(0, 1).toUpperCase(), hashPw(d.password || 'admin'), d.admin ? 1 : 0);
       return id;
     },
+    setPassword(id, pw) { db.prepare('UPDATE people SET password=? WHERE id=?').run(hashPw(pw), id); },
+    verifyLogin(name, pw) { const p = db.prepare('SELECT * FROM people WHERE name=?').get(name); return (p && p.password === hashPw(pw)) ? p : null; },
+    // 部门
+    listDepts() { return db.prepare('SELECT * FROM departments ORDER BY created_at').all(); },
+    addDept(d) {
+      const id = d.id || (String(d.name || 'dept').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'dept') + '-' + (db.prepare('SELECT COUNT(*) n FROM departments').get().n + 1);
+      db.prepare('INSERT OR REPLACE INTO departments(id,name,glyph,color,created_at) VALUES(?,?,?,?,?)').run(id, d.name || id, d.glyph || '·', d.color || '#7C6FD9', new Date().toISOString());
+      return id;
+    },
+    deleteDept(id) { db.prepare('DELETE FROM departments WHERE id=?').run(id); },
+    // 项目授权
+    grantProject(project, userId) { db.prepare('INSERT OR IGNORE INTO project_grants(project,user_id) VALUES(?,?)').run(project, userId); },
+    revokeProject(project, userId) { db.prepare('DELETE FROM project_grants WHERE project=? AND user_id=?').run(project, userId); },
+    listGrants() { return db.prepare('SELECT * FROM project_grants').all(); },
+    grantsFor(project) { return db.prepare('SELECT user_id FROM project_grants WHERE project=?').all(project).map((r) => r.user_id); },
     setPersonAgents(pid, ids) {
       db.prepare('DELETE FROM person_agents WHERE person_id=?').run(pid);
       const ins = db.prepare('INSERT OR IGNORE INTO person_agents(person_id,agent_id) VALUES(?,?)');
@@ -121,10 +149,11 @@ function open(file) {
       db.prepare('DELETE FROM agents WHERE id=?').run(id);
       db.prepare('DELETE FROM person_agents WHERE agent_id=?').run(id);
     },
+    setAgentDept(agentId, deptId) { db.prepare('UPDATE agents SET dept=? WHERE id=?').run(deptId, agentId); },
     addProject(d) {
       const base = (String(d.name || 'proj').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proj');
       const id = d.id || base + '-' + (db.prepare('SELECT COUNT(*) n FROM projects').get().n + 1);
-      db.prepare('INSERT OR REPLACE INTO projects(id,name,client,created_at) VALUES(?,?,?,?)').run(id, d.name || id, d.client || '', new Date().toISOString());
+      db.prepare('INSERT OR REPLACE INTO projects(id,name,client,created_at,owner) VALUES(?,?,?,?,?)').run(id, d.name || id, d.client || '', new Date().toISOString(), d.owner || null);
       return id;
     },
     listProjects() { return db.prepare('SELECT * FROM projects').all(); },
@@ -135,7 +164,22 @@ function open(file) {
       }
       if (db.prepare('SELECT COUNT(*) n FROM people').get().n === 0) {
         const op = process.env.USERNAME || process.env.USER || 'operator';
-        this.addPerson({ id: 'op', name: op, role: '操作者', email: op + '@local' });
+        this.addPerson({ id: 'op', name: op, role: '操作者', email: op + '@local', password: 'admin', admin: 1 });
+      }
+      // 保证有 admin/admin 账号(登录提示一致)
+      if (!db.prepare("SELECT 1 FROM people WHERE name='admin'").get()) {
+        this.addPerson({ id: 'admin', name: 'admin', role: '管理员', email: 'admin@local', password: 'admin', admin: 1 });
+      }
+      // 部门 seed
+      if (db.prepare('SELECT COUNT(*) n FROM departments').get().n === 0) {
+        this.addDept({ id: 'dev', name: '开发部', glyph: '</>', color: '#7C6FD9' });
+        this.addDept({ id: 'qa', name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8' });
+      }
+      // 迁移回填:旧库 people 无密码/admin
+      db.prepare("UPDATE people SET password=? WHERE password IS NULL").run(hashPw('admin'));
+      if (db.prepare('SELECT COUNT(*) n FROM people WHERE admin=1').get().n === 0) {
+        const first = db.prepare('SELECT id FROM people ORDER BY rowid LIMIT 1').get();
+        if (first) db.prepare('UPDATE people SET admin=1 WHERE id=?').run(first.id);
       }
     },
     db,
