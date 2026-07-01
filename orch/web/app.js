@@ -315,6 +315,45 @@ class MaestroBase extends RT.Component {
 }
 
 
+// —— 迷你 Markdown 渲染(零依赖,够用) ——
+function mdEsc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function mdInline(s) {
+  return mdEsc(s)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+}
+function md2html(md) {
+  const lines = String(md).replace(/\r\n/g, '\n').split('\n');
+  let html = '', inCode = false, codeBuf = [], listType = null;
+  const closeList = () => { if (listType) { html += '</' + listType + '>'; listType = null; } };
+  for (let i = 0; i < lines.length; i++) {
+    const ln = lines[i];
+    if (/^```/.test(ln)) { if (inCode) { html += '<pre><code>' + mdEsc(codeBuf.join('\n')) + '</code></pre>'; codeBuf = []; inCode = false; } else { closeList(); inCode = true; } continue; }
+    if (inCode) { codeBuf.push(ln); continue; }
+    if (/^\s*$/.test(ln)) { closeList(); continue; }
+    let m;
+    if ((m = ln.match(/^(#{1,6})\s+(.*)/))) { closeList(); html += '<h' + m[1].length + '>' + mdInline(m[2]) + '</h' + m[1].length + '>'; continue; }
+    if (/^\s*[-*+]\s+/.test(ln)) { if (listType !== 'ul') { closeList(); html += '<ul>'; listType = 'ul'; } html += '<li>' + mdInline(ln.replace(/^\s*[-*+]\s+/, '')) + '</li>'; continue; }
+    if (/^\s*\d+\.\s+/.test(ln)) { if (listType !== 'ol') { closeList(); html += '<ol>'; listType = 'ol'; } html += '<li>' + mdInline(ln.replace(/^\s*\d+\.\s+/, '')) + '</li>'; continue; }
+    if (/^>\s?/.test(ln)) { closeList(); html += '<blockquote>' + mdInline(ln.replace(/^>\s?/, '')) + '</blockquote>'; continue; }
+    if (/^(-{3,}|\*{3,})$/.test(ln)) { closeList(); html += '<hr>'; continue; }
+    closeList(); html += '<p>' + mdInline(ln) + '</p>';
+  }
+  if (inCode) html += '<pre><code>' + mdEsc(codeBuf.join('\n')) + '</code></pre>';
+  closeList();
+  return html;
+}
+function mdDoc(md) {
+  return '<!doctype html><html><head><meta charset="utf-8"><style>'
+    + 'body{font:14px/1.7 -apple-system,system-ui,"Segoe UI",sans-serif;color:#2A2722;padding:22px 26px;max-width:820px;margin:0 auto;}'
+    + 'h1,h2,h3,h4{line-height:1.3;margin:1.2em 0 .5em;}h1{font-size:1.7em;border-bottom:1px solid #eee;padding-bottom:.3em;}h2{font-size:1.4em;}h3{font-size:1.15em;}'
+    + 'pre{background:#F6F5F2;padding:12px 14px;border-radius:8px;overflow:auto;}code{background:#F0EEE9;padding:1px 5px;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:.9em;}pre code{background:none;padding:0;}'
+    + 'a{color:#B4541E;}blockquote{border-left:3px solid #E6E3DC;margin:.6em 0;padding:.2em 0 .2em 14px;color:#6B6760;}ul,ol{padding-left:1.5em;}hr{border:none;border-top:1px solid #E6E3DC;margin:1.4em 0;}img{max-width:100%;}'
+    + '</style></head><body>' + md2html(md) + '</body></html>';
+}
+
 // ============ 全真数据接线:用 orch 真实数据替换原型所有 mock 数组 ============
 class Maestro extends MaestroBase {
   componentDidMount() {
@@ -472,8 +511,9 @@ class Maestro extends MaestroBase {
     v.openDir = () => this.openDir();
     const filesReady = curT && this.live.filesFor === this.state.taskId && (this.live.files || []).length;
     v.hasFiles = !!filesReady;
-    v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path }) }));
+    v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path, srcMode: false }) }));
     v.preview = this.previewOf(this.state.taskId);
+    v.toggleSrc = () => this.toggleSrc();
     // #发布/继续
     v.canPublish = !!(curT && curT.sk === 'done' && canMod && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path)));
     v.publishApp = () => this.publishApp();
@@ -528,11 +568,36 @@ class Maestro extends MaestroBase {
     if (!p) return { none: true, hint: '选择左侧文件预览' };
     const url = '/output/' + id + '/' + p.split('/').map(encodeURIComponent).join('/');
     const e = (p.split('.').pop() || '').toLowerCase();
-    if (['html', 'htm'].indexOf(e) >= 0) return { iframe: true, url };
-    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].indexOf(e) >= 0) return { img: true, url };
+    const src = !!this.state.srcMode;
+    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].indexOf(e) >= 0) return { img: true, url };
     if (['mp4', 'webm', 'mov', 'ogg', 'm4v'].indexOf(e) >= 0) return { video: true, url };
+    const TEXT = ['js', 'css', 'json', 'txt', 'yaml', 'yml', 'xml', 'csv', 'log', 'sh', 'py', 'ts', 'tsx', 'jsx', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'vue', 'svelte', 'ini', 'conf', 'sql'];
+    if (['html', 'htm'].indexOf(e) >= 0) {
+      if (!src) return { iframe: true, url, canSource: true, toggleLabel: '查看源码' };
+      const t = this.getText(id, p); return { code: true, text: t == null ? '加载中…' : t, canSource: true, toggleLabel: '预览' };
+    }
+    if (e === 'md' || e === 'markdown') {
+      const t = this.getText(id, p);
+      if (t == null) return { none: true, hint: '加载中…' };
+      if (src) return { code: true, text: t, canSource: true, toggleLabel: '渲染' };
+      return { mddoc: true, doc: mdDoc(t), canSource: true, toggleLabel: '查看源码' };
+    }
+    if (TEXT.indexOf(e) >= 0) { const t = this.getText(id, p); return { code: true, text: t == null ? '加载中…' : t }; }
     return { none: true, hint: p + ' — 此类型不预览,点「打开目录」查看' };
   }
+  getText(id, p) {
+    const key = id + '/' + p;
+    this.live.fileText = this.live.fileText || {};
+    if (key in this.live.fileText) return this.live.fileText[key];
+    this._fetchingText = this._fetchingText || {};
+    if (!this._fetchingText[key]) {
+      this._fetchingText[key] = 1;
+      const url = '/output/' + id + '/' + p.split('/').map(encodeURIComponent).join('/');
+      fetch(url).then((r) => r.text()).then((t) => { this.live.fileText[key] = t; this.scheduleRender(); }).catch(() => { this.live.fileText[key] = ''; this.scheduleRender(); });
+    }
+    return null;
+  }
+  toggleSrc() { this.setState({ srcMode: !this.state.srcMode }); }
   cancelTask() {
     const id = this.state.taskId;
     if (typeof id !== 'number') return;
@@ -612,18 +677,27 @@ class Maestro extends MaestroBase {
     P.forEach((p) => lv(p.title));
     const cols = {}; P.forEach((p) => { const d = depth[p.title] || 0; (cols[d] = cols[d] || []).push(p.title); });
     const pos = {}; const W = 200, H = 66, GX = 260, GY = 118;
-    Object.keys(cols).forEach((d) => { cols[d].forEach((id, i) => { pos[id] = { x: 40 + d * GX, y: 30 + i * GY }; }); });
+    Object.keys(cols).forEach((d) => { cols[d].forEach((id, i) => { pos[id] = { x: 40 + (Number(d) + 1) * GX, y: 30 + i * GY }; }); }); // +1 列给起点腾位
     const col = { queued: '#C9C5BB', working: '#F0B400', done: '#2E9E5B', failed: '#DC5B52' };
-    const nodes = P.map((p) => ({ title: p.title, agent: p.agent, avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk }));
-    const edges = [];
+    const nodes = P.map((p) => ({ title: p.title, agent: p.agent, avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814' }));
+    const edges = []; let ei = 0;
     P.forEach((p) => (p.deps || []).forEach((dp) => {
       if (!pos[dp] || !pos[p.title]) return;
       const x1 = pos[dp].x + W, y1 = pos[dp].y + H / 2, x2 = pos[p.title].x, y2 = pos[p.title].y + H / 2;
       const mx = (x1 + x2) / 2;
-      edges.push({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: col[byId[p.title].sk] === '#C9C5BB' ? '#CFCBC1' : '#F0B400' });
+      const sk = byId[p.title].sk;
+      const c = sk === 'done' ? '#2E9E5B' : (sk === 'working' ? '#F0B400' : '#CFCBC1');
+      edges.push({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: c, flow: sk !== 'done', dash: sk === 'working', dur: (1.8 + (ei++ % 4) * 0.4).toFixed(2) + 's' });
     }));
-    const maxCol = Math.max(...Object.keys(cols).map(Number)) + 1;
+    const maxCol = Math.max(...Object.keys(cols).map(Number)) + 2; // +起点列
     const maxRow = Math.max(...Object.values(cols).map((a) => a.length));
+    // 合成"任务下发"起点节点,连到所有无依赖步骤 → 单步任务也有可见流转
+    const roots = P.filter((p) => !p.deps || !p.deps.length).map((p) => p.title);
+    const oy = roots.length ? roots.reduce((a, id) => a + pos[id].y, 0) / roots.length : 30;
+    nodes.unshift({ origin: true, title: '任务下发', agent: this.activeTitle || '编排目标', avatar: '◆', aColor: '#F0B400', x: 40, y: oy, dot: '#1A1814', sk: 'origin', nbg: '#1A1814', nfg: '#fff' });
+    roots.forEach((id) => { const x1 = 40 + W, y1 = oy + H / 2, x2 = pos[id].x, y2 = pos[id].y + H / 2; const mx = (x1 + x2) / 2; const sk = byId[id].sk; edges.unshift({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: sk === 'done' ? '#2E9E5B' : '#F0B400', flow: true, dash: sk === 'working', dur: '2.2s' }); });
+    edges.forEach((e) => { e.pstyle = e.dash ? 'stroke-dasharray:6 6;animation:dash 1s linear infinite;' : ''; });
+    nodes.forEach((n) => { n.subc = n.origin ? '#C9C5BB' : '#8A857C'; });
     return { nodes, edges, empty: false, w: Math.max(1000, 40 + maxCol * GX), h: Math.max(400, 30 + maxRow * GY) };
   }
   realCv() {
