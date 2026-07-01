@@ -322,6 +322,7 @@ class Maestro extends MaestroBase {
     this.live = { relay: {}, plan: {}, activeId: null, counts: {} };
     this.AGENTS = []; this.DEPTS = []; this.BOARDS = {}; this.PROJECTS = []; this.TASKS = []; this.PEOPLE = [];
     this.state.activity = []; this.state.log = {}; this.state.console = {}; this.state.modal = null;
+    this.state.me = null; this.state.needLogin = false; this.state.loginErr = '';
     const now = new Date();
     this.state.clockS = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     this.fetchAll();
@@ -364,6 +365,7 @@ class Maestro extends MaestroBase {
     const v = super.renderVals();
     v.metrics = this.realMetrics();
     v.cv = this.realCv();
+    v.graph = this.realGraph();
     v.orchLog = (this.state.activity || []).slice(0, 8).map((e) => ({ time: e.time, c: e.c, a: e.a, txt: e.t }));
     // 弹窗 + 表单提交
     v.newTask = () => this.newTask();
@@ -415,28 +417,54 @@ class Maestro extends MaestroBase {
     v.projOpts = (this.PROJECTS || []).map((p) => ({ name: p.name }));
     if (v.isSearch) { v.searchGroups = this.searchResults(this.state.q || ''); v.searchSummary = v.searchGroups.reduce((a, g) => a + g.items.length, 0) + ' 条结果'; v.crumbRoot = '工作区'; v.crumbLeaf = '搜索'; } else { v.searchGroups = []; v.searchSummary = ''; }
 
-    // —— T7: 当前身份切换 + 过滤 Agent ——
-    const cur = (this.PEOPLE || []).find((p) => p.id === this.state.currentPersonId);
-    if (cur) { v.opName = cur.name; v.opAv = cur.av; v.opRole = (cur.role || '成员') + ' · 当前身份'; }
-    v.pickWho = () => this.pickWho();
-    v.modalWho = this.state.modal === 'who';
-    v.whoList = (this.PEOPLE || []).map((p) => ({ ...p, pick: () => this.setState({ modal: null, currentPersonId: p.id }) }));
-    if (cur && cur.assignedIds && cur.assignedIds.length) {
+    // —— 当前登录用户(替换原身份切换) ——
+    const me = this.state.me;
+    const cur = me ? (this.PEOPLE || []).find((p) => p.id === me.id) : null;
+    if (me) { v.opName = me.name; v.opAv = (me.name || '?').slice(0, 1).toUpperCase(); v.opRole = (me.admin ? '管理员' : (me.role || '成员')) + ' · orch'; }
+    v.isAdmin = !!(me && me.admin);
+    v.pickWho = () => this.openAccount(); // 点用户 → 账号菜单
+    v.modalWho = false; v.whoList = [];
+    // 非管理员:Agent 团队只显示分配给自己的 agent
+    if (cur && !me.admin && cur.assignedIds && cur.assignedIds.length) {
       const set = new Set(cur.assignedIds);
       v.agents = (v.agents || []).filter((a) => set.has(a.id));
       v.activeAgents = (v.activeAgents || []).filter((a) => set.has(a.id));
     }
+    // —— 登录/账号 ——
+    v.needLogin = !!this.state.needLogin;
+    v.loginErr = this.state.loginErr || '';
+    v.submitLogin = () => this.submitLogin();
+    v.onLoginKey = (e) => { if (e.key === 'Enter') this.submitLogin(); };
+    v.logout = () => this.logout();
+    v.modalAccount = this.state.modal === 'account';
+    v.changePw = () => this.changePw();
+    // —— 部门管理(#3) ——
+    v.newDept = () => this.newDept();
+    v.modalDept = this.state.modal === 'dept';
+    v.submitDept = () => this.submitDept();
+    v.allAgents = (this.AGENTS || []).map((a) => ({ id: a.id, name: a.name }));
+    v.naDept = ea && ea.dept ? ea.dept : ((this.DEPTS[0] && this.DEPTS[0].id) || 'dev');
+    v.deptOpts = (this.DEPTS || []).map((d) => ({ id: d.id, name: d.name })).sort((a, b) => (a.id === v.naDept ? 0 : 1) - (b.id === v.naDept ? 0 : 1)); // 当前部门置顶=默认选中
+    // —— 项目授权(#4):项目详情 ——
+    const curProj = this.state.projectId && (this.PROJECTS || []).find((p) => p.id === this.state.projectId);
+    v.projAmOwner = !!(curProj && curProj.amOwner);
+    v.grantPeople = (curProj ? (this.PEOPLE || []) : []).filter((p) => !me || p.id !== me.id).map((p) => {
+      const on = (curProj.grantIds || []).indexOf(p.id) >= 0;
+      return { id: p.id, name: p.name, av: p.av, color: p.color, on, label: on ? '已授权 ✓' : '授权', bd: on ? '#B9E2C8' : '#E6E3DC', bg: on ? '#E4F4EA' : '#fff', toggle: () => this.grantProj(curProj.name, p.id, !on) };
+    });
 
     // —— v4: 取消/成本 ——
     v.cancelTask = () => this.cancelTask();
     v.costToday = '$' + ((this.live.usage && this.live.usage.cost) || 0).toFixed(3);
     const curT = typeof this.state.taskId === 'number' && this.TASKS.find((t) => t.id === this.state.taskId);
-    v.canCancel = !!(curT && curT.sk === 'working');
-    v.canApprove = !!(curT && curT.sk === 'awaiting');
+    const canMod = !!(curT && curT.canModify); // #4 非本人任务只读
+    v.viewOnly = !!(curT && !curT.canModify);
+    v.canCancel = !!(curT && curT.sk === 'working' && canMod);
+    v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
     v.approveTask = () => this.approveTask();
     v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok') : '—';
     // #1 决策回答
-    v.canAnswer = !!(curT && curT.sk === 'awaiting_input');
+    v.canAnswer = !!(curT && curT.sk === 'awaiting_input' && canMod);
     v.question = curT ? (curT.question || '') : '';
     v.answerTask = () => this.answerTask();
     // #3 产出预览
@@ -446,9 +474,9 @@ class Maestro extends MaestroBase {
     v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path }) }));
     v.preview = this.previewOf(this.state.taskId);
     // #发布/继续
-    v.canPublish = !!(curT && curT.sk === 'done' && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path)));
+    v.canPublish = !!(curT && curT.sk === 'done' && canMod && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path)));
     v.publishApp = () => this.publishApp();
-    v.canContinue = !!(curT && ['done', 'cancelled', 'failed'].indexOf(curT.sk) >= 0);
+    v.canContinue = !!(curT && canMod && ['done', 'cancelled', 'failed'].indexOf(curT.sk) >= 0);
     v.continueTask = () => this.continueTask();
     v.modalContinue = this.state.modal === 'continue';
     v.continueSubmit = () => this.continueSubmit();
@@ -515,6 +543,46 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(() => this.fetchAll()).catch(() => {});
   }
 
+  // —— 登录/账号 ——
+  submitLogin() {
+    const name = (document.getElementById('lg-name') || {}).value || '';
+    const pw = (document.getElementById('lg-pw') || {}).value || '';
+    if (!name.trim()) return;
+    fetch('/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: name.trim(), password: pw }) })
+      .then((r) => r.json().then((j) => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+        if (!ok) { this.setState({ loginErr: (j && j.error) || '登录失败' }); return; }
+        this.state.needLogin = false; this.state.loginErr = ''; this.fetchAll();
+      }).catch(() => this.setState({ loginErr: '网络错误' }));
+  }
+  logout() { fetch('/logout', { method: 'POST' }).then(() => { this.state.me = null; this.setState({ modal: null, needLogin: true, screen: 'dash' }); }).catch(() => {}); }
+  openAccount() { this.setState({ modal: 'account' }); }
+  changePw() {
+    const pw = (document.getElementById('ac-pw') || {}).value || '';
+    if (!pw.trim()) return;
+    fetch('/api/me/password', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: pw.trim() }) })
+      .then(() => this.setState({ modal: null })).catch(() => {});
+  }
+  // —— 部门管理 ——
+  newDept() { this.setState({ modal: 'dept' }); }
+  submitDept() {
+    const name = (document.getElementById('nd-name') || {}).value || '';
+    if (!name.trim()) return;
+    const glyph = (document.getElementById('nd-glyph') || {}).value || '·';
+    const ids = [...document.querySelectorAll('.nd-agent:checked')].map((c) => c.value);
+    fetch('/api/depts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: name.trim(), glyph }) })
+      .then((r) => r.json()).then((d) => { if (ids.length && d.id) return fetch('/api/depts/' + d.id + '/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: ids }) }); })
+      .then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
+  }
+  delDept(id) { if (!window.confirm('删除该部门?(旗下 agent 会变无部门)')) return; fetch('/api/depts/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
+  assignDept(id) { this.setState({ modal: 'deptAssign', deptId: id }); }
+  submitDeptAssign() {
+    const id = this.state.deptId; const ids = [...document.querySelectorAll('.da-agent:checked')].map((c) => c.value);
+    fetch('/api/depts/' + id + '/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: ids }) })
+      .then(() => { this.setState({ modal: null, deptId: null }); this.fetchAll(); }).catch(() => {});
+  }
+  // —— 项目授权 ——
+  grantProj(project, userId, on) { fetch('/api/grant', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, userId, on }) }).then(() => this.fetchAll()).catch(() => {}); }
+
   todayStr() {
     const d = new Date();
     const wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
@@ -528,6 +596,34 @@ class Maestro extends MaestroBase {
       { k: '今日已完成', v: '' + (c.doneToday || 0), s: '今日成本 $' + ((c.costToday) || 0).toFixed(3), dot: '#2E9E5B' },
       { k: '失败 / 待处理', v: '' + (c.failed || 0), s: (c.failed || 0) + ' 个失败', dot: '#E0922E' },
     ];
+  }
+  // #2 画布:把当前活动任务的真实 plan 排成节点图(层级=依赖深度)
+  realGraph() {
+    const P = this.PLAN || [];
+    if (!P.length) return { nodes: [], edges: [], empty: true };
+    const byId = {}; P.forEach((p) => { byId[p.title] = p; });
+    const depth = {}; const lv = (id, seen) => {
+      if (depth[id] != null) return depth[id];
+      const p = byId[id]; if (!p || !p.deps || !p.deps.length) return (depth[id] = 0);
+      if (seen && seen.has(id)) return 0; const s = seen || new Set(); s.add(id);
+      const d = 1 + Math.max(...p.deps.map((x) => lv(x, s))); return (depth[id] = d);
+    };
+    P.forEach((p) => lv(p.title));
+    const cols = {}; P.forEach((p) => { const d = depth[p.title] || 0; (cols[d] = cols[d] || []).push(p.title); });
+    const pos = {}; const W = 200, H = 66, GX = 260, GY = 118;
+    Object.keys(cols).forEach((d) => { cols[d].forEach((id, i) => { pos[id] = { x: 40 + d * GX, y: 30 + i * GY }; }); });
+    const col = { queued: '#C9C5BB', working: '#F0B400', done: '#2E9E5B', failed: '#DC5B52' };
+    const nodes = P.map((p) => ({ title: p.title, agent: p.agent, avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk }));
+    const edges = [];
+    P.forEach((p) => (p.deps || []).forEach((dp) => {
+      if (!pos[dp] || !pos[p.title]) return;
+      const x1 = pos[dp].x + W, y1 = pos[dp].y + H / 2, x2 = pos[p.title].x, y2 = pos[p.title].y + H / 2;
+      const mx = (x1 + x2) / 2;
+      edges.push({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: col[byId[p.title].sk] === '#C9C5BB' ? '#CFCBC1' : '#F0B400' });
+    }));
+    const maxCol = Math.max(...Object.keys(cols).map(Number)) + 1;
+    const maxRow = Math.max(...Object.values(cols).map((a) => a.length));
+    return { nodes, edges, empty: false, w: Math.max(1000, 40 + maxCol * GX), h: Math.max(400, 30 + maxRow * GY) };
   }
   realCv() {
     const find = (id) => this.AGENTS.find((a) => a.id === id);
@@ -602,9 +698,9 @@ class Maestro extends MaestroBase {
     const g = (id) => (document.getElementById(id) || {}).value || '';
     const name = g('na-name'), command = g('na-cmd');
     if (!name.trim() || !command.trim()) return;
-    const body = { name: name.trim(), command: command.trim(), args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image') };
+    const body = { name: name.trim(), command: command.trim(), args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept') };
     const ea = this.state.editAgent;
-    if (ea) { body.color = ea.color; body.avatar = ea.avatar; body.dept = ea.dept; }
+    if (ea) { body.color = ea.color; body.avatar = ea.avatar; }
     fetch(ea ? '/api/agents/' + ea.id : '/api/agents', { method: ea ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, editAgent: null }); this.fetchAll(); }).catch(() => {});
   }
@@ -624,8 +720,10 @@ class Maestro extends MaestroBase {
   }
 
   fetchAll() {
-    fetch('/api/all').then((r) => r.json()).then((d) => {
+    fetch('/api/all').then((r) => { if (r.status === 401) { if (!this.state.needLogin) { this.state.needLogin = true; this.scheduleRender(); } return null; } return r.json(); }).then((d) => {
       if (!d) return;
+      if (this.state.needLogin) this.state.needLogin = false;
+      this.state.me = d.me || null;
       this.AGENTS = d.agents || []; this.DEPTS = d.depts || []; this.BOARDS = d.boards || {};
       this.PROJECTS = d.projects || []; this.TASKS = d.tasks || []; this.PEOPLE = d.people || [];
       this.live.counts = d.counts || {};

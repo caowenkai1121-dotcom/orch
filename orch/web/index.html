@@ -192,6 +192,7 @@
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin:6px 2px 12px;">
           <span style="font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#A39E94;">部门概览</span>
+          <sc-if value="{{ isAdmin }}"><button onClick="{{ newDept }}" style="height:28px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">+ 新建部门</button></sc-if>
         </div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;">
           <sc-for list="{{ depts }}" as="d" hint-placeholder-count="6">
@@ -248,89 +249,24 @@
         <!-- MODE A: NODE GRAPH -->
         <sc-if value="{{ isGraph }}">
         <div style="flex:1;min-height:0;position:relative;overflow:auto;background:#F7F6F3;background-image:radial-gradient(#E5E2DB 1px,transparent 1px);background-size:22px 22px;">
-          <div style="position:relative;width:1180px;height:600px;margin:24px;">
-            <svg viewBox="0 0 1180 600" style="position:absolute;inset:0;width:1180px;height:600px;overflow:visible;pointer-events:none;">
-              <path d="M232 318 C 276 318, 276 184, 320 184" fill="none" stroke="#F0B400" stroke-width="2.4"></path>
-              <path d="M232 318 C 276 318, 276 476, 320 476" fill="none" stroke="#F0B400" stroke-width="2.4"></path>
-              <path d="M508 184 C 562 184, 562 184, 616 184" fill="none" stroke="#F0B400" stroke-width="2.4"></path>
-              <path d="M616 214 C 562 256, 562 256, 508 214" fill="none" stroke="#E0922E" stroke-width="2" stroke-dasharray="5 5" style="animation:dash 1s linear infinite;"></path>
-              <path d="M804 184 C 858 184, 858 184, 912 184" fill="none" stroke="#CFCBC1" stroke-width="2"></path>
-              <path d="M508 476 C 562 476, 562 476, 616 476" fill="none" stroke="#F0B400" stroke-width="2.4"></path>
-              <path d="M804 476 C 858 476, 858 476, 912 476" fill="none" stroke="#CFCBC1" stroke-width="2"></path>
-            </svg>
-            <div style="position:absolute;left:0;top:0;width:11px;height:11px;border-radius:50%;background:#F0B400;box-shadow:0 0 9px #F4C53A;offset-path:path('M232 318 C 276 318, 276 184, 320 184');offset-rotate:0deg;animation:flow 2.4s linear infinite;"></div>
-            <div style="position:absolute;left:0;top:0;width:11px;height:11px;border-radius:50%;background:#F0B400;box-shadow:0 0 9px #F4C53A;offset-path:path('M232 318 C 276 318, 276 476, 320 476');offset-rotate:0deg;animation:flow 2.7s linear infinite;"></div>
-            <div style="position:absolute;left:0;top:0;width:11px;height:11px;border-radius:50%;background:#F0B400;box-shadow:0 0 9px #F4C53A;offset-path:path('M508 184 C 562 184, 562 184, 616 184');offset-rotate:0deg;animation:flow 1.7s linear infinite;"></div>
-            <div style="position:absolute;left:0;top:0;width:11px;height:11px;border-radius:50%;background:#F0B400;box-shadow:0 0 9px #F4C53A;offset-path:path('M508 476 C 562 476, 562 476, 616 476');offset-rotate:0deg;animation:flow 1.9s linear infinite;"></div>
-
-            <div style="position:absolute;left:552px;top:158px;font-size:11px;font-weight:600;color:#8a6d00;background:#FFF6D6;border:1px solid #F3E2A0;padding:2px 8px;border-radius:6px;">提交验证</div>
-            <div style="position:absolute;left:544px;top:236px;font-size:11px;font-weight:600;color:#B4541E;background:#FCEBDD;border:1px solid #F1CBA6;padding:2px 8px;border-radius:6px;">退回 3 处 ↺</div>
-            <div style="position:absolute;left:840px;top:158px;font-size:11px;font-weight:600;color:#1F7A46;background:#E4F4EA;border:1px solid #B9E2C8;padding:2px 8px;border-radius:6px;">通过 ✓</div>
-            <div style="position:absolute;left:548px;top:450px;font-size:11px;font-weight:600;color:#8a6d00;background:#FFF6D6;border:1px solid #F3E2A0;padding:2px 8px;border-radius:6px;">交付脚本</div>
-            <div style="position:absolute;left:840px;top:450px;font-size:11px;font-weight:600;color:#6B6760;background:#F0EEE9;border:1px solid #E2DFD7;padding:2px 8px;border-radius:6px;">交付设计稿</div>
-
-            <!-- brief node -->
-            <div style="position:absolute;left:36px;top:268px;width:196px;">
-              <div style="background:#1A1814;border-radius:14px;padding:14px 15px;box-shadow:0 8px 22px rgba(20,18,14,.18);">
-                <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px;"><span style="width:20px;height:20px;border-radius:6px;background:{{ acc }};color:#1A1814;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;">◆</span><span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#C9C5BB;">任务下发</span></div>
-                <div style="font-size:13.5px;font-weight:650;color:#fff;line-height:1.4;">登录模块重构 + 产出引导视频</div>
-                <div style="font-size:11px;color:#9A958C;margin-top:8px;line-height:1.4;">编排器已自动拆为 2 条流水线</div>
-              </div>
+            <div style="position:relative;width:{{ graph.w }}px;height:{{ graph.h }}px;margin:24px;min-width:820px;min-height:360px;">
+              <sc-if value="{{ graph.empty }}"><div style="position:absolute;left:40px;top:40px;color:#A39E94;font-size:14px;">暂无活动任务的计划。新建任务后,这里自动画出流水线节点图。</div></sc-if>
+              <svg style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;">
+                <sc-for list="{{ graph.edges }}" as="e"><path d="{{ e.d }}" fill="none" stroke="{{ e.color }}" stroke-width="2.2"></path></sc-for>
+              </svg>
+              <sc-for list="{{ graph.nodes }}" as="nd" hint-placeholder-count="3">
+                <div style="position:absolute;left:{{ nd.x }}px;top:{{ nd.y }}px;width:200px;">
+                  <div style="background:#fff;border:1.5px solid {{ nd.dot }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(20,18,14,.08);">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                      <div style="width:24px;height:24px;border-radius:7px;background:{{ nd.aColor }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ nd.avatar }}</div>
+                      <div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ nd.title }}</div>
+                      <span style="width:9px;height:9px;border-radius:50%;background:{{ nd.dot }};"></span>
+                    </div>
+                    <div style="font-size:11px;color:#8A857C;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ nd.agent }}</div>
+                  </div>
+                </div>
+              </sc-for>
             </div>
-
-            <!-- claude dev node -->
-            <div style="position:absolute;left:320px;top:138px;width:188px;">
-              <div style="background:#fff;border:1.5px solid {{ acc }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(124,111,217,.12);">
-                <div style="display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#7C6FD9;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">C</div><div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.dev.name }}</div><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:{{ acc }};animation:ping 1.8s ease-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:{{ acc }};"></span></span></div>
-                <div style="font-size:11px;color:#8A857C;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.dev.action }}</div>
-                <div style="display:flex;align-items:center;gap:7px;margin-top:9px;"><div style="flex:1;height:5px;border-radius:5px;background:#F1EFEA;overflow:hidden;"><div style="height:100%;border-radius:5px;background:{{ acc }};width:{{ cv.dev.pct }};transition:width .6s ease;"></div></div><span style="font-size:10px;font-weight:700;color:#8a6d00;font-family:'JetBrains Mono',monospace;">{{ cv.dev.pct }}</span></div>
-              </div>
-            </div>
-
-            <!-- codex qa node -->
-            <div style="position:absolute;left:616px;top:138px;width:188px;">
-              <div style="background:#fff;border:1.5px solid {{ acc }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(79,139,232,.12);">
-                <div style="display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#4F8BE8;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">X</div><div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.qa.name }}</div><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:{{ acc }};animation:ping 1.8s ease-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:{{ acc }};"></span></span></div>
-                <div style="font-size:11px;color:#8A857C;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.qa.action }}</div>
-                <div style="display:flex;align-items:center;gap:7px;margin-top:9px;"><div style="flex:1;height:5px;border-radius:5px;background:#F1EFEA;overflow:hidden;"><div style="height:100%;border-radius:5px;background:{{ acc }};width:{{ cv.qa.pct }};transition:width .6s ease;"></div></div><span style="font-size:10px;font-weight:700;color:#8a6d00;font-family:'JetBrains Mono',monospace;">{{ cv.qa.pct }}</span></div>
-              </div>
-            </div>
-
-            <!-- merge node -->
-            <div style="position:absolute;left:912px;top:150px;width:172px;">
-              <div style="background:#fff;border:1px solid #E2DFD7;border-radius:13px;padding:11px 13px;box-shadow:0 4px 12px rgba(20,18,14,.05);">
-                <div style="display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#E4F4EA;color:#1F7A46;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">✓</div><div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;">合并部署</div></div>
-                <div style="font-size:11px;color:#A39E94;margin-top:7px;">等待验证通过后触发</div>
-              </div>
-            </div>
-
-            <!-- content node -->
-            <div style="position:absolute;left:320px;top:430px;width:188px;">
-              <div style="background:#fff;border:1.5px solid {{ acc }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(224,146,46,.12);">
-                <div style="display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#E0922E;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">文</div><div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.content.name }}</div><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:{{ acc }};animation:ping 1.8s ease-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:{{ acc }};"></span></span></div>
-                <div style="font-size:11px;color:#8A857C;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.content.action }}</div>
-                <div style="display:flex;align-items:center;gap:7px;margin-top:9px;"><div style="flex:1;height:5px;border-radius:5px;background:#F1EFEA;overflow:hidden;"><div style="height:100%;border-radius:5px;background:{{ acc }};width:{{ cv.content.pct }};transition:width .6s ease;"></div></div><span style="font-size:10px;font-weight:700;color:#8a6d00;font-family:'JetBrains Mono',monospace;">{{ cv.content.pct }}</span></div>
-              </div>
-            </div>
-
-            <!-- design node -->
-            <div style="position:absolute;left:616px;top:430px;width:188px;">
-              <div style="background:#fff;border:1.5px solid {{ acc }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(47,174,158,.12);">
-                <div style="display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#2FAE9E;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">设</div><div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.design.name }}</div><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:{{ acc }};animation:ping 1.8s ease-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:{{ acc }};"></span></span></div>
-                <div style="font-size:11px;color:#8A857C;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.design.action }}</div>
-                <div style="display:flex;align-items:center;gap:7px;margin-top:9px;"><div style="flex:1;height:5px;border-radius:5px;background:#F1EFEA;overflow:hidden;"><div style="height:100%;border-radius:5px;background:{{ acc }};width:{{ cv.design.pct }};transition:width .6s ease;"></div></div><span style="font-size:10px;font-weight:700;color:#8a6d00;font-family:'JetBrains Mono',monospace;">{{ cv.design.pct }}</span></div>
-              </div>
-            </div>
-
-            <!-- video node -->
-            <div style="position:absolute;left:912px;top:430px;width:188px;">
-              <div style="background:#fff;border:1.5px solid {{ acc }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(224,106,99,.12);">
-                <div style="display:flex;align-items:center;gap:8px;"><div style="width:24px;height:24px;border-radius:7px;background:#E06A63;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">视</div><div style="flex:1;min-width:0;font-size:12.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.video.name }}</div><span style="position:relative;display:inline-flex;width:8px;height:8px;"><span style="position:absolute;inset:0;border-radius:50%;background:{{ acc }};animation:ping 1.8s ease-out infinite;"></span><span style="position:relative;width:8px;height:8px;border-radius:50%;background:{{ acc }};"></span></span></div>
-                <div style="font-size:11px;color:#8A857C;margin-top:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cv.video.action }}</div>
-                <div style="display:flex;align-items:center;gap:7px;margin-top:9px;"><div style="flex:1;height:5px;border-radius:5px;background:#F1EFEA;overflow:hidden;"><div style="height:100%;border-radius:5px;background:{{ acc }};width:{{ cv.video.pct }};transition:width .6s ease;"></div></div><span style="font-size:10px;font-weight:700;color:#8a6d00;font-family:'JetBrains Mono',monospace;">{{ cv.video.pct }}</span></div>
-              </div>
-            </div>
-          </div>
 
           <div style="position:sticky;bottom:0;left:0;display:flex;align-items:center;gap:12px;padding:14px 24px;margin-top:-4px;background:linear-gradient(transparent,#F7F6F3 40%);">
             <div style="flex:1;display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #E6E3DC;border-radius:12px;padding:10px 14px;box-shadow:0 4px 16px rgba(20,18,14,.06);max-width:680px;">
@@ -647,6 +583,15 @@
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ project.agentCount }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">涉及部门</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ project.deptN }}</div></div>
         </div>
+        <sc-if value="{{ projAmOwner }}">
+        <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:14px 16px;margin-bottom:16px;">
+          <div style="font-size:13.5px;font-weight:650;margin-bottom:4px;">项目授权</div>
+          <div style="font-size:12px;color:#8A857C;margin-bottom:10px;">授权后该用户可查看本项目;非本人任务只能看,不能停止/修改</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <sc-for list="{{ grantPeople }}" as="p" hint-placeholder-count="3"><button onClick="{{ p.toggle }}" style="display:flex;align-items:center;gap:7px;border:1px solid {{ p.bd }};background:{{ p.bg }};border-radius:8px;padding:5px 11px;cursor:pointer;font-family:inherit;font-size:12.5px;"><span style="width:20px;height:20px;border-radius:6px;background:{{ p.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ p.av }}</span>{{ p.name }} · {{ p.label }}</button></sc-for>
+          </div>
+        </div>
+        </sc-if>
         <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 12px;"><span style="font-size:13.5px;font-weight:650;">项目任务</span></div>
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(20,18,14,.04);">
           <sc-for list="{{ project.tasks }}" as="t" hint-placeholder-count="4">
@@ -814,7 +759,10 @@
       <input id="na-args" value="{{ naArgs }}" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-model" value="{{ naModel }}" placeholder="模型(可选)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-caps" value="{{ naCaps }}" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
-      <input id="na-image" value="{{ naImage }}" placeholder="容器镜像(选填,任务选容器隔离时用)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+      <input id="na-image" value="{{ naImage }}" placeholder="容器镜像(选填,任务选容器隔离时用)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
+      <select id="na-dept" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
+        <sc-for list="{{ deptOpts }}" as="d"><option value="{{ d.id }}">所属部门: {{ d.name }}</option></sc-for>
+      </select>
       <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
         <button onClick="{{ submitAgent }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">{{ agentSubmitLabel }}</button>
@@ -884,6 +832,53 @@
           <span style="font-size:11px;color:#A39E94;font-family:'JetBrains Mono',monospace;">{{ w.agents }} agent</span>
         </button>
       </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ modalAccount }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:60;">
+    <div style="background:#fff;border-radius:16px;padding:22px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:4px;">账号</div>
+      <div style="font-size:12.5px;color:#8A857C;margin-bottom:14px;">当前登录: <b style="color:#1A1814;">{{ opName }}</b></div>
+      <input id="ac-pw" type="password" placeholder="设置新密码" style="width:100%;height:36px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+      <div style="display:flex;align-items:center;gap:9px;margin-top:16px;">
+        <button onClick="{{ logout }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #F1CBA6;color:#B4541E;font-weight:650;cursor:pointer;font-family:inherit;">登出</button>
+        <div style="flex:1;"></div>
+        <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">关闭</button>
+        <button onClick="{{ changePw }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">改密码</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ modalDept }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:60;">
+    <div style="background:#fff;border-radius:16px;padding:22px;width:460px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;">新建部门</div>
+      <input id="nd-name" placeholder="部门名,如 设计部" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
+      <input id="nd-glyph" placeholder="图标字符(可选),如 ✎ 或 设" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+      <div style="font-size:12.5px;color:#8A857C;margin:14px 0 8px;">归属该部门的 Agent(可选)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+        <sc-for list="{{ allAgents }}" as="a"><label style="display:flex;align-items:center;gap:6px;border:1px solid #ECEAE4;border-radius:7px;padding:4px 9px;cursor:pointer;font-size:13px;"><input type="checkbox" class="nd-agent" value="{{ a.id }}">{{ a.name }}</label></sc-for>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
+        <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
+        <button onClick="{{ submitDept }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">创建</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ needLogin }}">
+  <div style="position:fixed;inset:0;background:#1A1814;display:flex;align-items:center;justify-content:center;z-index:100;">
+    <div style="background:#fff;border-radius:18px;padding:30px;width:360px;box-shadow:0 30px 80px rgba(0,0,0,.4);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;"><div style="width:30px;height:30px;border-radius:9px;background:{{ acc }};color:#1A1814;font-weight:800;display:flex;align-items:center;justify-content:center;">M</div><div style="font-size:18px;font-weight:800;">Maestro 登录</div></div>
+      <div style="font-size:12.5px;color:#8A857C;margin:2px 0 18px;">默认管理员 admin / admin,登录后可在右下角账号里改密码</div>
+      <input id="lg-name" placeholder="用户名" style="width:100%;height:38px;border:1px solid #E6E3DC;border-radius:10px;padding:0 12px;font-family:inherit;font-size:14px;box-sizing:border-box;margin-bottom:10px;">
+      <input id="lg-pw" type="password" placeholder="密码" onkeydown="{{ onLoginKey }}" style="width:100%;height:38px;border:1px solid #E6E3DC;border-radius:10px;padding:0 12px;font-family:inherit;font-size:14px;box-sizing:border-box;">
+      <sc-if value="{{ loginErr }}"><div style="color:#DC5B52;font-size:12.5px;margin-top:10px;">{{ loginErr }}</div></sc-if>
+      <button onClick="{{ submitLogin }}" style="width:100%;height:40px;margin-top:16px;border-radius:10px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;">登录</button>
     </div>
   </div>
   </sc-if>
