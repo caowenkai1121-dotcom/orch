@@ -452,6 +452,7 @@ class Maestro extends MaestroBase {
       const on = (curProj.grantIds || []).indexOf(p.id) >= 0;
       return { id: p.id, name: p.name, av: p.av, color: p.color, on, label: on ? '已授权 ✓' : '授权', bd: on ? '#B9E2C8' : '#E6E3DC', bg: on ? '#E4F4EA' : '#fff', toggle: () => this.grantProj(curProj.name, p.id, !on) };
     });
+    v.memberOpts = (this.PEOPLE || []).filter((p) => !me || p.id !== me.id).map((p) => ({ id: p.id, name: p.name })); // 新建项目归属用户选项(排除自己)
 
     // —— v4: 取消/成本 ——
     v.cancelTask = () => this.cancelTask();
@@ -652,7 +653,8 @@ class Maestro extends MaestroBase {
     const name = (document.getElementById('pr-name') || {}).value || '';
     if (!name.trim()) return;
     const client = (document.getElementById('pr-client') || {}).value || '';
-    fetch('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: name.trim(), client }) })
+    const members = [...document.querySelectorAll('.pr-member:checked')].map((c) => c.value);
+    fetch('/api/projects', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: name.trim(), client, members }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
   }
   pickWho() { this.setState({ modal: 'who' }); }

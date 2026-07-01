@@ -77,7 +77,13 @@ app.post('/api/agents', adminOnly, (req, res) => {
 app.put('/api/agents/:id', adminOnly, (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.delete('/api/agents/:id', adminOnly, (req, res) => { store.deleteAgent(req.params.id); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.get('/api/projects', (req, res) => res.json(store.listProjects()));
-app.post('/api/projects', (req, res) => res.json({ id: store.addProject({ ...(req.body || {}), owner: req.user.id }) }));
+app.post('/api/projects', (req, res) => {
+  const id = store.addProject({ ...(req.body || {}), owner: req.user.id });
+  const name = (req.body || {}).name;
+  ((req.body || {}).members || []).forEach((uid) => name && store.grantProject(name, uid)); // 归属用户
+  broadcastRaw({ type: 'task' });
+  res.json({ id });
+});
 app.post('/api/people', adminOnly, (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
 app.post('/api/people/:id/agents', adminOnly, (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
 
