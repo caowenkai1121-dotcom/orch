@@ -418,7 +418,25 @@ class Maestro extends MaestroBase {
       v.agents = (v.agents || []).filter((a) => set.has(a.id));
       v.activeAgents = (v.activeAgents || []).filter((a) => set.has(a.id));
     }
+
+    // —— v4: 取消/成本 ——
+    v.cancelTask = () => this.cancelTask();
+    v.costToday = '$' + ((this.live.usage && this.live.usage.cost) || 0).toFixed(3);
+    const curT = typeof this.state.taskId === 'number' && this.TASKS.find((t) => t.id === this.state.taskId);
+    v.canCancel = !!(curT && curT.sk === 'working');
+    v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok') : '—';
     return v;
+  }
+
+  statusMeta(s) {
+    if (s === 'cancelled') return { label: '已取消', c: '#6B6760', bg: '#F1EFEA', dot: '#C9C4BA' };
+    if (s === 'awaiting') return { label: '待审批', c: '#8a6d00', bg: '#FFF6D6', dot: '#F0B400' };
+    return super.statusMeta(s);
+  }
+  cancelTask() {
+    const id = this.state.taskId;
+    if (typeof id !== 'number') return;
+    fetch('/task/' + id + '/cancel', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
   }
 
   todayStr() {
@@ -431,7 +449,7 @@ class Maestro extends MaestroBase {
     return [
       { k: '运行中 Agent', v: '' + (c.runningAgents || 0), s: '共 ' + (c.totalAgents || 0) + ' 个', dot: this.acc() },
       { k: '进行中任务', v: '' + (c.runningTasks || 0), s: '真实任务 ' + (c.totalTasks || 0) + ' 个', dot: '#4F8BE8' },
-      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '累计运行', dot: '#2E9E5B' },
+      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '今日成本 $' + ((c.costToday) || 0).toFixed(3), dot: '#2E9E5B' },
       { k: '失败 / 待处理', v: '' + (c.failed || 0), s: (c.failed || 0) + ' 个失败', dot: '#E0922E' },
     ];
   }
@@ -529,6 +547,7 @@ class Maestro extends MaestroBase {
       this.AGENTS = d.agents || []; this.DEPTS = d.depts || []; this.BOARDS = d.boards || {};
       this.PROJECTS = d.projects || []; this.TASKS = d.tasks || []; this.PEOPLE = d.people || [];
       this.live.counts = d.counts || {};
+      this.live.usage = d.usage || {};
       this.state.activity = d.activity || [];
       const active = this.TASKS[0] && this.TASKS[0].id;
       if (active != null) { this.live.activeId = active; if (!this.live.plan[active]) this.fetchPlan(active); }
