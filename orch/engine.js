@@ -12,10 +12,16 @@ function createSemaphore(n) {
 let SEM = null;
 function sem() { const n = Math.max(1, parseInt(process.env.ORCH_CONCURRENCY || '3', 10)); if (!SEM || SEM._n !== n) { SEM = createSemaphore(n); SEM._n = n; } return SEM; }
 
+// 问我模式:允许 agent 在无合理默认时输出 NEED_DECISION 停下等人
+const ASK = '[自动编排] 你在编排器中自动执行。优先自行采用最合理默认直接做完。'
+  + '仅当确实无法合理默认、必须由人拍板时,在输出最后单独一行 `NEED_DECISION: <一句话问题>` 然后停止(不要瞎猜);其余一律直接产出,禁止提问。\n\n任务:\n';
+
 async function runStep(step, ctx, prevOutput) {
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
-  const prompt = AUTONOMY + step.prompt.replace('{prev}', (prevOutput || '').slice(-4000));
+  const base = step.prompt.replace('{prev}', (prevOutput || '').slice(-4000));
+  const answer = ctx.answers && ctx.answers[step.id]; // 续跑时注入用户决策
+  const prompt = (ctx.preamble || AUTONOMY) + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
   const workdir = await ctx.workspace.make(step.id);
   ctx.onStatus(step.id, 'running');
   const s = sem(); await s.acquire();
@@ -28,7 +34,10 @@ async function runStep(step, ctx, prevOutput) {
       onUsage: (u) => { ctx.onUsage && ctx.onUsage(step.id, step.agent, u); },
     });
   } finally { s.release(); }
-  ctx.onStatus(step.id, res.success ? 'done' : 'failed');
+  const m = ctx.askMode && (res.output || '').match(/NEED_DECISION:\s*(.+)/);
+  if (m) res.needDecision = m[1].trim();
+  ctx.onStatus(step.id, res.needDecision ? 'blocked' : (res.success ? 'done' : 'failed'));
+  if (ctx.onResult) ctx.onResult(step.id, res.output); // #2 存产出摘要(须在 onStatus 后,免被 setStep 的 null 覆盖)
   return res;
 }
 
@@ -38,6 +47,7 @@ async function runLoop(step, ctx, prevOutput) {
   for (let i = 0; i < max; i++) {
     for (const body of step.body) {
       last = await runStep(body, ctx, last.output);
+      if (last.needDecision) return last; // 需人决策:向上冒泡,停
       if (!last.success) break; // 本轮某步失败,跳出去重来
     }
     if (step.until === 'pass' && last.success) break;
@@ -49,10 +59,12 @@ async function runLoop(step, ctx, prevOutput) {
 // 拓扑按波次调度:每波把"依赖已完成且未启动"的步骤并发跑完再进下一波。
 // ponytail: 波次内有 barrier,快步骤要等慢步骤;轻量足够,真要流式再改。
 async function runPlan(plan, ctx) {
-  const done = {};
-  const started = new Set();
+  const done = Object.assign({}, ctx.seedDone || {}); // 续跑:已完成步骤预置为 done
+  const started = new Set(Object.keys(done));
+  let decision = null;
   const ready = (s) => s.deps.every((d) => done[d]);
   while (Object.keys(done).length < plan.steps.length) {
+    if (decision) break; // 有步骤需人决策:停止调度
     const wave = plan.steps.filter((s) => !started.has(s.id) && ready(s));
     if (wave.length === 0) break; // 依赖无法满足,防死循环
     if (ctx.isCancelled && ctx.isCancelled()) break; // 取消:不再起新波
@@ -60,12 +72,13 @@ async function runPlan(plan, ctx) {
       started.add(s.id);
       if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
       const prev = s.deps.length ? done[s.deps[0]]?.output : '';
-      // loop 至少跑一次 body(LLM 把"建→验"放 loop 时必须真跑);
-      // body 内某步失败则重试,until:pass 满足或到 max 停。
-      done[s.id] = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
+      const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
+      if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
+      done[s.id] = r;
     }));
   }
+  if (decision && ctx.onDecision) ctx.onDecision(decision.stepId, decision.question);
   return done;
 }
 
-module.exports = { runPlan };
+module.exports = { runPlan, AUTONOMY, ASK };

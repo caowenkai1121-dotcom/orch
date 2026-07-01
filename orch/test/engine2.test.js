@@ -33,3 +33,25 @@ test('onUsage 透传', async () => {
   await runPlan({ steps: [{ id: 's', agent: 'a', prompt: 'p', deps: [] }] }, ctx({ a }, { onUsage: (sid, ag, u) => got.push([sid, ag, u.input]) }));
   assert.deepEqual(got, [['s', 'a', 5]]);
 });
+
+test('askMode: NEED_DECISION 使步骤阻塞并触发 onDecision,下游不跑', async () => {
+  const { runPlan } = require('../engine');
+  let ran = 0, decided = null;
+  const asker = { async run() { return { output: '分析完成\nNEED_DECISION: 用 Vue 还是 React?', success: true }; } };
+  const down = { async run() { ran++; return { output: '', success: true }; } };
+  const done = await runPlan({ steps: [{ id: 'a', agent: 'asker', prompt: 'p', deps: [] }, { id: 'b', agent: 'down', prompt: 'p', deps: ['a'] }] },
+    { adapters: { asker, down }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {}, askMode: true, onDecision: (sid, q) => { decided = { sid, q }; } });
+  assert.equal(ran, 0);
+  assert.ok(decided && decided.sid === 'a');
+  assert.match(decided.q, /Vue/);
+});
+
+test('seedDone 跳过已完成步骤,只跑剩余', async () => {
+  const { runPlan } = require('../engine');
+  let ran = [];
+  const a = { async run() { ran.push('x'); return { output: 'ok', success: true }; } };
+  const done = await runPlan({ steps: [{ id: 'a', agent: 'x', prompt: 'p', deps: [] }, { id: 'b', agent: 'x', prompt: 'p', deps: ['a'] }] },
+    { adapters: { x: a }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {}, seedDone: { a: { output: 'seeded', success: true } } });
+  assert.equal(ran.length, 1); // 只跑 b(a 已 seed)
+  assert.equal(done.a.output, 'seeded');
+});
