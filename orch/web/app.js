@@ -482,6 +482,8 @@ class Maestro extends MaestroBase {
     v.modalDept = this.state.modal === 'dept';
     v.submitDept = () => this.submitDept();
     v.allAgents = (this.AGENTS || []).map((a) => ({ id: a.id, name: a.name }));
+    v.naKind = ea && ea.kind ? ea.kind : 'cli';
+    v.kindOpts = [{ id: 'cli', name: 'CLI 智能体(claude/codex 类)' }, { id: 'llm', name: '大模型(DeepSeek 等)' }, { id: 'video', name: '视频模型(Seedance 等)' }, { id: 'voice', name: '语音模型' }].sort((a, b) => (a.id === v.naKind ? 0 : 1) - (b.id === v.naKind ? 0 : 1));
     v.naDept = ea && ea.dept ? ea.dept : ((this.DEPTS[0] && this.DEPTS[0].id) || 'dev');
     v.deptOpts = (this.DEPTS || []).map((d) => ({ id: d.id, name: d.name })).sort((a, b) => (a.id === v.naDept ? 0 : 1) - (b.id === v.naDept ? 0 : 1)); // 当前部门置顶=默认选中
     // —— 项目授权(#4):项目详情 ——
@@ -515,7 +517,7 @@ class Maestro extends MaestroBase {
     v.preview = this.previewOf(this.state.taskId);
     v.toggleSrc = () => this.toggleSrc();
     // #发布/继续
-    v.canPublish = !!(curT && curT.sk === 'done' && canMod && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path)));
+    v.canPublish = !!(curT && curT.sk === 'done' && this.state.me && this.state.me.admin && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path))); // 仅管理员可发布
     v.publishApp = () => this.publishApp();
     v.canContinue = !!(curT && canMod && ['done', 'cancelled', 'failed'].indexOf(curT.sk) >= 0);
     v.continueTask = () => this.continueTask();
@@ -528,7 +530,7 @@ class Maestro extends MaestroBase {
     const openApp = this.state.openApp;
     v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
     v.closeApp = () => this.setState({ openApp: null });
-    v.apps = (this.live.apps || []).map((a) => ({ ...a, open: () => this.setState({ openApp: a }), del: () => this.delApp(a.id) }));
+    v.apps = (this.live.apps || []).map((a) => ({ ...a, canDel: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), del: () => this.delApp(a.id) }));
     if (v.isApps) { v.crumbRoot = '工作区'; v.crumbLeaf = '应用广场'; }
     return v;
   }
@@ -772,9 +774,10 @@ class Maestro extends MaestroBase {
   }
   submitAgent() {
     const g = (id) => (document.getElementById(id) || {}).value || '';
-    const name = g('na-name'), command = g('na-cmd');
-    if (!name.trim() || !command.trim()) return;
-    const body = { name: name.trim(), command: command.trim(), args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept') };
+    const name = g('na-name'), command = g('na-cmd'), kind = g('na-kind') || 'cli';
+    if (!name.trim()) return;
+    if (kind === 'cli' && !command.trim()) return; // CLI 类必须有命令
+    const body = { name: name.trim(), command: command.trim(), kind, args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept') };
     const ea = this.state.editAgent;
     if (ea) { body.color = ea.color; body.avatar = ea.avatar; }
     fetch(ea ? '/api/agents/' + ea.id : '/api/agents', { method: ea ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })

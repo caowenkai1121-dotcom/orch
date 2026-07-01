@@ -43,6 +43,7 @@ function open(file) {
   ensureCol('people', 'password', 'TEXT');
   ensureCol('people', 'admin', 'INTEGER');
   ensureCol('projects', 'owner', 'TEXT');
+  ensureCol('agents', 'kind', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
@@ -108,8 +109,8 @@ function open(file) {
     listAgents() { return db.prepare('SELECT * FROM agents').all(); },
     addAgent(d) {
       const id = d.id || (String(d.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent') + '-' + (db.prepare('SELECT COUNT(*) n FROM agents').get().n + 1);
-      db.prepare('INSERT OR REPLACE INTO agents(id,name,command,args,model,caps,color,avatar,dept,pricing,image) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-        .run(id, d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '');
+      db.prepare('INSERT OR REPLACE INTO agents(id,name,command,args,model,caps,color,avatar,dept,pricing,image,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(id, d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli');
       return id;
     },
     listPeople() { return db.prepare('SELECT * FROM people').all(); },
@@ -142,8 +143,8 @@ function open(file) {
     },
     listPersonAgents(pid) { return db.prepare('SELECT agent_id FROM person_agents WHERE person_id=?').all(pid).map((r) => r.agent_id); },
     updateAgent(id, d) {
-      db.prepare('UPDATE agents SET name=?,command=?,args=?,model=?,caps=?,color=?,avatar=?,dept=?,pricing=?,image=? WHERE id=?')
-        .run(d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', id);
+      db.prepare('UPDATE agents SET name=?,command=?,args=?,model=?,caps=?,color=?,avatar=?,dept=?,pricing=?,image=?,kind=? WHERE id=?')
+        .run(d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli', id);
     },
     deleteAgent(id) {
       db.prepare('DELETE FROM agents WHERE id=?').run(id);

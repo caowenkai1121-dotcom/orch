@@ -703,7 +703,7 @@
                 <div style="padding:12px 14px;display:flex;align-items:center;gap:8px;">
                   <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ a.name }}</div><div style="font-size:11px;color:#A39E94;font-family:'JetBrains Mono',monospace;">{{ a.entry }} · {{ a.updated }}</div></div>
                   <button onClick="{{ a.open }}" style="height:30px;padding:0 12px;border-radius:8px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12px;cursor:pointer;font-family:inherit;">运行</button>
-                  <button onClick="{{ a.del }}" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">🗑</button>
+                  <sc-if value="{{ a.canDel }}"><button onClick="{{ a.del }}" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">🗑</button></sc-if>
                 </div>
               </div>
             </sc-for>
@@ -759,8 +759,11 @@
   <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50;">
     <div style="background:#fff;border-radius:16px;padding:22px;width:460px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
       <div style="font-size:16px;font-weight:700;margin-bottom:14px;">{{ agentModalTitle }}</div>
-      <input id="na-name" value="{{ naName }}" placeholder="名字,如 Gemini 开发" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-cmd" value="{{ naCmd }}" placeholder="命令,如 gemini" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-name" value="{{ naName }}" placeholder="名字,如 DeepSeek / Seedance" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <select id="na-kind" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;color:#3C3933;">
+        <sc-for list="{{ kindOpts }}" as="k"><option value="{{ k.id }}">类型: {{ k.name }}</option></sc-for>
+      </select>
+      <input id="na-cmd" value="{{ naCmd }}" placeholder="命令(CLI类必填,如 gemini;大模型/视频/语音可留空)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-args" value="{{ naArgs }}" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-model" value="{{ naModel }}" placeholder="模型(可选)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-caps" value="{{ naCaps }}" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">

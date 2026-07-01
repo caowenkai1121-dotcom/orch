@@ -14,7 +14,7 @@ function roleMap(store) {
   store.listAgents().forEach((a) => {
     let caps = []; try { caps = JSON.parse(a.caps); } catch (e) {}
     let args = []; try { args = JSON.parse(a.args); } catch (e) {}
-    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '' };
+    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli' };
   });
   return m;
 }
@@ -64,7 +64,7 @@ function buildAll(store, user) {
     const tot = done + fail;
     return {
       id, name: r.label, type: id, dept: r.dept,
-      command: r.command, args: r.args, image: r.image,
+      command: r.command, args: r.args, image: r.image, kind: r.kind,
       color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',
       task: cur ? cur.text : '—', taskId: cur ? cur.id : '',

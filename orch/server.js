@@ -47,6 +47,24 @@ function buildAdapters() {
   return m;
 }
 let adapters = buildAdapters();
+
+// 自动发现已安装的 CLI 智能体(claude/codex 已 seed;这里补 hermes/gemini/aider 等)。用户无需手动添加 CLI agent。
+function cmdExists(cmd) { try { require('child_process').execSync((process.platform === 'win32' ? 'where ' : 'command -v ') + cmd, { stdio: 'ignore' }); return true; } catch (e) { return false; } }
+const KNOWN_CLI = [
+  { id: 'hermes', name: 'Hermes', command: 'hermes', args: ['-p'], model: 'hermes CLI', caps: ['代码生成'], color: '#2FAE9E', avatar: 'H', dept: 'dev' },
+  { id: 'gemini', name: 'Gemini', command: 'gemini', args: ['-p', '--yolo'], model: 'gemini CLI', caps: ['代码生成'], color: '#E0922E', avatar: 'G', dept: 'dev' },
+  { id: 'aider', name: 'Aider', command: 'aider', args: ['--yes-always'], model: 'aider CLI', caps: ['代码修改'], color: '#E06A63', avatar: 'A', dept: 'dev' },
+  { id: 'qwen', name: 'Qwen', command: 'qwen', args: ['-p'], model: 'qwen CLI', caps: ['代码生成'], color: '#9B59B6', avatar: 'Q', dept: 'dev' },
+  { id: 'cursor-agent', name: 'Cursor Agent', command: 'cursor-agent', args: [], model: 'cursor CLI', caps: ['代码生成'], color: '#3C3933', avatar: 'Cu', dept: 'dev' },
+];
+function scanAgents() {
+  const have = new Set(store.listAgents().map((a) => a.id));
+  let n = 0;
+  KNOWN_CLI.forEach((a) => { if (!have.has(a.id) && cmdExists(a.command)) { store.addAgent(Object.assign({}, a, { kind: 'cli' })); n++; } });
+  if (n) { adapters = buildAdapters(); console.log('自动发现 CLI 智能体:', n, '个'); }
+}
+scanAgents();
+
 const runs = new Map(); // 运行态注册表:taskId -> { cancelled, children }
 const workspace = makeWorkspace(ROOT);
 const templatesDir = path.join(__dirname, 'templates');
@@ -211,11 +229,10 @@ function listFilesIn(dir) {
   return out;
 }
 
-// #1 一键发布到应用广场
-app.post('/api/apps', (req, res) => {
+// 一键发布到应用广场(仅管理员)
+app.post('/api/apps', adminOnly, (req, res) => {
   const taskId = Number(req.body && req.body.taskId); const t = store.getTask(taskId);
   if (!t || !t.dir) return res.json({ ok: false });
-  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   let entry = req.body && req.body.entry;
   if (!entry) { const fl = listFilesIn(t.dir); entry = fl.find((f) => /(^|\/)index\.html$/i.test(f)) || fl.find((f) => /\.html$/i.test(f)) || fl[0]; }
   if (!entry) return res.json({ ok: false, error: '无可发布入口' });
@@ -223,28 +240,23 @@ app.post('/api/apps', (req, res) => {
   broadcastRaw({ type: 'apps' });
   res.json({ id: appId, entry });
 });
-app.delete('/api/apps/:id', (req, res) => {
-  const a = store.listApps().find((x) => x.id === Number(req.params.id));
-  if (a && !owns(req.user, store.getTask(a.task_id))) return res.status(403).json({ ok: false });
+app.delete('/api/apps/:id', adminOnly, (req, res) => {
   store.deleteApp(Number(req.params.id)); broadcastRaw({ type: 'apps' }); res.json({ ok: true });
 });
 
-// #2 继续开发:复用原任务产出目录,在已有文件上扩展
+// 继续开发:在原任务上追加新一轮步骤(不新建任务),复用产出目录
 app.post('/task/:id/continue', (req, res) => {
-  const pid = Number(req.params.id); const p = store.getTask(pid);
+  const id = Number(req.params.id); const t = store.getTask(id);
   const text = ((req.body && req.body.text) || '').trim();
-  if (!p || !text) return res.json({ ok: false });
-  if (!owns(req.user, p)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
-  const context = '【继续开发已有项目】当前工作目录已有之前产出的文件,请先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
-  const id = store.createTask(text, p.project, req.user.name, { isolate: 'none', parent: pid, approve: p.approve, ask: p.ask });
-  const dir = p.dir || ROOT;
-  store.setTaskDir(id, dir);
+  if (!t || !text) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  const dir = t.dir || ROOT;
   res.json({ id });
-  runTask(id, {
+  require('./runner').continueTask(id, {
     store, adapters, workspace: { make: () => dir }, runs,
-    makePlan: () => makePlan(context, { mode: 'llm', agents: store.listAgents().map((a) => a.id), refine: false, templatesDir, claude: adapters.claude }),
+    makePlan: (txt) => makePlan(txt, { mode: 'llm', agents: store.listAgents().map((a) => a.id), refine: false, templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
-  });
+  }, text);
 });
 
 // 静态服务产出文件(供预览);防目录穿越
