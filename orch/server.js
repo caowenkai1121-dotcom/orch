@@ -3,7 +3,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const { open } = require('./store');
 const { makePlan } = require('./planner');
-const { makeWorkspace, taskDir } = require('./workspace');
+const { makeWorkspace, taskDir, worktreeDir } = require('./workspace');
 const { runTask } = require('./runner');
 const api = require('./api');
 const generic = require('./adapters/generic');
@@ -56,13 +56,31 @@ app.post('/task', (req, res) => {
   const project = req.body.project || '默认项目';
   const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate });
   res.json({ id });
-  let dir = ROOT;
-  try { dir = taskDir(ROOT, owner, project, req.body.text, id); } catch (e) {}
   runTask(id, {
-    store, adapters, workspace: { make: () => dir }, runs,
+    store, adapters, workspace: taskWorkspace(store.getTask(id)), runs,
     makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: store.listAgents().map((a) => a.id), templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
+});
+
+// 按任务的 isolate 选工作目录:worktree(git仓内) / 每任务 data 目录(回退)
+function isGit(d) { try { execSync('git rev-parse --is-inside-work-tree', { cwd: d, stdio: 'ignore' }); return true; } catch (e) { return false; } }
+function taskWorkspace(t) {
+  let dir = ROOT;
+  try {
+    if (t.isolate === 'worktree' && isGit(ROOT)) dir = worktreeDir(ROOT, t.id);
+    else dir = taskDir(ROOT, t.owner, t.project, t.text, t.id);
+  } catch (e) {}
+  return { make: () => dir };
+}
+// 审批批准:用(可能编辑过的)plan 执行
+app.post('/task/:id/approve', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  let plan = req.body && req.body.plan;
+  if (!plan) { try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; } }
+  res.json({ ok: true });
+  require('./runner').runApproved(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, plan);
 });
 
 const { execSync } = require('child_process');
