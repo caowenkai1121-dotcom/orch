@@ -559,8 +559,9 @@ class Maestro extends MaestroBase {
     const mode = modeEl ? modeEl.value : 'llm';
     const user = this.currentName();
     const approve = (document.getElementById('nt-approve') || {}).checked ? 1 : 0;
+    const ask = (document.getElementById('nt-ask') || {}).checked ? 1 : 0;
     const isolate = (document.getElementById('nt-isolate') || {}).value || 'none';
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, isolate }) })
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {
