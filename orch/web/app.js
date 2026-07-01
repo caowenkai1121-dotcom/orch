@@ -435,13 +435,43 @@ class Maestro extends MaestroBase {
     v.canApprove = !!(curT && curT.sk === 'awaiting');
     v.approveTask = () => this.approveTask();
     v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok') : '—';
+    // #1 决策回答
+    v.canAnswer = !!(curT && curT.sk === 'awaiting_input');
+    v.question = curT ? (curT.question || '') : '';
+    v.answerTask = () => this.answerTask();
+    // #3 产出预览
+    v.openDir = () => this.openDir();
+    const filesReady = curT && this.live.filesFor === this.state.taskId && (this.live.files || []).length;
+    v.hasFiles = !!filesReady;
+    v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path }) }));
+    v.preview = this.previewOf(this.state.taskId);
     return v;
   }
 
   statusMeta(s) {
     if (s === 'cancelled') return { label: '已取消', c: '#6B6760', bg: '#F1EFEA', dot: '#C9C4BA' };
     if (s === 'awaiting') return { label: '待审批', c: '#8a6d00', bg: '#FFF6D6', dot: '#F0B400' };
+    if (s === 'awaiting_input') return { label: '待输入', c: '#B4541E', bg: '#FCEBDD', dot: '#E0922E' };
     return super.statusMeta(s);
+  }
+  answerTask() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    const el = document.getElementById('answer-input'); const answer = el ? el.value : '';
+    if (!answer.trim()) return;
+    const t = (this.TASKS || []).find((x) => x.id === id);
+    fetch('/task/' + id + '/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: t && t.blockedStep, answer: answer.trim() }) }).then(() => this.fetchAll()).catch(() => {});
+  }
+  openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
+  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.json()).then((fs) => { this.live.files = fs || []; this.live.filesFor = id; this.scheduleRender(); }).catch(() => {}); }
+  previewOf(id) {
+    const p = this.state.previewFile;
+    if (!p) return { none: true, hint: '选择左侧文件预览' };
+    const url = '/output/' + id + '/' + p.split('/').map(encodeURIComponent).join('/');
+    const e = (p.split('.').pop() || '').toLowerCase();
+    if (['html', 'htm'].indexOf(e) >= 0) return { iframe: true, url };
+    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp'].indexOf(e) >= 0) return { img: true, url };
+    if (['mp4', 'webm', 'mov', 'ogg', 'm4v'].indexOf(e) >= 0) return { video: true, url };
+    return { none: true, hint: p + ' — 此类型不预览,点「打开目录」查看' };
   }
   cancelTask() {
     const id = this.state.taskId;
@@ -475,7 +505,7 @@ class Maestro extends MaestroBase {
 
   go(screen, extra) {
     super.go(screen, extra);
-    if (screen === 'task' && extra && typeof extra.taskId === 'number') this.fetchRelay(extra.taskId);
+    if (screen === 'task' && extra && typeof extra.taskId === 'number') { this.fetchRelay(extra.taskId); this.state.previewFile = null; this.fetchFiles(extra.taskId); }
     if (screen === 'agent' && extra && extra.agentId) {
       fetch('/api/agentlog/' + extra.agentId).then((r) => r.json()).then((lines) => {
         const c = this.state.console || (this.state.console = {});
@@ -593,7 +623,7 @@ class Maestro extends MaestroBase {
           }
         } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents') {
           this.fetchAll();
-          if (typeof this.state.taskId === 'number') this.fetchRelay(this.state.taskId);
+          if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }
           if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
         }
       };
