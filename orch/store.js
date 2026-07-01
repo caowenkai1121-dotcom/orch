@@ -6,6 +6,7 @@ function open(file) {
     CREATE TABLE IF NOT EXISTS tasks(
       id INTEGER PRIMARY KEY, text TEXT, status TEXT, plan TEXT,
       project TEXT, owner TEXT, budget REAL, approve INTEGER, isolate TEXT,
+      ask INTEGER, dir TEXT, blocked_step TEXT, question TEXT,
       created_at TEXT, updated_at TEXT);
     CREATE TABLE IF NOT EXISTS projects(
       id TEXT PRIMARY KEY, name TEXT, client TEXT, created_at TEXT);
@@ -32,9 +33,14 @@ function open(file) {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
       const o = opts || {};
-      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)')
-        .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', now, now).lastInsertRowid;
+      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', o.ask ? 1 : 0, now, now).lastInsertRowid;
     },
+    setTaskDir(id, dir) { db.prepare('UPDATE tasks SET dir=? WHERE id=?').run(dir, id); },
+    setTaskDecision(id, stepId, question) { db.prepare('UPDATE tasks SET blocked_step=?, question=? WHERE id=?').run(stepId, question, id); },
+    clearTaskDecision(id) { db.prepare('UPDATE tasks SET blocked_step=NULL, question=NULL WHERE id=?').run(id); },
+    setStepOutput(taskId, stepId, output) { db.prepare('UPDATE steps SET output=? WHERE task_id=? AND step_id=?').run(output, taskId, stepId); },
+    doneSteps(taskId) { return db.prepare("SELECT step_id, output FROM steps WHERE task_id=? AND status='done'").all(taskId); },
     setPlan(id, plan) {
       db.prepare('UPDATE tasks SET plan=? WHERE id=?').run(JSON.stringify(plan), id);
     },
@@ -64,7 +70,7 @@ function open(file) {
       return t;
     },
     listTasks() {
-      return db.prepare('SELECT id,text,status,project,owner,budget,approve,isolate,created_at,updated_at FROM tasks ORDER BY id DESC').all();
+      return db.prepare('SELECT id,text,status,project,owner,budget,approve,isolate,ask,dir,blocked_step,question,created_at,updated_at FROM tasks ORDER BY id DESC').all();
     },
     getLogs(taskId) {
       return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);
