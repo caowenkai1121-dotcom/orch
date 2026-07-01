@@ -112,8 +112,9 @@ function buildAll(store) {
   });
 
   const today = store.usageToday();
+  const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/output/' + a.task_id + '/' + a.entry, updated: rel(a.created_at) }));
   return {
-    agents, depts, boards, projects, tasks: tasksVm, people, usage: today,
+    agents, depts, boards, projects, tasks: tasksVm, people, usage: today, apps,
     counts: {
       runningAgents: agents.filter((a) => a.status === 'working').length,
       runningTasks: tasks.filter((t) => t.status === 'running').length,
