@@ -16,9 +16,11 @@ store.seed();
 function buildAdapters() {
   const m = { echo: require('./adapters/echo') };
   store.listAgents().forEach((a) => { m[a.id] = generic.make(a); });
+  m.claude = require('./adapters/claude'); // claude 用 stream-json 专用适配器
   return m;
 }
 let adapters = buildAdapters();
+const runs = new Map(); // 运行态注册表:taskId -> { cancelled, children }
 const workspace = makeWorkspace(ROOT);
 const templatesDir = path.join(__dirname, 'templates');
 
@@ -52,15 +54,33 @@ app.post('/api/people/:id/agents', (req, res) => { store.setPersonAgents(req.par
 app.post('/task', (req, res) => {
   const owner = req.body.user || '操作者';
   const project = req.body.project || '默认项目';
-  const id = store.createTask(req.body.text, project, owner);
+  const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate });
   res.json({ id });
   let dir = ROOT;
   try { dir = taskDir(ROOT, owner, project, req.body.text, id); } catch (e) {}
   runTask(id, {
-    store, adapters, workspace: { make: () => dir },
+    store, adapters, workspace: { make: () => dir }, runs,
     makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: store.listAgents().map((a) => a.id), templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
+});
+
+const { execSync } = require('child_process');
+app.post('/task/:id/cancel', (req, res) => {
+  const id = Number(req.params.id); const rec = runs.get(id);
+  if (rec) {
+    rec.cancelled = true;
+    // 只杀仍存活的子进程,且按 PID 定向(绝不按镜像名):避免 PID 被回收后误杀无关进程(极端下可能是别的 claude 会话)
+    rec.children.forEach((c) => {
+      try {
+        if (!c || !c.pid || c.exitCode !== null || c.killed) return; // 已退出/已杀:跳过,防 PID 回收误伤
+        if (process.platform === 'win32') execSync('taskkill /T /F /PID ' + c.pid);
+        else c.kill('SIGKILL');
+      } catch (e) {}
+    });
+  }
+  store.setTaskStatus(id, 'cancelled'); store.addEvent(id, 'task', 'cancelled'); broadcast({ taskId: id, type: 'task', data: 'cancelled' });
+  res.json({ ok: true });
 });
 
 const server = app.listen(3000, () => console.log('orch http://localhost:3000'));

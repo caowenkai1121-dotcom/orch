@@ -5,7 +5,7 @@ const DEPT_META = {
   dev: { name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能' },
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
-const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
+const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting' })[s] || 'queued';
 const stepSk = (s) => ({ running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
@@ -101,7 +101,7 @@ function buildAll(store) {
     if (!projMap[tp.name]) projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [] });
   });
 
-  const tasksVm = tasks.map((t) => ({ id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at) }));
+  const tasksVm = tasks.map((t) => { const u = store.taskUsage(t.id); return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output }; });
 
   // 人员:来自 DB(含分配的 agent)
   const projN = Object.keys(projMap).length;
@@ -111,14 +111,16 @@ function buildAll(store) {
     return { id: p.id, name: p.name, av: p.av, color: p.color, role: p.role, email: p.email, projects: projN, agents: assigned.length, assignedIds: assigned, last: rel(lastTs) };
   });
 
+  const today = store.usageToday();
   return {
-    agents, depts, boards, projects, tasks: tasksVm, people,
+    agents, depts, boards, projects, tasks: tasksVm, people, usage: today,
     counts: {
       runningAgents: agents.filter((a) => a.status === 'working').length,
       runningTasks: tasks.filter((t) => t.status === 'running').length,
       doneToday: tasks.filter((t) => t.status === 'done' && isToday(t.updated_at)).length,
       failed: tasks.filter((t) => t.status === 'failed').length,
       totalTasks: tasks.length, totalAgents: agents.length,
+      costToday: today.cost,
     },
   };
 }
