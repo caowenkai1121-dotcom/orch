@@ -31,10 +31,22 @@ function rel(iso) {
 }
 function isToday(iso) { if (!iso) return false; const d = new Date(iso), n = new Date(); return d.toDateString() === n.toDateString(); }
 
-function buildAll(store) {
+// 当前用户可见的项目集合(null=全部,管理员)
+function visibleSet(store, user) {
+  if (!user || user.admin) return null;
+  const set = new Set();
+  store.listTasks().forEach((t) => { if (t.owner === user.name) set.add(t.project || '默认项目'); });
+  store.listGrants().forEach((g) => { if (g.user_id === user.id) set.add(g.project); });
+  store.listProjects().forEach((p) => { if (p.owner === user.id) set.add(p.name); });
+  return set;
+}
+
+function buildAll(store, user) {
   const ROLE = roleMap(store);
-  const tasks = store.listTasks();             // 最新在前
-  const steps = store.allSteps();
+  const vis = visibleSet(store, user);         // null=全部
+  const tasks = store.listTasks().filter((t) => !vis || vis.has(t.project || '默认项目') || t.owner === (user && user.name));
+  const visIds = new Set(tasks.map((t) => t.id));
+  const steps = store.allSteps().filter((s) => visIds.has(s.task_id));
   const byTask = {}; steps.forEach((s) => { (byTask[s.task_id] = byTask[s.task_id] || []).push(s); });
   const taskById = {}; tasks.forEach((t) => { taskById[t.id] = t; });
 
@@ -63,11 +75,11 @@ function buildAll(store) {
     };
   });
 
-  // 部门:按 agent.dept 派生
-  const deptIds = [...new Set(Object.values(ROLE).map((r) => r.dept))];
+  // 部门:来自 departments 表(含空部门)
   const boards = {};
-  const depts = deptIds.map((id) => {
-    const meta = DEPT_META[id] || { name: id, glyph: '·', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '' };
+  const depts = store.listDepts().map((d) => {
+    const id = d.id;
+    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '' };
     const myAgents = Object.keys(ROLE).filter((aid) => ROLE[aid].dept === id);
     const ds = steps.filter((s) => myAgents.includes(s.agent));
     const card = (s) => ({ t: (taskById[s.task_id] ? taskById[s.task_id].text : ('任务 ' + s.task_id)).slice(0, 36), m: (ROLE[s.agent] ? ROLE[s.agent].label : s.agent) + ' · ' + s.step_id });
@@ -75,7 +87,7 @@ function buildAll(store) {
     const fail = ds.filter((s) => s.status === 'failed');
     boards[id] = { todo: [], doing: ds.filter((s) => s.status === 'running').map(card), done: done.map(card) };
     const tot = done.length + fail.length;
-    return { id, agent: myAgents[0], ...meta, lead: '—', tasks: ds.filter((s) => s.status === 'running').length, doneWeek: done.length, successAvg: tot ? Math.round(done.length / tot * 100) + '%' : '—' };
+    return { id, agent: myAgents[0], agentIds: myAgents, ...meta, lead: '—', tasks: ds.filter((s) => s.status === 'running').length, doneWeek: done.length, successAvg: tot ? Math.round(done.length / tot * 100) + '%' : '—' };
   });
 
   // 项目:按 task.project 聚合
@@ -88,20 +100,24 @@ function buildAll(store) {
     const allDone = ts.every((t) => t.status === 'done');
     const deptSet = {}; ts.forEach((t) => agentsInTask(t.id).forEach((a) => { deptSet[ROLE[a].dept] = 1; }));
     const agSet = {}; ts.forEach((t) => agentsInTask(t.id).forEach((a) => { agSet[a] = 1; }));
+    const projRow = store.listProjects().find((p) => p.name === name);
+    const amOwner = !!(user && (user.admin || (projRow && projRow.owner === user.id) || ts.some((t) => t.owner === user.name)));
     return {
       id: 'PR' + i, name, client: 'orch', progress: prog,
       status: anyRun ? '进行中' : (allDone ? '已完成' : '规划'), sk: anyRun ? 'working' : (allDone ? 'done' : 'queued'),
       depts: Object.keys(deptSet), agentCount: Object.keys(agSet).length, taskCount: ts.length,
-      tasks: ts.map((t) => t.id),
+      tasks: ts.map((t) => t.id), grantIds: store.grantsFor(name), amOwner,
     };
   });
 
-  // 合并 projects 表里的项目(含无任务的空项目)
+  // 合并 projects 表里的项目(含无任务的空项目),按可见性过滤
   store.listProjects().forEach((tp) => {
-    if (!projMap[tp.name]) projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [] });
+    if (projMap[tp.name]) return;
+    if (vis && !(tp.owner === (user && user.id) || vis.has(tp.name))) return;
+    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
   });
 
-  const tasksVm = tasks.map((t) => { const u = store.taskUsage(t.id); return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir }; });
+  const tasksVm = tasks.map((t) => { const u = store.taskUsage(t.id); return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)) }; });
 
   // 人员:来自 DB(含分配的 agent)
   const projN = Object.keys(projMap).length;
@@ -114,6 +130,7 @@ function buildAll(store) {
   const today = store.usageToday();
   const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/output/' + a.task_id + '/' + a.entry, updated: rel(a.created_at) }));
   return {
+    me: user ? { id: user.id, name: user.name, admin: !!user.admin } : null,
     agents, depts, boards, projects, tasks: tasksVm, people, usage: today, apps,
     counts: {
       runningAgents: agents.filter((a) => a.status === 'working').length,
@@ -150,7 +167,7 @@ function plan(store, id) {
   let n = 0; const out = [];
   const push = (s, dep) => {
     const r = ROLE[s.agent] || { label: s.agent || '编排器', color: '#1A1814', av: '◆' };
-    out.push({ n: ++n, title: s.id, agent: r.label, avatar: r.av, color: r.color, sk: 'queued', eta: '', dep: dep || (s.deps && s.deps.length ? '依赖 ' + s.deps.join(',') : '') });
+    out.push({ n: ++n, title: s.id, agent: r.label, avatar: r.av, color: r.color, sk: 'queued', eta: '', dep: dep || (s.deps && s.deps.length ? '依赖 ' + s.deps.join(',') : ''), deps: s.deps || [] });
   };
   p.steps.forEach((s) => { if (s.type === 'loop') { (s.body || []).forEach((b) => push(b, '回退环')); } else push(s); });
   (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) e.sk = stepSk(st.status); });
