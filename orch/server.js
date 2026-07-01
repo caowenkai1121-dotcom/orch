@@ -115,6 +115,52 @@ app.get('/api/files/:id', (req, res) => {
   res.json(out.slice(0, 500));
 });
 
+// 列出目录下所有文件(相对路径)
+function listFilesIn(dir) {
+  const out = [];
+  const walk = (d, rel) => {
+    if (out.length > 500) return;
+    let items = []; try { items = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
+    for (const it of items) {
+      if (it.name === '.git' || it.name === 'node_modules') continue;
+      const rp = rel ? rel + '/' + it.name : it.name;
+      if (it.isDirectory()) walk(path.join(d, it.name), rp); else out.push(rp);
+    }
+  };
+  walk(dir, '');
+  return out;
+}
+
+// #1 一键发布到应用广场
+app.post('/api/apps', (req, res) => {
+  const taskId = Number(req.body && req.body.taskId); const t = store.getTask(taskId);
+  if (!t || !t.dir) return res.json({ ok: false });
+  let entry = req.body && req.body.entry;
+  if (!entry) { const fl = listFilesIn(t.dir); entry = fl.find((f) => /(^|\/)index\.html$/i.test(f)) || fl.find((f) => /\.html$/i.test(f)) || fl[0]; }
+  if (!entry) return res.json({ ok: false, error: '无可发布入口' });
+  const appId = store.addApp({ name: (req.body && req.body.name) || t.text, taskId, dir: t.dir, entry });
+  broadcastRaw({ type: 'apps' });
+  res.json({ id: appId, entry });
+});
+app.delete('/api/apps/:id', (req, res) => { store.deleteApp(Number(req.params.id)); broadcastRaw({ type: 'apps' }); res.json({ ok: true }); });
+
+// #2 继续开发:复用原任务产出目录,在已有文件上扩展
+app.post('/task/:id/continue', (req, res) => {
+  const pid = Number(req.params.id); const p = store.getTask(pid);
+  const text = ((req.body && req.body.text) || '').trim();
+  if (!p || !text) return res.json({ ok: false });
+  const context = '【继续开发已有项目】当前工作目录已有之前产出的文件,请先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
+  const id = store.createTask(text, p.project, p.owner, { isolate: 'none', parent: pid, approve: p.approve, ask: p.ask });
+  const dir = p.dir || ROOT;
+  store.setTaskDir(id, dir);
+  res.json({ id });
+  runTask(id, {
+    store, adapters, workspace: { make: () => dir }, runs,
+    makePlan: () => makePlan(context, { mode: 'llm', agents: store.listAgents().map((a) => a.id), refine: false, templatesDir, claude: adapters.claude }),
+    onEvent: broadcast,
+  });
+});
+
 // 静态服务产出文件(供预览);防目录穿越
 app.get('/output/:id/*splat', (req, res) => {
   const t = store.getTask(Number(req.params.id));
