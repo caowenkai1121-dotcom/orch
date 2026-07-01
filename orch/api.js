@@ -5,7 +5,7 @@ const DEPT_META = {
   dev: { name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能' },
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
-const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting' })[s] || 'queued';
+const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input' })[s] || 'queued';
 const stepSk = (s) => ({ running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
@@ -101,7 +101,7 @@ function buildAll(store) {
     if (!projMap[tp.name]) projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [] });
   });
 
-  const tasksVm = tasks.map((t) => { const u = store.taskUsage(t.id); return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output }; });
+  const tasksVm = tasks.map((t) => { const u = store.taskUsage(t.id); return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir }; });
 
   // 人员:来自 DB(含分配的 agent)
   const projN = Object.keys(projMap).length;
@@ -134,7 +134,8 @@ function relay(store, id) {
   return (t.steps || []).map((s) => {
     const r = ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' };
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
-    return { who: r.label, avatar: r.av, color: r.color, title: s.step_id, desc: last || ('状态: ' + s.status), time: '', dur: '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    const summary = (s.output && s.output.trim()) ? s.output.trim().slice(-300) : (last || ('状态: ' + s.status));
+    return { who: r.label, avatar: r.av, color: r.color, title: s.step_id, desc: summary, time: '', dur: '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
   });
 }
 

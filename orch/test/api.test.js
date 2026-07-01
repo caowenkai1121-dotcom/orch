@@ -66,18 +66,18 @@ test('relay 返回步骤最新日志和失败回退状态', () => {
   const qa = relay.find((r) => r.title === 'qa');
 
   assert.equal(dev.who, 'Claude');
-  assert.equal(dev.desc, 'dev finished');
+  assert.equal(dev.desc, 'dev output'); // desc 优先用步骤产出摘要(step.output)
   assert.equal(dev.sk, 'done');
   assert.equal(dev.back, false);
 
   assert.equal(qa.who, 'Codex');
-  assert.equal(qa.desc, 'qa started');
+  assert.equal(qa.desc, 'qa started'); // qa 无 output → 回退最新日志
   assert.equal(qa.sk, 'working');
 
   const failed = api.relay(store, failedId).find((r) => r.title === 'fix');
   assert.equal(failed.sk, 'failed');
   assert.equal(failed.back, true);
-  assert.equal(failed.desc, 'failed line');
+  assert.equal(failed.desc, 'boom'); // 有 output 用 output
 });
 
 test('plan 展开普通步骤和 loop body 并覆盖真实步骤状态', () => {
