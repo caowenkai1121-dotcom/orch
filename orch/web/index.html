@@ -58,6 +58,10 @@
         <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3.5 5h11M3.5 9h11M3.5 13h7"></path></svg>
         任务
       </button>
+      <button onClick="{{ goApps }}" style-hover="background:#F2F0EA" style="width:100%;display:flex;align-items:center;gap:11px;padding:8px 10px;border:none;border-radius:9px;cursor:pointer;font-size:13.5px;text-align:left;margin-bottom:2px;background:{{ nav.apps.bg }};color:{{ nav.apps.fg }};font-weight:{{ nav.apps.w }};box-shadow:{{ nav.apps.bar }};font-family:inherit;">
+        <svg width="17" height="17" viewBox="0 0 18 18" fill="none"><rect x="2.5" y="2.5" width="5.5" height="5.5" rx="1.4" fill="currentColor"></rect><rect x="10" y="2.5" width="5.5" height="5.5" rx="1.4" fill="currentColor" opacity="0.55"></rect><rect x="2.5" y="10" width="5.5" height="5.5" rx="1.4" fill="currentColor" opacity="0.55"></rect><rect x="10" y="10" width="5.5" height="5.5" rx="1.4" fill="currentColor"></rect></svg>
+        应用广场
+      </button>
 
       <div style="font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#B6B1A7;padding:14px 12px 6px;">部门</div>
       <sc-for list="{{ depts }}" as="d" hint-placeholder-count="6">
@@ -420,6 +424,8 @@
           </div>
           <sc-if value="{{ canApprove }}"><div style="display:flex;gap:8px;flex:none;"><button onClick="{{ approveTask }}" style="height:34px;padding:0 14px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">批准并运行</button><button onClick="{{ cancelTask }}" style="height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">取消</button></div></sc-if>
           <sc-if value="{{ canCancel }}"><button onClick="{{ cancelTask }}" style="flex:none;height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #F1CBA6;color:#B4541E;font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">■ 停止</button></sc-if>
+          <sc-if value="{{ canPublish }}"><button onClick="{{ publishApp }}" style="flex:none;height:34px;padding:0 14px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">🚀 发布到应用广场</button></sc-if>
+          <sc-if value="{{ canContinue }}"><button onClick="{{ continueTask }}" style="flex:none;height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">继续开发</button></sc-if>
         </div>
 
         <div style="display:flex;gap:10px;margin:18px 0 22px;">
@@ -728,6 +734,34 @@
       </div>
       </sc-if>
 
+      <sc-if value="{{ isApps }}">
+      <div style="padding:26px 30px 40px;max-width:1180px;">
+        <div style="margin-bottom:18px;"><h1 style="font-size:21px;font-weight:700;margin:0;">应用广场</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">已发布的应用,点击直接运行</div></div>
+        <sc-if value="{{ appOpen }}">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <button onClick="{{ closeApp }}" style="height:32px;padding:0 13px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;font-size:12.5px;">← 返回</button>
+            <span style="font-size:14px;font-weight:650;">{{ curApp.name }}</span>
+            <a href="{{ curApp.url }}" target="_blank" style="margin-left:auto;font-size:12.5px;color:#8a6d00;text-decoration:none;">新标签打开 ↗</a>
+          </div>
+          <iframe src="{{ curApp.url }}" style="width:100%;height:72vh;border:1px solid #E9E7E1;border-radius:12px;background:#fff;"></iframe>
+        </sc-if>
+        <sc-if value="{{ appList }}">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;">
+            <sc-for list="{{ apps }}" as="a" hint-placeholder-count="3">
+              <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(20,18,14,.04);">
+                <button onClick="{{ a.open }}" style-hover="opacity:.92" style="width:100%;border:none;background:#F7F6F3;cursor:pointer;padding:0;display:block;height:150px;overflow:hidden;"><iframe src="{{ a.url }}" scrolling="no" style="width:100%;height:150px;border:none;pointer-events:none;background:#fff;"></iframe></button>
+                <div style="padding:12px 14px;display:flex;align-items:center;gap:8px;">
+                  <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ a.name }}</div><div style="font-size:11px;color:#A39E94;font-family:'JetBrains Mono',monospace;">{{ a.entry }} · {{ a.updated }}</div></div>
+                  <button onClick="{{ a.open }}" style="height:30px;padding:0 12px;border-radius:8px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12px;cursor:pointer;font-family:inherit;">运行</button>
+                  <button onClick="{{ a.del }}" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">🗑</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
     </main>
   </div>
 </div>
@@ -820,6 +854,20 @@
       <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
         <button onClick="{{ submitProject }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">创建</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ modalContinue }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50;">
+    <div style="background:#fff;border-radius:16px;padding:22px;width:480px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:6px;">继续开发</div>
+      <div style="font-size:12.5px;color:#8A857C;margin-bottom:12px;">在该任务已有产出基础上扩展,agent 会先读现有文件再改。填写新增/修改需求:</div>
+      <textarea id="cont-text" placeholder="例如:加一个深色模式切换 / 增加登录页 / 修复移动端布局" style="width:100%;height:90px;border:1px solid #E6E3DC;border-radius:9px;padding:10px;font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:16px;">
+        <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
+        <button onClick="{{ continueSubmit }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">继续开发</button>
       </div>
     </div>
   </div>

@@ -445,6 +445,22 @@ class Maestro extends MaestroBase {
     v.hasFiles = !!filesReady;
     v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path }) }));
     v.preview = this.previewOf(this.state.taskId);
+    // #发布/继续
+    v.canPublish = !!(curT && curT.sk === 'done' && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path)));
+    v.publishApp = () => this.publishApp();
+    v.canContinue = !!(curT && ['done', 'cancelled', 'failed'].indexOf(curT.sk) >= 0);
+    v.continueTask = () => this.continueTask();
+    v.modalContinue = this.state.modal === 'continue';
+    v.continueSubmit = () => this.continueSubmit();
+    // 应用广场
+    v.isApps = this.state.screen === 'apps';
+    if (v.nav) v.nav.apps = this.navFor(this.state.screen === 'apps');
+    v.goApps = () => this.goApps();
+    const openApp = this.state.openApp;
+    v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
+    v.closeApp = () => this.setState({ openApp: null });
+    v.apps = (this.live.apps || []).map((a) => ({ ...a, open: () => this.setState({ openApp: a }), del: () => this.delApp(a.id) }));
+    if (v.isApps) { v.crumbRoot = '工作区'; v.crumbLeaf = '应用广场'; }
     return v;
   }
 
@@ -462,6 +478,21 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: t && t.blockedStep, answer: answer.trim() }) }).then(() => this.fetchAll()).catch(() => {});
   }
   openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
+  goApps() { this.setState({ screen: 'apps', openApp: null }); }
+  publishApp() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    fetch('/api/apps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ taskId: id }) })
+      .then((r) => r.json()).then((d) => { if (d && d.ok !== false) this.setState({ screen: 'apps', openApp: null }); this.fetchAll(); }).catch(() => {});
+  }
+  delApp(id) { fetch('/api/apps/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
+  continueTask() { this.setState({ modal: 'continue' }); }
+  continueSubmit() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    const el = document.getElementById('cont-text'); const text = el ? el.value : '';
+    if (!text.trim()) return;
+    fetch('/task/' + id + '/continue', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
+      .then((r) => r.json()).then((d) => { this.setState({ modal: null }); if (d && d.id) this.go('task', { taskId: d.id }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+  }
   fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.json()).then((fs) => { this.live.files = fs || []; this.live.filesFor = id; this.scheduleRender(); }).catch(() => {}); }
   previewOf(id) {
     const p = this.state.previewFile;
@@ -599,6 +630,7 @@ class Maestro extends MaestroBase {
       this.PROJECTS = d.projects || []; this.TASKS = d.tasks || []; this.PEOPLE = d.people || [];
       this.live.counts = d.counts || {};
       this.live.usage = d.usage || {};
+      this.live.apps = d.apps || [];
       this.state.activity = d.activity || [];
       const active = this.TASKS[0] && this.TASKS[0].id;
       if (active != null) { this.live.activeId = active; if (!this.live.plan[active]) this.fetchPlan(active); }
@@ -625,7 +657,7 @@ class Maestro extends MaestroBase {
             c[m.agent] = c[m.agent].slice(-200);
             this.scheduleRender();
           }
-        } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents') {
+        } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents' || m.type === 'apps') {
           this.fetchAll();
           if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }
           if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
