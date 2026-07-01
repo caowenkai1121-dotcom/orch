@@ -1,6 +1,6 @@
-const { runPlan } = require('./engine');
+const { runPlan, AUTONOMY, ASK } = require('./engine');
 
-// 串起:出 plan → (审批模式则暂停待批,否则执行)
+// 出 plan →(审批模式暂停待批,否则执行)
 async function runTask(taskId, deps) {
   const { store, onEvent, makePlan } = deps;
   store.setTaskStatus(taskId, 'planning');
@@ -9,44 +9,71 @@ async function runTask(taskId, deps) {
   store.setPlan(taskId, plan);
   if (store.addEvent) store.addEvent(taskId, 'plan', { steps: (plan.steps || []).length });
   emit(onEvent, taskId, null, 'plan', plan);
-  if (task.approve) { // 审批模式:出 plan 后暂停,等 /approve
+  if (task.approve) {
     store.setTaskStatus(taskId, 'awaiting');
     if (store.addEvent) store.addEvent(taskId, 'task', 'awaiting');
     emit(onEvent, taskId, null, 'task', 'awaiting');
     return;
   }
-  return execute(taskId, plan, deps);
+  return execute(taskId, plan, deps, {});
 }
 
-// 用(可能被编辑过的)plan 执行,审批批准后由 server 调用
+// 审批批准后用(可能编辑过的)plan 执行
 function runApproved(taskId, deps, plan) {
   deps.store.setPlan(taskId, plan);
   if (deps.store.addEvent) deps.store.addEvent(taskId, 'task', 'approved');
-  return execute(taskId, plan, deps);
+  return execute(taskId, plan, deps, {});
 }
 
-async function execute(taskId, plan, deps) {
+// 用户回答决策后续跑:跳过已完成步骤,把答案注入被阻塞步骤
+function resumeTask(taskId, deps, stepId, answer) {
+  const { store } = deps;
+  const t = store.getTask(taskId);
+  let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  const seedDone = {};
+  store.doneSteps(taskId).forEach((s) => { seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  store.clearTaskDecision(taskId);
+  if (store.addEvent) store.addEvent(taskId, 'decision', { step: stepId, answer });
+  return execute(taskId, plan, deps, { seedDone, answers: { [stepId]: answer } });
+}
+
+async function execute(taskId, plan, deps, opts) {
   const { store, adapters, workspace, onEvent, runs } = deps;
   const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, children: new Set() }), runs.get(taskId))) || { cancelled: false, children: new Set() };
+  const task = store.getTask(taskId);
   store.setTaskStatus(taskId, 'running');
 
   const agentOf = {};
   const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else agentOf[s.id] = s.agent; });
   collect(plan.steps || []);
 
+  let pending = null;
   const ctx = {
-    adapters,
-    workspace,
+    adapters, workspace,
+    preamble: task.ask ? ASK : AUTONOMY,
+    askMode: !!task.ask,
+    seedDone: opts.seedDone || null,
+    answers: opts.answers || null,
     isCancelled: () => rec.cancelled,
     onChild: (child) => rec.children.add(child),
     onUsage: (stepId, agent, u) => { store.addUsage(taskId, stepId, agent, u); emit(onEvent, taskId, stepId, 'usage', u); },
+    onResult: (stepId, out) => store.setStepOutput(taskId, stepId, (out || '').slice(-2000)),
+    onDecision: (stepId, q) => { pending = { stepId, q }; },
     onLog: (stepId, line) => { store.addLog(taskId, stepId, line); emit(onEvent, taskId, stepId, 'log', line, agentOf[stepId]); },
     onStatus: (stepId, status) => { store.setStep(taskId, stepId, agentOf[stepId] || '', status, null); if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status }); emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]); },
   };
 
   try {
     const done = await runPlan(plan, ctx);
-    const ok = !rec.cancelled && (plan.steps || []).every((s) => done[s.id] && done[s.id].success);
+    if (pending) { // 有步骤需人决策:暂停等回答
+      store.setTaskDecision(taskId, pending.stepId, pending.q);
+      store.setTaskStatus(taskId, 'awaiting_input');
+      if (store.addEvent) store.addEvent(taskId, 'task', 'awaiting_input');
+      emit(onEvent, taskId, null, 'task', 'awaiting_input');
+      return;
+    }
+    const seeded = opts.seedDone || {};
+    const ok = !rec.cancelled && (plan.steps || []).every((s) => (done[s.id] || seeded[s.id]) && (done[s.id] || seeded[s.id]).success);
     const final = rec.cancelled ? 'cancelled' : (ok ? 'done' : 'failed');
     store.setTaskStatus(taskId, final);
     if (store.addEvent) store.addEvent(taskId, 'task', final);
@@ -63,4 +90,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved };
+module.exports = { runTask, runApproved, resumeTask };
