@@ -1,4 +1,5 @@
 const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const { open } = require('./store');
@@ -54,10 +55,12 @@ app.post('/api/people/:id/agents', (req, res) => { store.setPersonAgents(req.par
 app.post('/task', (req, res) => {
   const owner = req.body.user || '操作者';
   const project = req.body.project || '默认项目';
-  const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate });
+  const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate, ask: req.body.ask });
+  const ws = taskWorkspace(store.getTask(id));
+  store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
   res.json({ id });
   runTask(id, {
-    store, adapters, workspace: taskWorkspace(store.getTask(id)), runs,
+    store, adapters, workspace: ws, runs,
     makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: store.listAgents().map((a) => a.id), templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
@@ -73,6 +76,52 @@ function taskWorkspace(t) {
   } catch (e) {}
   return { make: () => dir };
 }
+// 用户回答决策 → 续跑
+app.post('/task/:id/answer', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  const stepId = (req.body && req.body.stepId) || t.blocked_step;
+  const answer = (req.body && req.body.answer) || '';
+  res.json({ ok: true });
+  require('./runner').resumeTask(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, stepId, answer);
+});
+
+// 打开产出目录(系统文件管理器)
+app.post('/task/:id/open', (req, res) => {
+  const t = store.getTask(Number(req.params.id)); const dir = t && t.dir;
+  if (dir) { try { const cmd = process.platform === 'win32' ? 'explorer' : (process.platform === 'darwin' ? 'open' : 'xdg-open'); require('child_process').spawn(cmd, [dir], { detached: true, stdio: 'ignore' }); } catch (e) {} }
+  res.json({ ok: !!dir });
+});
+
+// 列产出文件
+app.get('/api/files/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!t || !t.dir) return res.json([]);
+  const out = [];
+  const walk = (d, rel) => {
+    if (out.length > 500) return;
+    let items = []; try { items = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
+    for (const it of items) {
+      if (it.name === '.git' || it.name === 'node_modules') continue;
+      const rp = rel ? rel + '/' + it.name : it.name;
+      if (it.isDirectory()) walk(path.join(d, it.name), rp);
+      else { let sz = 0; try { sz = fs.statSync(path.join(d, it.name)).size; } catch (e) {} out.push({ path: rp, size: sz }); }
+    }
+  };
+  walk(t.dir, '');
+  res.json(out.slice(0, 500));
+});
+
+// 静态服务产出文件(供预览);防目录穿越
+app.get('/output/:id/*splat', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!t || !t.dir) return res.sendStatus(404);
+  const rel = [].concat(req.params.splat || []).join('/'); // Express5 命名通配
+  const full = path.resolve(t.dir, rel);
+  if (!full.startsWith(path.resolve(t.dir))) return res.sendStatus(403);
+  res.sendFile(full);
+});
+
 // 审批批准:用(可能编辑过的)plan 执行
 app.post('/task/:id/approve', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
