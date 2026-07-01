@@ -45,9 +45,10 @@ function validate(plan, agentIds) {
   };
   return plan.steps.every(checkStep);
 }
-async function fromLLM(text, claude, agentIds) {
+async function fromLLM(text, claude, agentIds, orchestration) {
   const prompt = `把下面的开发任务拆成 JSON,字段 steps,每步 {id,agent,prompt,deps}。`
     + `agent 只能取这些 id 之一: ${agentIds.join(', ')}。`
+    + (orchestration ? `严格按用户给出的编排来分步与指派 agent:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示"实现→验证,失败重试"。`
     + `多个无依赖的步骤会并行。`
     + `要求:每步必须自包含、可直接执行,不要假设存在外部设计文档/接口/数据——需要就让该步自己创建(如先建 mock 数据/页面);`
@@ -59,15 +60,43 @@ async function fromLLM(text, claude, agentIds) {
   return plan;
 }
 
-async function makePlan(text, opts) {
-  const { mode, agents, templatesDir, claude } = opts;
-  if (mode === 'llm' && claude && agents && agents.length) {
-    try {
-      const plan = await fromLLM(text, claude, agents);
-      if (validate(plan, agents)) return plan;
-    } catch (e) { /* 落到模板 */ }
-  }
-  return fromTemplate(text, templatesDir) || { task: text, steps: [] };
+// #2 需求分析:把用户简短需求扩写成高质量、可执行的 brief,提升产出质量
+async function refineBrief(text, claude) {
+  const p = '你是资深产品经理+架构师。把下面用户的简短需求扩写成一份高质量、可直接执行的开发任务说明(brief),'
+    + '包含:明确目标;核心功能点(具体到可交付);页面/模块结构;技术选型(优先零依赖或 CDN、单文件优先);验收要点。'
+    + '要具体可落地,不空话,不反问。直接输出 brief 正文(不超过 300 字)。\n\n用户需求: ' + text;
+  const { output } = await claude.run({ prompt: p, workdir: process.cwd(), onLine: () => {} });
+  const b = (output || '').trim();
+  return b ? (text + '\n\n【需求细化】\n' + b).slice(0, 3500) : text;
 }
 
-module.exports = { fromTemplate, fromLLM, makePlan, validate };
+// agents=所选 agent(约束);orchestration=文字编排;refine=是否先细化需求
+async function makePlan(text, opts) {
+  const { mode, agents, orchestration, refine, templatesDir, claude } = opts;
+  const allowed = (agents && agents.length) ? agents : ['claude'];
+  let brief = text;
+  if (refine && claude) { try { brief = await refineBrief(text, claude); } catch (e) {} }
+  const orch = (orchestration || '').trim();
+
+  // 1) 有文字编排 → 按编排(约束到所选 agent)
+  if (orch && claude) {
+    try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return p; } catch (e) {}
+  }
+  // 2) 只选了一个 agent + 无编排 → 该 agent 单步直做
+  if (allowed.length === 1) {
+    return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
+  }
+  // 3) 显式模板模式且含 claude+codex → 走模板
+  if (mode === 'template' && allowed.includes('claude') && allowed.includes('codex')) {
+    const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl;
+  }
+  // 4) 多 agent → LLM 用这些 agent 拆
+  if (claude) {
+    try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return p; } catch (e) {}
+  }
+  // 5) 兜底
+  if (allowed.includes('claude') && allowed.includes('codex')) { const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl; }
+  return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
+}
+
+module.exports = { fromTemplate, fromLLM, makePlan, validate, refineBrief };

@@ -17,7 +17,7 @@ test('无模板时调 LLM 出 plan', async () => {
   const fakeClaude = { async run() {
     return { output: '```json\n{"steps":[{"id":"x","agent":"claude","prompt":"p","deps":[]}]}\n```', success: true };
   } };
-  // LLM 模式需传 mode + agents
-  const plan = await makePlan('任意', { mode: 'llm', agents: ['claude'], templatesDir: __dirname, claude: fakeClaude });
+  // 多 agent 才走 LLM 拆解(单 agent 会短路成单步直做)
+  const plan = await makePlan('任意', { mode: 'llm', agents: ['claude', 'codex'], templatesDir: __dirname, claude: fakeClaude });
   assert.equal(plan.steps[0].id, 'x');
 });
