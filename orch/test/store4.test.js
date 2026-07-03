@@ -185,3 +185,16 @@ test('批量清理:删除失败/取消任务(deleteTask 逐个)', () => {
   assert.equal(s.getTask(b), null);
   assert.ok(s.getTask(c)); // done 保留
 });
+
+test('任务总耗时:终态任务算 created→updated', () => {
+  const { open } = require('../store');
+  const { buildAll } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', '默认项目', 'admin', {});
+  // 手改时间:创建到更新相差 90 秒
+  s.db.prepare('UPDATE tasks SET created_at=?, updated_at=?, status=? WHERE id=?')
+    .run('2026-07-04T00:00:00.000Z', '2026-07-04T00:01:30.000Z', 'done', id);
+  const vm = buildAll(s, { name: 'admin', admin: 1 });
+  const t = vm.tasks.find((x) => x.id === id);
+  assert.equal(t.durLabel, '1m30s');
+});

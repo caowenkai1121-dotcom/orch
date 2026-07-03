@@ -160,6 +160,12 @@ function buildAll(store, user) {
     const total = tops.length, doneN = tops.filter((s) => s.status === 'done').length;
     const progress = total ? Math.round(doneN / total * 100) : 0;
     const progressLabel = total ? (doneN + '/' + total + ' 步') : '';
+    // 总耗时:创建→最后更新(仅终态任务)
+    let durLabel = '';
+    if ((t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') && t.created_at && t.updated_at) {
+      const sec = Math.round((new Date(t.updated_at).getTime() - new Date(t.created_at).getTime()) / 1000);
+      if (sec >= 0) durLabel = sec >= 3600 ? Math.floor(sec / 3600) + 'h' + Math.floor(sec % 3600 / 60) + 'm' : (sec >= 60 ? Math.floor(sec / 60) + 'm' + (sec % 60) + 's' : sec + 's');
+    }
     // 运行中:哪个部门的哪个员工正在做哪一步
     let nowDoing = '';
     if (t.status === 'running') {
@@ -169,7 +175,7 @@ function buildAll(store, user) {
         return (emp ? (emp.emoji + ' ' + emp.deptName + '·' + emp.name) : (ROLE[s.agent] ? ROLE[s.agent].label : s.agent)) + ' 正在做 ' + s.step_id;
       }).join(' | ');
     }
-    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel };
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel };
   });
 
   // 人员:来自 DB(含分配的 agent)

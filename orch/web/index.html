@@ -389,6 +389,7 @@
               <sc-if value="{{ task.progressLabel }}"><span>📊 进度 <b style="color:#3C3933;">{{ task.progressLabel }}</b></span></sc-if>
               <span>💰 成本 <b style="color:#3C3933;">${{ task.cost }}</b></span>
               <span>🔤 <b style="color:#3C3933;">{{ task.tokens }}</b> tokens</span>
+              <sc-if value="{{ task.durLabel }}"><span>⏱ 耗时 <b style="color:#3C3933;">{{ task.durLabel }}</b></span></sc-if>
             </div>
           </div>
           <sc-if value="{{ canApprove }}"><div style="display:flex;gap:8px;flex:none;"><button onClick="{{ approveTask }}" style="height:34px;padding:0 14px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">批准并运行</button><button onClick="{{ cancelTask }}" style="height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">取消</button></div></sc-if>
