@@ -1044,11 +1044,14 @@ class Maestro extends MaestroBase {
   }
   // 快捷下发:一行描述→全默认智能拆分建任务(免弹窗)
   quickLaunch() {
-    const el = document.getElementById('ql-input'); const text = el ? el.value.trim() : '';
+    const el = document.getElementById('ql-input'); let text = el ? el.value.trim() : '';
     if (!text) return;
+    // @部门名 前缀:定向某部门下发(power-user)
+    let dept = null; const m = text.match(/^@(\S+)\s+(.+)/s);
+    if (m) { const d = (this.DEPTS || []).find((x) => x.name === m[1] || x.name.indexOf(m[1]) >= 0 || x.id === m[1]); if (d) { dept = d.id; text = m[2].trim(); } }
     el.value = '';
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, refine: true }) })
-      .then((r) => r.json()).then(() => { this.toast('✓ 已下发,正在拆分任务'); this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => this.toast('✗ 下发失败'));
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, dept, refine: true }) })
+      .then((r) => r.json()).then(() => { this.toast(dept ? ('✓ 已下发给部门,正在拆分') : '✓ 已下发,正在拆分任务'); this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => this.toast('✗ 下发失败'));
   }
   delTask() {
     const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
