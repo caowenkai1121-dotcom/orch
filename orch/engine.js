@@ -38,6 +38,17 @@ function dirBrief(dir) {
   } catch (e) { return ''; }
 }
 
+// 读 findings.md 的真实内容(团队共享记忆),去样板头,截断 → 直接注入下游简报(不指望员工主动读文件)
+function readFindings(dir) {
+  try {
+    const fs = require('fs'), path = require('path');
+    const fp = path.join(dir, 'findings.md');
+    if (!fs.existsSync(fp)) return '';
+    const body = fs.readFileSync(fp, 'utf8').replace(/^#[^\n]*\n+/, '').replace(/^>[^\n]*\n+/gm, '').trim();
+    return body.length > 20 ? body.slice(-1500) : '';
+  } catch (e) { return ''; }
+}
+
 async function runStep(step, ctx, prevOutput) {
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
@@ -51,10 +62,12 @@ async function runStep(step, ctx, prevOutput) {
   // 任务简报:全局目标+流水线位置+工作目录现状 → 员工带着现场感知干活
   const b = ctx.brief ? ctx.brief(step.id) : '';
   const files = dirBrief(workdir);
+  const findings = readFindings(workdir);
   const lf = ctx.lastFail && ctx.lastFail[step.id];
   const failTxt = lf ? '【你上次在此步失败了,别重蹈覆辙(换思路)】\n' + lf + '\n\n' : '';
   const briefTxt = failTxt + ((b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
-    + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '') + '\n\n') : '');
+    + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '')
+    + (findings ? '\n\n【团队共享发现 findings.md】(同事此前的决策/踩坑,直接参考,别重复踩)\n' + findings : '') + '\n\n') : '');
   const gateTxt = step.isGate ? '\n\n【质量门·必读】你是本环节质量门,负责审查上游产出是否达标。输出必须以「PASS」或「FAIL」开头,后接一句理由;不达标必须判 FAIL 并列出具体问题(下游会据此退回重做)。不要含糊,不要因为怕麻烦就放行。' : '';
   let prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
   ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)

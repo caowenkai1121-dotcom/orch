@@ -156,3 +156,17 @@ test('交接:上游失败时下游被告知', async () => {
   await runPlan(plan, { adapters: { f: failAgent, d: downAgent }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
   assert.match(downPrompt, /失败|产出可能不完整/); // 下游收到上游失败告知
 });
+
+test('简报注入findings.md内容(不指望员工主动读)', async () => {
+  const { runPlan } = require('../engine');
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchfnd-'));
+  fs.writeFileSync(path.join(dir, 'findings.md'), '# 团队发现\n\n> 说明\n\n- 决定:用 canvas 手绘图表 UNIQUE_FND_9x7\n- 踩坑:file:// 被封');
+  let seen = '';
+  const ag = { async run({ prompt }) { seen = prompt; return { output: 'ok', success: true }; } };
+  const plan = { steps: [{ id: 'a', agent: 'x', prompt: 'p', deps: [] }] };
+  await runPlan(plan, { adapters: { x: ag }, workspace: { make: () => dir }, onLog: () => {}, onStatus: () => {} });
+  assert.match(seen, /团队共享发现/);
+  assert.match(seen, /UNIQUE_FND_9x7/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
