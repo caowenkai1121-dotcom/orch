@@ -2,7 +2,30 @@ const { runPlan, AUTONOMY, ASK } = require('./engine');
 const fs = require('fs');
 const path = require('path');
 
-// —— 文件化规划(参考 Manus planning-with-files):引擎在任务目录维护 task_plan.md ——
+// —— 产出版本化(参考 Conductor/vibe-kanban):非 git 产出目录自动 git 化,每步完成自动 commit ——
+// 每步一个 commit → 任务详情「改动」页可审查每步/每轮改了什么。worktree 任务(已是 git)不动,归用户管。
+const { execSync } = require('child_process');
+function gitOut(dir, cmd) { return execSync(cmd, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString(); }
+function ensureOutputGit(dir) {
+  try {
+    if (!dir || !fs.existsSync(dir)) return false;
+    if (fs.existsSync(path.join(dir, '.git'))) return true; // 已是独立仓(含我们 init 过的)
+    // 在祖先 git 仓内(如 worktree 任务或 data 在项目仓里):仅当该目录被祖先忽略才安全地建嵌套仓
+    try {
+      gitOut(dir, 'git rev-parse --show-toplevel');
+      try { execSync('git check-ignore -q .', { cwd: dir, stdio: 'ignore' }); } catch (e) { return false; } // 未被忽略:别乱建
+    } catch (e) { /* 不在任何仓:直接 init */ }
+    execSync('git init -q', { cwd: dir, stdio: 'ignore' });
+    return true;
+  } catch (e) { return false; }
+}
+function commitStep(dir, label) {
+  try {
+    if (!dir || !fs.existsSync(path.join(dir, '.git'))) return;
+    execSync('git add -A', { cwd: dir, stdio: 'ignore' });
+    execSync('git -c user.name=orch -c user.email=orch@local commit -q -m ' + JSON.stringify(label), { cwd: dir, stdio: 'ignore' });
+  } catch (e) { /* 无改动或 git 失败:静默 */ }
+}
 // 目标/阶段状态/产出摘要/错误表,由 DB 状态渲染(幂等,永远准确);员工经简报可见,下游随时读全局进展。
 function writePlanFile(taskId, store, dir) {
   try {
@@ -201,9 +224,17 @@ async function execute(taskId, plan, deps, opts) {
     },
     onDecision: (stepId, q) => { pending = { stepId, q }; },
     onLog: (stepId, line) => { store.addLog(taskId, stepId, line); emit(onEvent, taskId, stepId, 'log', line, agentOf[stepId]); },
-    onStatus: (stepId, status) => { store.setStep(taskId, stepId, agentOf[stepId] || '', status, null); if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status }); emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]); writePlanFile(taskId, store, task.dir); },
+    onStatus: (stepId, status) => {
+      store.setStep(taskId, stepId, agentOf[stepId] || '', status, null);
+      if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status });
+      emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]);
+      writePlanFile(taskId, store, task.dir);
+      if (status === 'done' && gitOk) commitStep(task.dir, '步骤 ' + stepId + ' 完成'); // 每步一个 commit,供改动审查
+    },
   };
   writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)
+  const gitOk = ensureOutputGit(task.dir); // 产出版本化
+  if (gitOk) commitStep(task.dir, '开工基线');
 
   try {
     const done = await runPlan(plan, ctx);
@@ -234,4 +265,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep };

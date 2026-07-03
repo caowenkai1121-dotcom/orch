@@ -128,3 +128,27 @@ test('文件化规划:task_plan.md 渲染阶段/摘要/错误表,findings.md 初
   writePlanFile(id, store, dir); // 再渲染:findings 不被覆盖
   assert.match(fs.readFileSync(path.join(dir, 'findings.md'), 'utf8'), /员工写的发现/);
 });
+
+test('产出版本化:独立目录init+每步commit;祖先仓未忽略则拒建', () => {
+  const { ensureOutputGit, commitStep } = require('../runner');
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const { execSync } = require('child_process');
+  // 独立目录
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vg-'));
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'v1');
+  assert.equal(ensureOutputGit(dir), true);
+  commitStep(dir, '开工基线');
+  fs.writeFileSync(path.join(dir, 'a.txt'), 'v2');
+  commitStep(dir, '步骤 build 完成');
+  const log = execSync('git log --format=%s', { cwd: dir }).toString().trim().split('\n');
+  assert.deepEqual(log, ['步骤 build 完成', '开工基线']);
+  const diff = execSync('git show --stat HEAD', { cwd: dir }).toString();
+  assert.match(diff, /a\.txt/);
+  // 祖先仓内且未被忽略 → 拒建(不污染用户仓)
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'vg2-'));
+  execSync('git init -q', { cwd: repo });
+  const sub = path.join(repo, 'sub'); fs.mkdirSync(sub);
+  fs.writeFileSync(path.join(sub, 'b.txt'), 'x');
+  assert.equal(ensureOutputGit(sub), false);
+  assert.ok(!fs.existsSync(path.join(sub, '.git')));
+});

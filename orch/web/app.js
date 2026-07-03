@@ -366,7 +366,7 @@ class Maestro extends MaestroBase {
     this.state.clockS = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     this.fetchAll();
     this.openWS();
-    this._poll = setInterval(() => { this.state.clockS += 4; this.fetchAll(); }, 4000);
+    this._poll = setInterval(() => { this.state.clockS += 20; this.fetchAll(); }, 20000); // WS 实时推送为主,轮询只兜底
   }
   startTimer() {} // 关闭原型的 mock 动画 tick
 
@@ -416,6 +416,28 @@ class Maestro extends MaestroBase {
     // 剧本选项(新建任务)
     if (this.state.modal === 'task' && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
     v.playbookOpts = (this.live.playbooks || []).map((p) => ({ id: p.id, name: p.name }));
+    // 任务看板(参考 vibe-kanban):按状态分列
+    v.taskViewBoard = this.state.taskView === 'board';
+    v.taskViewList = !v.taskViewBoard;
+    v.setViewList = () => this.setState({ taskView: 'list' });
+    v.setViewBoard = () => this.setState({ taskView: 'board' });
+    v.viewListBg = v.taskViewList ? '#fff' : 'transparent';
+    v.viewBoardBg = v.taskViewBoard ? '#fff' : 'transparent';
+    const COLS = [
+      { key: ['queued'], name: '排队', color: '#C9C4BA' },
+      { key: ['awaiting'], name: '待审批', color: '#F0B400' },
+      { key: ['working'], name: '进行中', color: '#E0922E' },
+      { key: ['awaiting_input'], name: '待输入', color: '#B4541E' },
+      { key: ['done'], name: '已完成', color: '#2E9E5B' },
+      { key: ['failed', 'cancelled'], name: '失败/取消', color: '#DC5B52' },
+    ];
+    v.board = COLS.map((c) => {
+      const items = (this.TASKS || []).filter((t) => c.key.indexOf(t.sk) >= 0).map((t) => ({
+        id: t.id, title: t.title, proj: t.proj, nowDoing: t.nowDoing || '',
+        cost: t.cost ? ('$' + t.cost.toFixed(2)) : '', open: () => this.go('task', { taskId: t.id }),
+      }));
+      return { name: c.name, color: c.color, n: items.length, items };
+    });
     // 定时任务列表(任务页)
     v.schedules = (this.live.schedules || []).map((s) => {
       const sp = s.spec || {};
@@ -586,6 +608,18 @@ class Maestro extends MaestroBase {
     v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path, srcMode: false }) }));
     v.preview = this.previewOf(this.state.taskId);
     v.toggleSrc = () => this.toggleSrc();
+    // 产出改动(diff)
+    if (curT && this.live.diffsFor !== this.state.taskId) this.fetchDiffs(this.state.taskId);
+    const diffs = (curT && this.live.diffsFor === this.state.taskId && this.live.diffs) || [];
+    v.hasDiffs = diffs.length > 0;
+    v.diffCommits = diffs.map((c) => ({ ...c, sel: c.sha === this.state.diffSha, bg: c.sha === this.state.diffSha ? '#FFF6D6' : 'transparent', open: () => this.openDiff(c.sha) }));
+    v.patchLines = (this.state.diffSha && this.live.patch ? this.live.patch.split('\n').slice(0, 1200) : []).map((l) => ({
+      t: l, c: l[0] === '+' ? '#1F7A46' : l[0] === '-' ? '#B23A33' : (l.startsWith('@@') || l.startsWith('diff ')) ? '#4F8BE8' : '#57534E',
+      bg: l[0] === '+' ? '#E4F4EA' : l[0] === '-' ? '#FBE9E7' : 'transparent',
+    }));
+    v.hasPatch = v.patchLines.length > 0;
+    v.noPatch = !v.hasPatch;
+    v.continueFromDiff = () => this.continueFromDiff();
     // #发布/继续
     v.canPublish = !!(curT && curT.sk === 'done' && this.state.me && this.state.me.admin && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path))); // 仅管理员可发布
     v.publishApp = () => this.publishApp();
@@ -696,6 +730,16 @@ class Maestro extends MaestroBase {
   fetchSchedules() { fetch('/api/schedules').then((r) => r.json()).then((s) => { this.live.schedules = s || []; this.scheduleRender(); }).catch(() => {}); }
   toggleSchedule(id) { fetch('/api/schedules/' + id + '/toggle', { method: 'POST' }).then(() => this.fetchSchedules()).catch(() => {}); }
   delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
+  // —— 产出改动(diff) ——
+  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.json()).then((d) => { this.live.diffs = d || []; this.live.diffsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  openDiff(sha) {
+    const id = this.state.taskId;
+    fetch('/api/diff/' + id + '/' + sha).then((r) => r.json()).then((d) => { this.live.patch = d.patch || ''; this.setState({ diffSha: sha }); }).catch(() => {});
+  }
+  continueFromDiff() { // N1:针对改动直接派活
+    this.setState({ modal: 'continue' });
+    setTimeout(() => { const el = document.getElementById('cont-text'); if (el && !el.value) el.value = '针对最近一次改动(见 git 记录),请修改: '; }, 60);
+  }
   // —— 回放 ——
   openReplay() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
@@ -897,7 +941,7 @@ class Maestro extends MaestroBase {
 
   go(screen, extra) {
     super.go(screen, extra);
-    if (screen === 'task' && extra && typeof extra.taskId === 'number') { this.fetchRelay(extra.taskId); this.state.previewFile = null; this.fetchFiles(extra.taskId); }
+    if (screen === 'task' && extra && typeof extra.taskId === 'number') { this.fetchRelay(extra.taskId); this.state.previewFile = null; this.state.diffSha = null; this.live.patch = ''; this.fetchFiles(extra.taskId); this.fetchDiffs(extra.taskId); }
     if (screen === 'agent' && extra && extra.agentId) {
       fetch('/api/agentlog/' + extra.agentId).then((r) => r.json()).then((lines) => {
         const c = this.state.console || (this.state.console = {});

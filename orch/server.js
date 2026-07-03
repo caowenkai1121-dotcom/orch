@@ -293,6 +293,27 @@ app.post('/task/:id/cancel', (req, res) => {
   res.json({ ok: true });
 });
 
+// 产出改动:commit 列表 + 单个 commit 的 diff(参考 Conductor/vibe-kanban 改动审查)
+const { execSync: ex2 } = require('child_process');
+app.get('/api/diff/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.status(403).json([]);
+  if (!t || !t.dir || !fs.existsSync(path.join(t.dir, '.git'))) return res.json([]);
+  try {
+    const out = ex2('git log --format=%H%x09%ad%x09%s --date=format:"%m-%d %H:%M" -50', { cwd: t.dir }).toString().trim();
+    res.json(out ? out.split('\n').map((l) => { const [sha, date, ...s] = l.split('\t'); return { sha, date, subject: s.join('\t') }; }) : []);
+  } catch (e) { res.json([]); }
+});
+app.get('/api/diff/:id/:sha', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.status(403).json({ ok: false });
+  if (!t || !t.dir || !/^[0-9a-f]{7,40}$/i.test(req.params.sha)) return res.json({ patch: '' });
+  try {
+    const patch = ex2('git show --stat --patch ' + req.params.sha, { cwd: t.dir, maxBuffer: 4 * 1024 * 1024 }).toString();
+    res.json({ patch: patch.slice(0, 200000) });
+  } catch (e) { res.json({ patch: '(读取失败)' }); }
+});
+
 // 任务回放:事件时间线 + 每步日志(参考 Manus 会话回放)
 app.get('/api/replay/:id', (req, res) => {
   const t = store.getTask(Number(req.params.id));

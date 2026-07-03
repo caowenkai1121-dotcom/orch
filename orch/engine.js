@@ -52,8 +52,9 @@ async function runStep(step, ctx, prevOutput) {
   const briefTxt = (b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
     + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '') + '\n\n') : '';
   const prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
-  ctx.onStatus(step.id, 'running');
+  ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)
   const s = sem(); await s.acquire();
+  ctx.onStatus(step.id, 'running');
   let res;
   // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式)
   const mm = ctx.models && ctx.models[step.agent];

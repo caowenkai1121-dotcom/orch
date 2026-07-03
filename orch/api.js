@@ -6,7 +6,7 @@ const DEPT_META = {
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
 const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input' })[s] || 'queued';
-const stepSk = (s) => ({ running: 'working', done: 'done', failed: 'failed' })[s] || 'queued';
+const stepSk = (s) => ({ running: 'working', waiting: 'queued', done: 'done', failed: 'failed' })[s] || 'queued';
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
 function roleMap(store) {
@@ -188,6 +188,22 @@ function buildAll(store, user) {
 }
 
 // 任务详情接力链(RELAY 形状,原始 sk,前端再映射)
+// 每步耗时:events 里 running→done/failed 的时差
+function stepDurations(store, taskId) {
+  const start = {}, dur = {};
+  store.getEvents(taskId).forEach((e) => {
+    if (e.type !== 'status') return;
+    let d = null; try { d = JSON.parse(e.data); } catch (x) { return; }
+    if (!d || !d.step) return;
+    if (d.v === 'running') start[d.step] = new Date(e.ts).getTime();
+    if ((d.v === 'done' || d.v === 'failed') && start[d.step]) {
+      const s = Math.round((new Date(e.ts).getTime() - start[d.step]) / 1000);
+      dur[d.step] = s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's';
+    }
+  });
+  return dur;
+}
+
 function relay(store, id) {
   const ROLE = roleMap(store);
   const t = store.getTask(id);
@@ -195,13 +211,14 @@ function relay(store, id) {
   const logs = store.getLogs(id);
   const stepRole = planRoleMap(t);
   const RV = roleView(store);
+  const durs = stepDurations(store, id);
   return (t.steps || []).map((s) => {
     const emp = stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
     const r = ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' };
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
     const summary = (s.output && s.output.trim()) ? s.output.trim().slice(-300) : (last || ('状态: ' + s.status));
     const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;
-    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, time: '', dur: '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, time: '', dur: durs[s.step_id] || '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
   });
 }
 
