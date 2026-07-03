@@ -86,7 +86,7 @@ test('plan 展开普通步骤和 loop body 并覆盖真实步骤状态', () => {
   const id = Number(store.createTask('Ship feature', 'CRM'));
   store.setPlan(id, { steps: [
     { id: 'dev', agent: 'claude', deps: [] },
-    { id: 'loop', type: 'loop', body: [
+    { id: 'loop', type: 'loop', deps: ['dev'], body: [
       { id: 'fix', agent: 'codex' },
     ] },
   ] });
@@ -103,7 +103,7 @@ test('plan 展开普通步骤和 loop body 并覆盖真实步骤状态', () => {
   assert.equal(fix.n, 2);
   assert.equal(fix.agent, 'Codex');
   assert.equal(fix.sk, 'done');
-  assert.ok(fix.dep);
+  assert.deepEqual(fix.deps, ['dev']); // loop 展开:body[0] 继承 loop 的依赖(画布连线不断)
 });
 
 test('agentLog 只返回指定 agent 的真实日志', () => {

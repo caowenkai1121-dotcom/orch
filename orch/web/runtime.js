@@ -64,7 +64,11 @@
       });
       return;
     }
-    const el = document.createElement(tag);
+    // SVG 子树必须用 SVG 命名空间创建,否则 path 等元素不渲染
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const el = (tag === 'svg' || target.namespaceURI === SVG_NS)
+      ? document.createElementNS(SVG_NS, tag)
+      : document.createElement(tag);
     for (const attr of node.attributes) {
       const name = attr.name.toLowerCase();
       const val = attr.value;

@@ -214,12 +214,21 @@ function plan(store, id) {
   let p = null; try { p = JSON.parse(t.plan); } catch (e) {}
   if (!p || !p.steps) return [];
   let n = 0; const out = [];
-  const push = (s, dep) => {
+  const push = (s, dep, deps) => {
     const emp = s.role && RV[s.role];
     const r = ROLE[s.agent] || { label: s.agent || '编排器', color: '#1A1814', av: '◆' };
-    out.push({ n: ++n, title: s.id, agent: emp ? (emp.deptName + '·' + emp.name) : r.label, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (s.deps && s.deps.length ? '依赖 ' + s.deps.join(',') : ''), deps: s.deps || [] });
+    out.push({ n: ++n, title: s.id, agent: emp ? (emp.deptName + '·' + emp.name) : r.label, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (deps && deps.length ? '依赖 ' + deps.join(',') : ''), deps: deps || [] });
   };
-  p.steps.forEach((s) => { if (s.type === 'loop') { (s.body || []).forEach((b) => push(b, '回退环')); } else push(s); });
+  // 展开 loop 为串联 body,并把依赖链重写到子步骤(保证画布连线不断):
+  // body[0] 继承 loop.deps, body[i] 依赖 body[i-1];下游引用 loop id → 改指最后一个 body
+  const tail = {}; // loop id → 最后一个 body id
+  p.steps.forEach((s) => { if (s.type === 'loop' && s.body && s.body.length) tail[s.id] = s.body[s.body.length - 1].id; });
+  const remap = (deps) => (deps || []).map((d) => tail[d] || d);
+  p.steps.forEach((s) => {
+    if (s.type === 'loop' && s.body && s.body.length) {
+      s.body.forEach((b, i) => push(b, i ? '回退环' : '', i === 0 ? remap(s.deps) : [s.body[i - 1].id]));
+    } else push(s, '', remap(s.deps));
+  });
   (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) e.sk = stepSk(st.status); });
   return out;
 }

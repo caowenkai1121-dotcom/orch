@@ -761,7 +761,8 @@ class Maestro extends MaestroBase {
     const pos = {}; const W = 200, H = 66, GX = 260, GY = 118;
     Object.keys(cols).forEach((d) => { cols[d].forEach((id, i) => { pos[id] = { x: 40 + (Number(d) + 1) * GX, y: 30 + i * GY }; }); }); // +1 列给起点腾位
     const col = { queued: '#C9C5BB', working: '#F0B400', done: '#2E9E5B', failed: '#DC5B52' };
-    const nodes = P.map((p) => ({ title: p.title, agent: p.agent, avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814' }));
+    const SKTXT = { queued: '排队', working: '进行中', done: '完成 ✓', failed: '失败' };
+    const nodes = P.map((p) => ({ title: p.title, agent: p.agent, avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814', seq: p.n, skTxt: SKTXT[p.sk] || p.sk, skBg: (col[p.sk] || '#C9C5BB') + '22', skC: p.sk === 'queued' ? '#6B6760' : (col[p.sk] || '#6B6760'), pulse: p.sk === 'working' }));
     const edges = []; let ei = 0;
     P.forEach((p) => (p.deps || []).forEach((dp) => {
       if (!pos[dp] || !pos[p.title]) return;
@@ -773,14 +774,23 @@ class Maestro extends MaestroBase {
     }));
     const maxCol = Math.max(...Object.keys(cols).map(Number)) + 2; // +起点列
     const maxRow = Math.max(...Object.values(cols).map((a) => a.length));
-    // 合成"任务下发"起点节点,连到所有无依赖步骤 → 单步任务也有可见流转
+    // 起点「开始」:连到所有无依赖步骤 → 明确的开始与流转
     const roots = P.filter((p) => !p.deps || !p.deps.length).map((p) => p.title);
     const oy = roots.length ? roots.reduce((a, id) => a + pos[id].y, 0) / roots.length : 30;
-    nodes.unshift({ origin: true, title: '任务下发', agent: this.activeTitle || '编排目标', avatar: '◆', aColor: '#F0B400', x: 40, y: oy, dot: '#1A1814', sk: 'origin', nbg: '#1A1814', nfg: '#fff' });
-    roots.forEach((id) => { const x1 = 40 + W, y1 = oy + H / 2, x2 = pos[id].x, y2 = pos[id].y + H / 2; const mx = (x1 + x2) / 2; const sk = byId[id].sk; edges.unshift({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: sk === 'done' ? '#2E9E5B' : '#F0B400', flow: true, dash: sk === 'working', dur: '2.2s' }); });
+    const anyRun = P.some((p) => p.sk === 'working');
+    nodes.unshift({ origin: true, title: '▶ 开始 · 任务下发', agent: this.activeTitle || '编排目标', avatar: '◆', aColor: '#F0B400', x: 40, y: oy, dot: '#F0B400', sk: 'origin', nbg: '#1A1814', nfg: '#fff', seq: '', skTxt: '', skBg: 'transparent', skC: '#C9C5BB' });
+    roots.forEach((id) => { const x1 = 40 + W, y1 = oy + H / 2, x2 = pos[id].x, y2 = pos[id].y + H / 2; const mx = (x1 + x2) / 2; const sk = byId[id].sk; edges.unshift({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: sk === 'done' ? '#2E9E5B' : '#F0B400', flow: sk !== 'done', dash: sk === 'working', dur: '2.2s' }); });
+    // 终点「完成 · 交付」:所有无下游的步骤汇入;全部完成 → 绿
+    const hasDown = new Set(); P.forEach((p) => (p.deps || []).forEach((d) => hasDown.add(d)));
+    const leaves = P.filter((p) => !hasDown.has(p.title)).map((p) => p.title);
+    const allDone = P.length > 0 && P.every((p) => p.sk === 'done');
+    const ex = 40 + (Math.max(...Object.keys(cols).map(Number)) + 2) * GX;
+    const eyv = leaves.length ? leaves.reduce((a, id) => a + pos[id].y, 0) / leaves.length : 30;
+    nodes.push({ origin: true, title: allDone ? '✓ 完成 · 已交付' : '⏳ 完成 · 交付', agent: allDone ? '全部步骤已完成' : '等待全部步骤完成', avatar: allDone ? '✓' : '⏳', aColor: allDone ? '#2E9E5B' : '#8A857C', x: ex, y: eyv, dot: allDone ? '#2E9E5B' : '#C9C5BB', sk: 'end', nbg: allDone ? '#1F7A46' : '#F0EEE9', nfg: allDone ? '#fff' : '#6B6760', seq: '', skTxt: '', skBg: 'transparent', skC: '#C9C5BB' });
+    leaves.forEach((id) => { const x1 = pos[id].x + W, y1 = pos[id].y + H / 2, x2 = ex, y2 = eyv + H / 2; const mx = (x1 + x2) / 2; const sk = byId[id].sk; edges.push({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: sk === 'done' ? '#2E9E5B' : '#CFCBC1', flow: sk === 'working' || anyRun && sk !== 'done', dash: sk === 'working', dur: '2.6s' }); });
     edges.forEach((e) => { e.pstyle = e.dash ? 'stroke-dasharray:6 6;animation:dash 1s linear infinite;' : ''; });
-    nodes.forEach((n) => { n.subc = n.origin ? '#C9C5BB' : '#8A857C'; });
-    return { nodes, edges, empty: false, w: Math.max(1000, 40 + maxCol * GX), h: Math.max(400, 30 + maxRow * GY) };
+    nodes.forEach((n) => { n.subc = n.origin ? (n.nfg === '#fff' ? '#C9C5BB' : '#8A857C') : '#8A857C'; n.still = !n.pulse; });
+    return { nodes, edges, empty: false, w: Math.max(1000, 80 + (maxCol + 1) * GX), h: Math.max(400, 30 + maxRow * GY) };
   }
   realCv() {
     const find = (id) => this.AGENTS.find((a) => a.id === id);
