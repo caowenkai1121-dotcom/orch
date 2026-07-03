@@ -169,10 +169,23 @@ function sanitizeDeps(plan) {
   return plan;
 }
 
+// 员工在本部门标准流程中的位置:上游→你(是否质量门)→下游,给员工交接预期
+function flowPosition(depts, roleMap, r) {
+  const d = (depts || []).find((x) => x.id === r.dept);
+  if (!d || !d.flow) return '';
+  let f = []; try { f = JSON.parse(d.flow) || []; } catch (e) { return ''; }
+  const i = f.findIndex((x) => x.role === r.id);
+  if (i < 0) return '';
+  const nm = (id) => (roleMap[id] && roleMap[id].name) || id;
+  const up = i > 0 ? nm(f[i - 1].role) : '（流程起点）';
+  const down = i < f.length - 1 ? nm(f[i + 1].role) : '（流程终点）';
+  return '\n【本部门流程位置】上游:' + up + ' → 你' + (f[i].gate ? '(质量门)' : '') + ' → 下游:' + down + '。承接上游产出,产出供下游直接使用。';
+}
+
 // 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 与部门执行器池内)
-function resolveRoles(steps, roleMap, allowed, deptPools, taskText) {
+function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
   (steps || []).forEach((s) => {
-    if (s.body) { resolveRoles(s.body, roleMap, allowed, deptPools, taskText); return; }
+    if (s.body) { resolveRoles(s.body, roleMap, allowed, deptPools, taskText, depts); return; }
     if (!s.role) return;
     const r = roleMap[s.role];
     if (!r) { s.agent = s.agent || allowed[0]; return; }
@@ -183,7 +196,7 @@ function resolveRoles(steps, roleMap, allowed, deptPools, taskText) {
     if (eff.length && eff.indexOf(ex) < 0) ex = eff[0];
     s.agent = ex;
     const memo = r.memo ? relevantMemo(r.memo, taskText || s.prompt, 5) : '';
-    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + (memo ? '\n【过往经验】(此前任务复盘沉淀,已按当前任务相关性优选,优先复用)\n' + memo : '') + '\n\n【任务】' + s.prompt;
+    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + flowPosition(depts, roleMap, r) + (memo ? '\n【过往经验】(此前任务复盘沉淀,已按当前任务相关性优选,优先复用)\n' + memo : '') + '\n\n【任务】' + s.prompt;
   });
 }
 
@@ -214,7 +227,7 @@ async function makePlan(text, opts) {
         const bad = badRoles(p, roleIds);
         if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
       }
-      if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text); return p; }
+      if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; }
     } catch (e) { /* 落到执行器模式 */ }
   }
   // 3) 有文字编排 → 按编排(执行器模式)

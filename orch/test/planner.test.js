@@ -156,3 +156,19 @@ test('依赖健全化:剔除自依赖/不存在依赖,断环', () => {
   const p3 = sanitizeDeps({ steps: [{ id: 'a', deps: [] }, { id: 'b', deps: ['a'] }, { id: 'c', deps: ['b'] }] });
   assert.deepEqual(p3.steps[2].deps, ['b']);
 });
+
+test('流程位置注入:员工获知上游/下游/质量门', async () => {
+  const roles = [
+    { id: 'engineering-rapid-prototyper', dept: 'engineering', name: '快速原型', description: '', prompt: '你是原型工程师', executor: 'claude' },
+    { id: 'engineering-code-reviewer', dept: 'engineering', name: '代码评审', description: '', prompt: '你是评审', executor: 'claude' },
+  ];
+  const depts = [{ id: 'engineering', name: '工程部', flow: JSON.stringify([
+    { role: 'engineering-rapid-prototyper', optional: false, gate: false },
+    { role: 'engineering-code-reviewer', optional: false, gate: true },
+  ]) }];
+  const fakeClaude = { async run() { return { output: '{"steps":[{"id":"a","role":"engineering-rapid-prototyper","prompt":"做原型","deps":[]},{"id":"b","role":"engineering-code-reviewer","prompt":"评审","deps":["a"]}]}', success: true }; } };
+  const plan = await makePlan('活', { agents: ['claude'], roles, depts, refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.match(plan.steps[0].prompt, /本部门流程位置/);
+  assert.match(plan.steps[0].prompt, /下游:代码评审/);
+  assert.match(plan.steps[1].prompt, /你\(质量门\)/); // 评审是质量门
+});
