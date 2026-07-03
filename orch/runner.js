@@ -30,11 +30,24 @@ function resumeTask(taskId, deps, stepId, answer) {
   const { store } = deps;
   const t = store.getTask(taskId);
   let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  const top = new Set((plan.steps || []).map((s) => s.id));
   const seedDone = {};
-  store.doneSteps(taskId).forEach((s) => { seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
   store.clearTaskDecision(taskId);
   if (store.addEvent) store.addEvent(taskId, 'decision', { step: stepId, answer });
   return execute(taskId, plan, deps, { seedDone, answers: { [stepId]: answer } });
+}
+
+// 重试失败步骤:已完成步骤不重跑,只重跑失败/未完成的(限额恢复后一键续跑)
+function retryFailed(taskId, deps) {
+  const { store } = deps;
+  const t = store.getTask(taskId);
+  let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  const top = new Set((plan.steps || []).map((s) => s.id)); // 只 seed 顶层步骤(loop 子步骤不算,防完成度误判)
+  const seedDone = {};
+  store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  if (store.addEvent) store.addEvent(taskId, 'retry', { skip: Object.keys(seedDone).length });
+  return execute(taskId, plan, deps, { seedDone });
 }
 
 // 继续开发:在原任务上追加新一轮步骤(不新建任务),复用产出目录
@@ -55,8 +68,9 @@ async function continueTask(taskId, deps, text) {
   const merged = { task: t.text, steps: cur.steps.concat(newSteps) };
   store.setPlan(taskId, merged);
   if (store.addEvent) store.addEvent(taskId, 'continue', { text, steps: newSteps.length });
+  const top = new Set(merged.steps.map((s) => s.id));
   const seedDone = {};
-  store.doneSteps(taskId).forEach((s) => { seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
   return execute(taskId, merged, deps, { seedDone });
 }
 
@@ -70,9 +84,21 @@ async function execute(taskId, plan, deps, opts) {
   const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else agentOf[s.id] = s.agent; });
   collect(plan.steps || []);
 
+  // 任务简报:让员工知道全局与自己在流水线中的位置(上游谁/下游谁)
+  const flat = plan.steps || [];
+  const downOf = {}; flat.forEach((s) => (s.deps || []).forEach((d) => { (downOf[d] = downOf[d] || []).push(s.id); }));
+  const posOf = (sid) => { let i = flat.findIndex((s) => s.id === sid); if (i < 0) i = flat.findIndex((s) => s.body && s.body.some((b) => b.id === sid)); return i; };
+  const brief = (sid) => {
+    const i = posOf(sid); if (i < 0) return '';
+    const s = flat[i]; const down = downOf[s.id] || [];
+    return '总任务: ' + (task.text || '') + '\n你负责流水线第 ' + (i + 1) + '/' + flat.length + ' 步「' + sid + '」'
+      + ((s.deps && s.deps.length) ? ',上游: ' + s.deps.join(', ') : '')
+      + (down.length ? ',你的产出将交接给: ' + down.join(', ') : ',你是最后一步,交付即收尾') + '。';
+  };
+
   let pending = null;
   const ctx = {
-    adapters, workspace,
+    adapters, workspace, brief,
     preamble: task.ask ? ASK : AUTONOMY,
     askMode: !!task.ask,
     seedDone: opts.seedDone || null,
@@ -80,7 +106,12 @@ async function execute(taskId, plan, deps, opts) {
     isCancelled: () => rec.cancelled,
     onChild: (child) => rec.children.add(child),
     onUsage: (stepId, agent, u) => { store.addUsage(taskId, stepId, agent, u); emit(onEvent, taskId, stepId, 'usage', u); },
-    onResult: (stepId, out) => store.setStepOutput(taskId, stepId, (out || '').slice(-2000)),
+    onResult: (stepId, out) => {
+      store.setStepOutput(taskId, stepId, (out || '').slice(-2000));
+      if (/hit your session limit|rate limit|usage limit/i.test(out || '')) {
+        store.addLog(taskId, stepId, '⚠ 执行器会话限额(非任务本身错误)。限额重置后在任务详情点「↻ 重试失败步骤」续跑,已完成步骤不会重跑。');
+      }
+    },
     onDecision: (stepId, q) => { pending = { stepId, q }; },
     onLog: (stepId, line) => { store.addLog(taskId, stepId, line); emit(onEvent, taskId, stepId, 'log', line, agentOf[stepId]); },
     onStatus: (stepId, status) => { store.setStep(taskId, stepId, agentOf[stepId] || '', status, null); if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status }); emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]); },
@@ -113,4 +144,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed };

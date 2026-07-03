@@ -81,13 +81,21 @@ function buildAll(store, user) {
     const running = mine.find((s) => s.status === 'running');
     const cur = running ? taskById[running.task_id] : null;
     const tot = done + fail;
+    // 正在扮演的员工(部门·角色)
+    let empNow = '';
+    if (running) {
+      const sr = planRoleMap(store.getTask(running.task_id) || {});
+      const RVx = roleView(store);
+      const emp = sr[running.step_id] && RVx[sr[running.step_id]];
+      if (emp) empNow = emp.emoji + ' ' + emp.deptName + '·' + emp.name;
+    }
     return {
       id, name: r.label, type: id, dept: r.dept,
       command: r.command, args: r.args, image: r.image, kind: r.kind,
       color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',
-      task: cur ? cur.text : '—', taskId: cur ? cur.id : '',
-      action: running ? (lastLine(running.task_id, running.step_id) || ('执行 ' + running.step_id)) : '空闲 · 等待任务',
+      task: cur ? cur.text : '—', taskId: cur ? cur.id : '', empNow,
+      action: running ? ((empNow ? empNow + ' · ' : '') + (lastLine(running.task_id, running.step_id) || ('执行 ' + running.step_id))) : '空闲 · 等待任务',
       actions: [], progress: cur ? progressOf(cur.id) : 0,
       model: r.model, success: tot ? Math.round(done / tot * 100) + '%' : '—', done,
       avg: '—', cost: '—', caps: r.caps,
@@ -140,7 +148,20 @@ function buildAll(store, user) {
     projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
   });
 
-  const tasksVm = tasks.map((t) => { const u = store.taskUsage(t.id); return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)) }; });
+  const RV = roleView(store);
+  const tasksVm = tasks.map((t) => {
+    const u = store.taskUsage(t.id);
+    // 运行中:哪个部门的哪个员工正在做哪一步
+    let nowDoing = '';
+    if (t.status === 'running') {
+      const sr = planRoleMap(store.getTask(t.id) || {});
+      nowDoing = (byTask[t.id] || []).filter((s) => s.status === 'running').map((s) => {
+        const emp = sr[s.step_id] && RV[sr[s.step_id]];
+        return (emp ? (emp.emoji + ' ' + emp.deptName + '·' + emp.name) : (ROLE[s.agent] ? ROLE[s.agent].label : s.agent)) + ' 正在做 ' + s.step_id;
+      }).join(' | ');
+    }
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing };
+  });
 
   // 人员:来自 DB(含分配的 agent)
   const projN = Object.keys(projMap).length;
@@ -207,4 +228,4 @@ function agentLog(store, agentId, limit) {
   return store.recentLogsForAgent(agentId, limit || 40).map((r) => '[T' + r.task_id + '·' + r.step_id + '] ' + r.line);
 }
 
-module.exports = { buildAll, relay, plan, agentLog, roleMap };
+module.exports = { buildAll, relay, plan, agentLog, roleMap, planRoleMap, roleView };

@@ -16,6 +16,26 @@ function sem() { const n = Math.max(1, parseInt(process.env.ORCH_CONCURRENCY || 
 const ASK = '[自动编排] 你在编排器中自动执行。优先自行采用最合理默认直接做完。'
   + '仅当确实无法合理默认、必须由人拍板时,在输出最后单独一行 `NEED_DECISION: <一句话问题>` 然后停止(不要瞎猜);其余一律直接产出,禁止提问。\n\n任务:\n';
 
+// 工作目录文件速览(给员工的现场感知,最多40个)
+function dirBrief(dir) {
+  try {
+    const fs = require('fs'), path = require('path');
+    const out = [];
+    const walk = (d, rel, depth) => {
+      if (out.length >= 40 || depth > 2) return;
+      for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+        if (e.name === '.git' || e.name === 'node_modules') continue;
+        const rp = rel ? rel + '/' + e.name : e.name;
+        if (e.isDirectory()) walk(path.join(d, e.name), rp, depth + 1);
+        else out.push(rp);
+        if (out.length >= 40) return;
+      }
+    };
+    walk(dir, '', 0);
+    return out.join(', ');
+  } catch (e) { return ''; }
+}
+
 async function runStep(step, ctx, prevOutput) {
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
@@ -25,8 +45,12 @@ async function runStep(step, ctx, prevOutput) {
     ? step.prompt.replace('{prev}', prevTxt)
     : (prevTxt ? '【上游交接】\n' + prevTxt + '\n\n' + step.prompt : step.prompt);
   const answer = ctx.answers && ctx.answers[step.id]; // 续跑时注入用户决策
-  const prompt = (ctx.preamble || AUTONOMY) + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
   const workdir = await ctx.workspace.make(step.id);
+  // 任务简报:全局目标+流水线位置+工作目录现状 → 员工带着现场感知干活
+  const b = ctx.brief ? ctx.brief(step.id) : '';
+  const files = dirBrief(workdir);
+  const briefTxt = (b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '') + '\n\n') : '';
+  const prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
   ctx.onStatus(step.id, 'running');
   const s = sem(); await s.acquire();
   let res;

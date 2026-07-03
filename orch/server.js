@@ -279,6 +279,15 @@ app.get('/output/:id/*splat', (req, res) => {
   res.sendFile(full);
 });
 
+// 重试失败步骤:已完成的不重跑(限额/临时故障恢复后续跑)
+app.post('/task/:id/retry', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  res.json({ ok: true });
+  require('./runner').retryFailed(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast });
+});
+
 // 审批批准:用(可能编辑过的)plan 执行
 app.post('/task/:id/approve', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
@@ -324,8 +333,10 @@ function toActivity(ev) {
   const t = store.getTask(taskId);
   const st = t && t.steps ? t.steps.find((x) => x.step_id === stepId) : null;
   const role = st && api.roleMap(store)[st.agent];
-  const who = role ? role.label : '编排器';
-  const c = role ? role.color : '#1A1814';
+  // 员工署名优先:「工程部·前端开发工程师」而非执行器名
+  const emp = t && stepId ? (api.roleView(store)[api.planRoleMap(t)[stepId]] || null) : null;
+  const who = emp ? (emp.deptName + '·' + emp.name) : (role ? role.label : '编排器');
+  const c = emp ? emp.color : (role ? role.color : '#1A1814');
   const time = hhmmss();
   if (type === 'plan') return { a: '编排器', c: '#1A1814', t: '拆解为 ' + ((data && data.steps && data.steps.length) || 0) + ' 步流水线', dot: '#F0B400', soft: '#FFF6D6', time };
   if (type === 'status') {

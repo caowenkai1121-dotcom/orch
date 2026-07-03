@@ -551,6 +551,8 @@ class Maestro extends MaestroBase {
     v.publishApp = () => this.publishApp();
     v.canContinue = !!(curT && canMod && ['done', 'cancelled', 'failed'].indexOf(curT.sk) >= 0);
     v.continueTask = () => this.continueTask();
+    v.canRetry = !!(curT && canMod && curT.sk === 'failed'); // 失败任务:重试失败步骤(已完成的不重跑)
+    v.retryTask = () => this.retryTask();
     v.modalContinue = this.state.modal === 'continue';
     v.continueSubmit = () => this.continueSubmit();
     // 应用广场
@@ -634,6 +636,10 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId;
     if (typeof id !== 'number') return;
     fetch('/task/' + id + '/cancel', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
+  }
+  retryTask() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    fetch('/task/' + id + '/retry', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
   }
   approveTask() {
     const id = this.state.taskId;

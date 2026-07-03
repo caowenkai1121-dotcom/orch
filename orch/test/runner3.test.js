@@ -23,3 +23,23 @@ test('批准后用给定 plan 执行', async () => {
   assert.equal(ran, 1);
   assert.equal(store.getTask(id).status, 'done');
 });
+
+test('重试失败步骤:已完成不重跑,只跑失败的', async () => {
+  const { open } = require('../store');
+  const { retryFailed } = require('../runner');
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [
+    { id: 'a', agent: 'ok', prompt: 'p', deps: [] },
+    { id: 'b', agent: 'ok', prompt: 'p', deps: ['a'] },
+  ] });
+  store.setStep(id, 'a', 'ok', 'done', '产出A');   // a 已完成
+  store.setStep(id, 'b', 'ok', 'failed', null);    // b 失败(如限额)
+  store.setTaskStatus(id, 'failed');
+  const ran = [];
+  const ok = { async run({ prompt }) { ran.push(prompt.includes('产出A')); return { output: 'B完成', success: true }; } };
+  await retryFailed(id, { store, adapters: { ok }, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} });
+  assert.equal(ran.length, 1);                      // 只重跑 b
+  assert.equal(ran[0], true);                       // b 收到 a 的交接产出
+  assert.equal(store.getTask(id).status, 'done');   // 任务转成功
+});
