@@ -517,6 +517,7 @@ class Maestro extends MaestroBase {
     // 列表按筛选过滤(按 id 集,兼容 decTRow 字段)
     const allowIds = new Set((this.TASKS || []).filter(this._taskFilterFn).map((t) => t.id));
     v.tasksList = (v.tasksList || []).filter((t) => allowIds.has(t.id));
+    v.noTasksMatch = (this.TASKS || []).length > 0 && v.tasksList.length === 0; // 有任务但全被筛掉
     // 回放(canReplay 依赖 curT,在后面补)
     v.openReplay = () => this.openReplay();
     v.modalReplay = this.state.modal === 'replay';
