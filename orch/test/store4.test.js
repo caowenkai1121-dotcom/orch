@@ -116,3 +116,17 @@ test('任务报告:MD含目标/步骤/员工/成本', () => {
   assert.match(md, /build/);
   assert.match(md, /页面已建好/);
 });
+
+test('项目聚合:成本/完成数/失败数', () => {
+  const { open } = require('../store');
+  const { buildAll } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const a = s.createTask('t1', 'P', 'admin', {}); s.setStep(a, 'x', 'claude', 'done', 'o'); s.setTaskStatus(a, 'done');
+  const b = s.createTask('t2', 'P', 'admin', {}); s.setTaskStatus(b, 'failed');
+  s.addUsage(a, 'x', 'claude', { input: 100, output: 50, cost: 0.02 });
+  const vm = buildAll(s, { name: 'admin', admin: 1 });
+  const p = vm.projects.find((x) => x.name === 'P');
+  assert.equal(p.doneN, 1);
+  assert.equal(p.failN, 1);
+  assert.equal(p.cost, 0.02);
+});

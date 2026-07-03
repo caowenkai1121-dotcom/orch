@@ -723,9 +723,12 @@
             <button onClick="{{ p.open }}" style-hover="border-color:#D9D5CC;transform:translateY(-1px)" style="text-align:left;cursor:pointer;background:#fff;border:1px solid #E9E7E1;border-radius:15px;padding:18px;font-family:inherit;box-shadow:0 1px 2px rgba(20,18,14,.04);transition:transform .15s ease,border-color .15s ease;">
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="flex:1;"><div style="font-size:15px;font-weight:650;">{{ p.name }}</div><div style="font-size:12px;color:#A39E94;margin-top:2px;">{{ p.client }} · {{ p.taskCount }} 个任务</div></div><span style="font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:7px;background:{{ p.sBg }};color:{{ p.sC }};">{{ p.status }}</span></div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;"><div style="flex:1;height:6px;border-radius:6px;background:#F1EFEA;overflow:hidden;"><div style="height:100%;border-radius:6px;background:{{ p.barColor }};width:{{ p.pct }};"></div></div><span style="font-size:12px;font-weight:600;color:#6B6760;font-family:'JetBrains Mono',monospace;">{{ p.pct }}</span></div>
-              <div style="display:flex;align-items:center;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
                 <sc-for list="{{ p.deptChips }}" as="dc" hint-placeholder-count="3"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:3px 8px;border-radius:6px;background:#F5F4F1;border:1px solid #ECEAE4;color:#3C3933;"><span style="width:7px;height:7px;border-radius:50%;background:{{ dc.color }};"></span>{{ dc.name }}</span></sc-for>
                 <span style="margin-left:auto;font-size:11.5px;color:#A39E94;">{{ p.agentCount }} Agent</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;font-size:11px;color:#8A857C;border-top:1px solid #F2F0EB;padding-top:9px;">
+                <span>✅ {{ p.doneN }} 完成</span><sc-if value="{{ p.failN }}"><span style="color:#B4541E;">❌ {{ p.failN }} 失败</span></sc-if><span style="margin-left:auto;font-family:'JetBrains Mono',monospace;">💰 ${{ p.cost }}</span>
               </div>
             </button>
           </sc-for>
@@ -743,6 +746,7 @@
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">任务</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ project.taskCount }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ project.agentCount }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">涉及部门</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ project.deptN }}</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">成本</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">${{ project.cost }}</div></div>
         </div>
         <sc-if value="{{ projAmOwner }}">
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:14px 16px;margin-bottom:16px;">

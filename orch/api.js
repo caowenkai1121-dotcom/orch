@@ -133,10 +133,14 @@ function buildAll(store, user) {
     const agSet = {}; ts.forEach((t) => agentsInTask(t.id).forEach((a) => { agSet[a] = 1; }));
     const projRow = store.listProjects().find((p) => p.name === name);
     const amOwner = !!(user && (user.admin || (projRow && projRow.owner === user.id) || ts.some((t) => t.owner === user.name)));
+    const cost = ts.reduce((a, t) => a + (store.taskUsage(t.id).cost || 0), 0);
+    const doneN = ts.filter((t) => t.status === 'done').length;
+    const failN = ts.filter((t) => t.status === 'failed').length;
     return {
       id: 'PR' + i, name, client: 'orch', progress: prog,
       status: anyRun ? '进行中' : (allDone ? '已完成' : '规划'), sk: anyRun ? 'working' : (allDone ? 'done' : 'queued'),
       depts: Object.keys(deptSet), agentCount: Object.keys(agSet).length, taskCount: ts.length,
+      cost: Math.round(cost * 1000) / 1000, doneN, failN,
       tasks: ts.map((t) => t.id), grantIds: store.grantsFor(name), amOwner,
     };
   });
@@ -145,7 +149,7 @@ function buildAll(store, user) {
   store.listProjects().forEach((tp) => {
     if (projMap[tp.name]) return;
     if (vis && !(tp.owner === (user && user.id) || vis.has(tp.name))) return;
-    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
+    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
   });
 
   const RV = roleView(store);
