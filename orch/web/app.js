@@ -835,8 +835,10 @@ class Maestro extends MaestroBase {
     const skip = (p) => ['task_plan.md', 'findings.md'].indexOf(p) < 0; // 跳过引擎维护文件
     const paths = fs.map((f) => f.path).filter(skip);
     const isExt = (p, es) => es.indexOf((p.split('.').pop() || '').toLowerCase()) >= 0;
+    const code = ['js', 'ts', 'jsx', 'tsx', 'py', 'css', 'json', 'go', 'rs', 'java', 'c', 'cpp', 'sh', 'vue', 'svelte', 'txt'];
     const pick = paths.find((p) => p === 'index.html') || paths.find((p) => isExt(p, ['html', 'htm']))
-      || paths.find((p) => isExt(p, ['md'])) || paths.find((p) => isExt(p, ['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'pdf']));
+      || paths.find((p) => isExt(p, ['md'])) || paths.find((p) => isExt(p, ['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'pdf']))
+      || paths.find((p) => isExt(p, code)); // 纯代码任务:兜底选首个代码文件
     if (pick) this.state.previewFile = pick;
   }
   fetchFindings(id) { fetch('/output/' + id + '/findings.md').then((r) => r.ok ? r.text() : '').then((txt) => { this.live.findings = txt || ''; this.live.findingsFor = id; this.scheduleRender(); }).catch(() => {}); }
