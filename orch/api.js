@@ -208,8 +208,12 @@ function stepDurations(store, taskId) {
     if ((d.v === 'done' || d.v === 'failed') && start[d.step]) {
       const s = Math.round((new Date(e.ts).getTime() - start[d.step]) / 1000);
       dur[d.step] = s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's';
+      delete start[d.step]; // 已结束:不再算作运行中
     }
   });
+  // 仍在运行的步骤:实时已耗时(让用户看出在跑而非卡死)
+  const fmt = (s) => s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's';
+  Object.keys(start).forEach((k) => { dur[k] = '⏱ ' + fmt(Math.round((Date.now() - start[k]) / 1000)); });
   return dur;
 }
 

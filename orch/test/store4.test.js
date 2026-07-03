@@ -140,3 +140,20 @@ test('clearSteps 清空任务步骤', () => {
   s.clearSteps(id);
   assert.equal(s.getTask(id).steps.length, 0);
 });
+
+test('步骤耗时:运行中显示实时⏱,完成显示固定时长', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', '默认项目', 'admin', {});
+  s.addEvent(id, 'status', { step: 'a', v: 'running' });
+  s.addEvent(id, 'status', { step: 'a', v: 'done' });
+  s.addEvent(id, 'status', { step: 'b', v: 'running' }); // b 仍在跑
+  // 直接调 stepDurations(内部函数经 relay 间接验证)
+  const { relay } = require('../api');
+  s.setStep(id, 'a', 'claude', 'done', 'o');
+  s.setStep(id, 'b', 'claude', 'running', '');
+  const r = relay(s, id);
+  const ra = r.find((x) => x.title === 'a'); const rb = r.find((x) => x.title === 'b');
+  assert.ok(!/⏱/.test(ra.dur));       // 完成步:固定时长,无 ⏱
+  assert.match(rb.dur, /⏱/);           // 运行步:实时耗时
+});
