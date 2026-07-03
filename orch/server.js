@@ -253,6 +253,20 @@ app.post('/task/:id/continue', (req, res) => {
   }, text);
 });
 
+// 配置备份导出(admin):角色/部门/剧本/自定义Agent → JSON,换库/重置后可留存定制
+app.get('/api/export/config', adminOnly, (req, res) => {
+  const cfg = {
+    exportedAt: new Date().toISOString(),
+    roles: store.listRoles().map((r) => ({ id: r.id, dept: r.dept, name: r.name, emoji: r.emoji, description: r.description, prompt: r.prompt, executor: r.executor, memo: r.memo || '' })),
+    depts: store.listDepts().map((d) => ({ id: d.id, name: d.name, glyph: d.glyph, color: d.color, flow: d.flow || '[]' })),
+    playbooks: store.listPlaybooks().map((p) => ({ name: p.name, description: p.description, plan: p.plan })),
+    agents: store.listAgents().filter((a) => (a.kind || 'cli') !== 'cli' || !['claude', 'codex'].includes(a.id)).map((a) => ({ id: a.id, name: a.name, command: a.command, model: a.model, kind: a.kind })),
+  };
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="orch-config-backup.json"');
+  res.send(JSON.stringify(cfg, null, 2));
+});
+
 // 任务 Markdown 报告下载(人读归档)
 app.get('/api/report/:id', (req, res) => {
   const t = store.getTask(Number(req.params.id));

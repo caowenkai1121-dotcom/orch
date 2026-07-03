@@ -597,6 +597,7 @@ class Maestro extends MaestroBase {
     v.modalAccount = this.state.modal === 'account';
     v.modalHelp = this.state.modal === 'help';
     v.changePw = () => this.changePw();
+    v.exportConfig = () => this.exportConfig();
     // —— 部门管理(#3) ——
     v.newDept = () => this.newDept();
     v.modalDept = this.state.modal === 'dept';
@@ -908,6 +909,7 @@ class Maestro extends MaestroBase {
   }
   // —— Webhook ——
   fetchHook() { fetch('/api/me/hook').then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
+  exportConfig() { window.open('/api/export/config', '_blank'); }
   resetHook() { fetch('/api/me/hook/reset', { method: 'POST' }).then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
   notifyTask(m) { // 桌面通知:任务结束/需要人
     if (m.type !== 'task') return;
