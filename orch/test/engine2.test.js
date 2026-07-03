@@ -55,3 +55,29 @@ test('seedDone 跳过已完成步骤,只跑剩余', async () => {
   assert.equal(ran.length, 1); // 只跑 b(a 已 seed)
   assert.equal(done.a.output, 'seeded');
 });
+
+test('质量门:门禁输出FAIL退回重做,PASS才放行', async () => {
+  const { runPlan } = require('../engine');
+  let implRuns = 0, gateCall = 0;
+  const impl = { async run({ prompt }) { implRuns++; return { output: '实现完成 v' + implRuns, success: true }; } };
+  const gate = { async run() { gateCall++; return { output: gateCall === 1 ? 'FAIL: 有 bug 未修' : 'PASS 全部通过', success: true }; } };
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 3, deps: [], body: [
+    { id: 'impl', agent: 'i', prompt: 'p', deps: [] },
+    { id: 'gate', agent: 'g', prompt: 'p', deps: [] },
+  ] }] };
+  await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  assert.equal(gateCall, 2);     // 门禁跑2轮(FAIL→PASS)
+  assert.equal(implRuns, 2);     // 实现重做1次
+});
+
+test('质量门:一直FAIL则到max停,不无限循环', async () => {
+  const { runPlan } = require('../engine');
+  let gc = 0;
+  const impl = { async run() { return { output: 'x', success: true }; } };
+  const gate = { async run() { gc++; return { output: 'FAIL 还是不行', success: true }; } };
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 2, deps: [], body: [
+    { id: 'impl', agent: 'i', prompt: 'p', deps: [] }, { id: 'gate', agent: 'g', prompt: 'p', deps: [] },
+  ] }] };
+  await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  assert.equal(gc, 2);  // max=2 轮后停
+});

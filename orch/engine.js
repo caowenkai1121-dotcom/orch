@@ -78,16 +78,31 @@ async function runStep(step, ctx, prevOutput) {
   return res;
 }
 
+// 质量门判定:门禁员工输出明确 FAIL(且无 PASS)= 不通过。执行器退出码 0 不代表质量过关。
+function gateFailed(out) {
+  const s = String(out || '');
+  if (/(判定|结论|verdict|结果)[^\n]{0,6}FAIL/i.test(s) || /❌\s*FAIL/.test(s)) return true;
+  if (/\bFAIL\b/.test(s) && !/\bPASS\b/.test(s)) return true; // 评审卡要求明确输出 PASS/FAIL
+  return false;
+}
+
 async function runLoop(step, ctx, prevOutput) {
   let last = { output: prevOutput || '', success: false };
   const max = step.max || 3; // LLM plan 可能没给 max,兜底 3
+  const gateId = step.body.length ? step.body[step.body.length - 1].id : null; // 约定:body 末步为质量门
   for (let i = 0; i < max; i++) {
+    let gateOk = true;
     for (const body of step.body) {
       last = await runStep(body, ctx, last.output);
       if (last.needDecision) return last; // 需人决策:向上冒泡,停
-      if (!last.success) break; // 本轮某步失败,跳出去重来
+      if (!last.success) { gateOk = false; break; } // 本轮某步失败,跳出去重来
+      if (body.id === gateId && gateFailed(last.output)) { // 质量门判 FAIL:本轮不通过,重做
+        gateOk = false;
+        ctx.onLog(step.id, '🚦 质量门未通过(第 ' + (i + 1) + '/' + max + ' 轮),退回重做');
+        break;
+      }
     }
-    if (step.until === 'pass' && last.success) break;
+    if (step.until === 'pass' && last.success && gateOk) break; // 全步通过且质量门放行
   }
   ctx.onStatus(step.id, last.success ? 'done' : 'failed');
   return last;
