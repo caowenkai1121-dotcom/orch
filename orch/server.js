@@ -171,7 +171,7 @@ app.post('/api/playbooks', (req, res) => {
   broadcastRaw({ type: 'agents' });
   res.json({ id });
 });
-app.get('/api/playbooks', (req, res) => res.json(store.listPlaybooks().map((p) => ({ id: p.id, name: p.name, description: p.description }))));
+app.get('/api/playbooks', (req, res) => res.json(store.listPlaybooks().map((p) => { let n = 0; try { n = (JSON.parse(p.plan || '{}').steps || []).length; } catch (e) {} return { id: p.id, name: p.name, description: p.description, steps: n }; })));
 app.delete('/api/playbooks/:id', adminOnly, (req, res) => { store.deletePlaybook(Number(req.params.id)); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 
 // 按任务的 isolate 选工作目录:worktree(git仓内) / 每任务 data 目录(回退)

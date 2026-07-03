@@ -458,7 +458,10 @@ class Maestro extends MaestroBase {
     v.onProjQuickKey = (e) => { if (e.key === 'Enter') this.projQuickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
-    if ((this.state.modal === 'task' || this.state.screen === 'dashboard') && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
+    if ((this.state.modal === 'task' || this.state.screen === 'dashboard' || this.state.screen === 'tasks') && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
+    // 剧本管理(任务页)
+    v.playbooksMgmt = (this.live.playbooks || []).map((p) => ({ name: p.name, steps: p.steps || 0, use: () => this.runPlaybook(p.id, p.name), del: () => this.delPlaybook(p.id, p.name) }));
+    v.hasPlaybooksMgmt = this.state.screen === 'tasks' && v.playbooksMgmt.length > 0;
     v.playbookOpts = (this.live.playbooks || []).map((p) => ({ id: p.id, name: p.name }));
     // 总控台剧本快捷入口:一键复用已存工作流
     v.dashPlaybooks = (this.live.playbooks || []).slice(0, 8).map((p) => ({ name: p.name, run: () => this.runPlaybook(p.id, p.name) }));
@@ -881,6 +884,7 @@ class Maestro extends MaestroBase {
   }
   // —— 剧本 ——
   fetchPlaybooks() { fetch('/api/playbooks').then((r) => r.ok ? r.json() : []).then((p) => { this.live.playbooks = Array.isArray(p) ? p : []; this.scheduleRender(); }).catch(() => {}); }
+  delPlaybook(id, name) { if (!window.confirm('删除剧本「' + name + '」?')) return; fetch('/api/playbooks/' + id, { method: 'DELETE' }).then(() => { this.live.playbooks = null; this.toast('✓ 已删除剧本'); this.fetchPlaybooks(); }).catch(() => {}); }
   runPlaybook(id, name) { // 打开新建弹窗并预选该剧本
     this.setState({ modal: 'task', taskDept: null });
     setTimeout(() => { const el = document.getElementById('nt-playbook'); if (el) el.value = String(id); const ti = document.getElementById('nt-text'); if (ti) ti.focus(); }, 80);
