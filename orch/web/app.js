@@ -818,7 +818,17 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/continue', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
       .then((r) => r.json()).then((d) => { this.setState({ modal: null }); if (d && d.id) this.go('task', { taskId: d.id }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
-  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.ok ? r.json() : []).then((fs) => { fs = Array.isArray(fs) ? fs : []; this.live.files = fs; this.live.filesFor = id; this.scheduleRender(); if (fs.some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
+  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.ok ? r.json() : []).then((fs) => { fs = Array.isArray(fs) ? fs : []; this.live.files = fs; this.live.filesFor = id; this.autoPickPreview(id, fs); this.scheduleRender(); if (fs.some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
+  // 打开任务详情自动预览主产物(免手动点):优先 index.html,再 html/md,再图片
+  autoPickPreview(id, fs) {
+    if (this.state.previewFile || this.state.taskId !== id) return;
+    const skip = (p) => ['task_plan.md', 'findings.md'].indexOf(p) < 0; // 跳过引擎维护文件
+    const paths = fs.map((f) => f.path).filter(skip);
+    const isExt = (p, es) => es.indexOf((p.split('.').pop() || '').toLowerCase()) >= 0;
+    const pick = paths.find((p) => p === 'index.html') || paths.find((p) => isExt(p, ['html', 'htm']))
+      || paths.find((p) => isExt(p, ['md'])) || paths.find((p) => isExt(p, ['png', 'jpg', 'jpeg', 'svg', 'gif', 'webp', 'pdf']));
+    if (pick) this.state.previewFile = pick;
+  }
   fetchFindings(id) { fetch('/output/' + id + '/findings.md').then((r) => r.ok ? r.text() : '').then((txt) => { this.live.findings = txt || ''; this.live.findingsFor = id; this.scheduleRender(); }).catch(() => {}); }
   previewOf(id) {
     const p = this.state.previewFile;
