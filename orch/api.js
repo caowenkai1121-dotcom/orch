@@ -189,6 +189,7 @@ function buildAll(store, user) {
   const today = store.usageToday();
   const ROLE0 = roleMap(store);
   today.byAgent = (store.usageTodayByAgent ? store.usageTodayByAgent() : []).map((r) => ({ agent: (ROLE0[r.agent] && ROLE0[r.agent].label) || r.agent, cost: Math.round(r.c * 1000) / 1000, tokens: r.i + r.o, calls: r.n }));
+  today.allTime = store.usageAllTime ? Math.round(store.usageAllTime().cost * 1000) / 1000 : 0;
   const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/output/' + a.task_id + '/' + a.entry, updated: rel(a.created_at) }));
   return {
     me: user ? { id: user.id, name: user.name, admin: !!user.admin } : null,

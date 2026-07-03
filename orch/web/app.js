@@ -431,6 +431,7 @@ class Maestro extends MaestroBase {
     // 今日成本明细(按执行器)
     v.costByAgent = ((this.live.usage && this.live.usage.byAgent) || []).filter((x) => x.cost > 0 || x.calls > 0).slice(0, 6);
     v.hasCostBreak = v.costByAgent.length > 0;
+    v.costAllTime = '$' + (((this.live.usage && this.live.usage.allTime) || 0)).toFixed(3);
     // 后台标签页也能看到待处理数
     try { const running = (this.live.counts || {}).runningTasks || 0; document.title = (v.attention.length ? '(' + v.attention.length + ') ' : (running ? '● ' : '')) + 'Maestro · 智能体编排工作台'; } catch (e) {}
     v.cv = this.realCv();
@@ -843,7 +844,7 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/retry', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
   }
   // —— 剧本 ——
-  fetchPlaybooks() { fetch('/api/playbooks').then((r) => r.json()).then((p) => { this.live.playbooks = p || []; this.scheduleRender(); }).catch(() => {}); }
+  fetchPlaybooks() { fetch('/api/playbooks').then((r) => r.ok ? r.json() : []).then((p) => { this.live.playbooks = Array.isArray(p) ? p : []; this.scheduleRender(); }).catch(() => {}); }
   runPlaybook(id, name) { // 打开新建弹窗并预选该剧本
     this.setState({ modal: 'task', taskDept: null });
     setTimeout(() => { const el = document.getElementById('nt-playbook'); if (el) el.value = String(id); const ti = document.getElementById('nt-text'); if (ti) ti.focus(); }, 80);

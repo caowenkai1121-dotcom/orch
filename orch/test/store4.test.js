@@ -224,3 +224,13 @@ test('今日成本按执行器分组', () => {
   const cl = by.find((x) => x.agent === 'claude');
   assert.equal(cl.c, 0.05); assert.equal(cl.n, 2);
 });
+
+test('累计总成本', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', 'P', 'admin', {});
+  s.addUsage(id, 'a', 'claude', { input: 1, output: 1, cost: 0.05 });
+  s.addUsage(id, 'b', 'codex', { input: 1, output: 1, cost: 0.03 });
+  assert.equal(s.usageAllTime().cost, 0.08);
+  assert.equal(s.usageAllTime().calls, 2);
+});
