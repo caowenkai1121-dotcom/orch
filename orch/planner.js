@@ -154,6 +154,21 @@ function relevantMemo(memo, taskText, keep) {
   return lines.map((l, i) => ({ l, s: score(l), i })).sort((a, b) => b.s - a.s || b.i - a.i).slice(0, keep).sort((a, b) => a.i - b.i).map((x) => x.l).join('\n');
 }
 
+// 依赖健全化:剔除指向不存在步骤的依赖、自依赖,拓扑排序断环(防 runPlan 静默卡死)
+function sanitizeDeps(plan) {
+  const steps = (plan && plan.steps) || [];
+  const ids = new Set(steps.map((s) => s.id));
+  steps.forEach((s) => { s.deps = (s.deps || []).filter((d) => d !== s.id && ids.has(d)); });
+  // 检测环:能拓扑排完则无环;排不动的步骤,清空其依赖(打断环,至少能跑)
+  const done = new Set(); let progress = true;
+  while (done.size < steps.length && progress) {
+    progress = false;
+    steps.forEach((s) => { if (!done.has(s.id) && s.deps.every((d) => done.has(d))) { done.add(s.id); progress = true; } });
+  }
+  if (done.size < steps.length) steps.forEach((s) => { if (!done.has(s.id)) s.deps = []; }); // 环内步骤解依赖
+  return plan;
+}
+
 // 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 与部门执行器池内)
 function resolveRoles(steps, roleMap, allowed, deptPools, taskText) {
   (steps || []).forEach((s) => {
@@ -199,12 +214,12 @@ async function makePlan(text, opts) {
         const bad = badRoles(p, roleIds);
         if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
       }
-      if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed, deptPools, text); return p; }
+      if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text); return p; }
     } catch (e) { /* 落到执行器模式 */ }
   }
   // 3) 有文字编排 → 按编排(执行器模式)
   if (orch && claude) {
-    try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return p; } catch (e) {}
+    try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return sanitizeDeps(p); } catch (e) {}
   }
   // 4) 显式模板模式且含 claude+codex → 走模板
   if (mode === 'template' && allowed.includes('claude') && allowed.includes('codex')) {
@@ -212,11 +227,11 @@ async function makePlan(text, opts) {
   }
   // 5) 多执行器 → LLM 拆
   if (claude && allowed.length > 1) {
-    try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return p; } catch (e) {}
+    try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return sanitizeDeps(p); } catch (e) {}
   }
   // 6) 兜底
   if (allowed.includes('claude') && allowed.includes('codex')) { const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl; }
   return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps };

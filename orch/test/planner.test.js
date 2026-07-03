@@ -142,3 +142,17 @@ test('经验相关性注入:按任务文本优选相关经验', async () => {
   const body = p.split('【过往经验】')[1].split('【任务】')[0].split('\n').filter(Boolean);
   assert.equal(body.length - 1, 5);      // 去掉标题行=5条经验
 });
+
+test('依赖健全化:剔除自依赖/不存在依赖,断环', () => {
+  const { sanitizeDeps } = require('../planner');
+  // 自依赖 + 指向不存在
+  const p1 = sanitizeDeps({ steps: [{ id: 'a', deps: ['a', 'ghost', 'b'] }, { id: 'b', deps: [] }] });
+  assert.deepEqual(p1.steps[0].deps, ['b']);
+  // 环 a↔b:拓扑排不动 → 解依赖至少能跑
+  const p2 = sanitizeDeps({ steps: [{ id: 'a', deps: ['b'] }, { id: 'b', deps: ['a'] }] });
+  const stuck = p2.steps.filter((s) => s.deps.length);
+  assert.equal(stuck.length, 0); // 环被打断
+  // 正常链不动
+  const p3 = sanitizeDeps({ steps: [{ id: 'a', deps: [] }, { id: 'b', deps: ['a'] }, { id: 'c', deps: ['b'] }] });
+  assert.deepEqual(p3.steps[2].deps, ['b']);
+});
