@@ -105,6 +105,8 @@ async function runLoop(step, ctx, prevOutput) {
       if (body.id === gateId && gateFailed(last.output)) { // 质量门判 FAIL:本轮不通过,重做
         gateOk = false;
         ctx.onLog(step.id, '🚦 质量门未通过(第 ' + (i + 1) + '/' + max + ' 轮),退回重做');
+        // 返工框架:让实现员工知道这是打回修复,针对问题改而非从零重写
+        last.output = '【质量门第 ' + (i + 1) + ' 轮打回·请针对以下问题在现有产出上修复,不要从零重写】\n' + last.output;
         break;
       }
     }

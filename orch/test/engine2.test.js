@@ -94,3 +94,18 @@ test('质量门:门禁步注入PASS/FAIL格式要求', async () => {
   assert.match(gatePrompt, /质量门·必读/);
   assert.match(gatePrompt, /PASS.*FAIL|FAIL/);
 });
+
+test('质量门打回:实现员工收到返工框架', async () => {
+  const { runPlan } = require('../engine');
+  let implPrompts = [];
+  let gc = 0;
+  const impl = { async run({ prompt }) { implPrompts.push(prompt); return { output: 'v', success: true }; } };
+  const gate = { async run() { gc++; return { output: gc === 1 ? 'FAIL 缺少错误处理' : 'PASS', success: true }; } };
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 3, deps: [], body: [
+    { id: 'impl', agent: 'i', prompt: '实现', deps: [] }, { id: 'gate', agent: 'g', prompt: '审查', deps: [] },
+  ] }] };
+  await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  // 第二次实现(返工)应收到打回框架 + 门禁问题
+  assert.match(implPrompts[1], /质量门.*打回/);
+  assert.match(implPrompts[1], /缺少错误处理/);
+});
