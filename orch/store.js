@@ -50,12 +50,13 @@ function open(file) {
   ensureCol('projects', 'owner', 'TEXT');
   ensureCol('agents', 'kind', 'TEXT');
   ensureCol('departments', 'flow', 'TEXT');
+  ensureCol('tasks', 'models', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
       const o = opts || {};
-      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,parent,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
-        .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', o.ask ? 1 : 0, o.parent || null, now, now).lastInsertRowid;
+      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,parent,models,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', o.ask ? 1 : 0, o.parent || null, o.models ? JSON.stringify(o.models) : null, now, now).lastInsertRowid;
     },
     addApp(d) {
       return db.prepare('INSERT INTO apps(name,task_id,dir,entry,created_at) VALUES(?,?,?,?,?)')

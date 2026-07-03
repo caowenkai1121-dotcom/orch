@@ -54,9 +54,10 @@ async function runStep(step, ctx, prevOutput) {
   ctx.onStatus(step.id, 'running');
   const s = sem(); await s.acquire();
   let res;
+  const model = (ctx.models && ctx.models[step.agent]) || null; // 用户为该执行器选的大模型
   try {
     res = await adapter.run({
-      prompt, workdir,
+      prompt, workdir, model,
       onLine: (line) => ctx.onLog(step.id, line),
       onChild: (child) => { ctx.onChild && ctx.onChild(child); },
       onUsage: (u) => { ctx.onUsage && ctx.onUsage(step.id, step.agent, u); },

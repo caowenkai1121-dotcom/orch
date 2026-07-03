@@ -158,7 +158,8 @@ app.post('/api/grant', (req, res) => {
 app.post('/task', (req, res) => {
   const owner = req.user.name; // 归属=当前登录用户,忽略客户端传值
   const project = req.body.project || '默认项目';
-  const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate, ask: req.body.ask });
+  const models = req.body.models && typeof req.body.models === 'object' ? req.body.models : null; // {执行器id:模型}
+  const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate, ask: req.body.ask, models });
   const ws = taskWorkspace(store.getTask(id));
   store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
   res.json({ id });

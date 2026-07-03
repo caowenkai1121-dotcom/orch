@@ -6,11 +6,12 @@ function make(def) {
   const args = Array.isArray(def.args) ? def.args : (def.args ? JSON.parse(def.args) : []);
   let pricing = null; try { pricing = def.pricing ? JSON.parse(def.pricing) : null; } catch (e) {}
   return {
-    async run({ prompt, workdir, onLine, onChild, onUsage }) {
-      let cmd = def.command, callArgs = [...args, JSON.stringify(prompt)];
+    async run({ prompt, workdir, model, onLine, onChild, onUsage }) {
+      const modelArgs = model ? ['--model', model] : []; // 用户选的大模型
+      let cmd = def.command, callArgs = [...args, ...modelArgs, JSON.stringify(prompt)];
       // 容器隔离(opt-in,仅设了 image 的自定义 agent):Docker 可用则在容器里跑,否则回退本地
       if (def.image) {
-        if (dockerOk()) { callArgs = dockerArgs(workdir, def.image, def.command, [...args, JSON.stringify(prompt)]); cmd = 'docker'; }
+        if (dockerOk()) { callArgs = dockerArgs(workdir, def.image, def.command, [...args, ...modelArgs, JSON.stringify(prompt)]); cmd = 'docker'; }
         else onLine('[warn] Docker 不可用,回退本地执行');
       }
       const res = await runCli(cmd, callArgs, workdir, onLine, onChild);

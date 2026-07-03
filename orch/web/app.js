@@ -412,6 +412,7 @@ class Maestro extends MaestroBase {
     v.newPerson = () => this.newPerson();
     v.closeModal = () => this.closeModal();
     v.submitTask = () => this.submitTask();
+    v.modelPick = this.modelPickers();
     v.submitAgent = () => this.submitAgent();
     v.submitPerson = () => this.submitPerson();
     v.modalTask = this.state.modal === 'task';
@@ -809,6 +810,15 @@ class Maestro extends MaestroBase {
     }
   }
 
+  // 内置执行器的大模型选项(仅对已存在的 claude/codex 显示)
+  modelPickers() {
+    const CAT = {
+      claude: { label: 'Claude', selId: 'nt-model-claude', opts: [{ v: '', n: '默认' }, { v: 'opus', n: 'Opus' }, { v: 'sonnet', n: 'Sonnet' }, { v: 'haiku', n: 'Haiku' }] },
+      codex: { label: 'Codex', selId: 'nt-model-codex', opts: [{ v: '', n: '默认' }, { v: 'gpt-5-codex', n: 'GPT-5 Codex' }, { v: 'gpt-5', n: 'GPT-5' }, { v: 'o3', n: 'o3' }] },
+    };
+    const have = new Set((this.AGENTS || []).map((a) => a.id));
+    return Object.keys(CAT).filter((id) => have.has(id)).map((id) => ({ agent: id, ...CAT[id] }));
+  }
   // —— 弹窗 ——
   newTask() { this.setState({ modal: 'task', taskDept: null }); }
   newAgent() { this.setState({ modal: 'agent', editAgent: null }); }
@@ -860,7 +870,9 @@ class Maestro extends MaestroBase {
     const orchestration = (document.getElementById('nt-orch') || {}).value || '';
     const refine = (document.getElementById('nt-refine') || {}).checked ? 1 : 0;
     const dept = this.state.taskDept || null; // 部门任务:按该部门流程拆分
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept }) })
+    const models = {}; // 用户为 claude/codex 选的大模型
+    (this.modelPickers() || []).forEach((mp) => { const v = (document.getElementById(mp.selId) || {}).value; if (v) models[mp.agent] = v; });
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept, models }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {

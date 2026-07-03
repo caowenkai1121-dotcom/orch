@@ -96,9 +96,10 @@ async function execute(taskId, plan, deps, opts) {
       + (down.length ? ',你的产出将交接给: ' + down.join(', ') : ',你是最后一步,交付即收尾') + '。';
   };
 
+  let models = null; try { models = task.models ? JSON.parse(task.models) : null; } catch (e) {} // 用户选的大模型:{执行器id:模型}
   let pending = null;
   const ctx = {
-    adapters, workspace, brief,
+    adapters, workspace, brief, models,
     preamble: task.ask ? ASK : AUTONOMY,
     askMode: !!task.ask,
     seedDone: opts.seedDone || null,
