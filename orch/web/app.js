@@ -413,6 +413,35 @@ class Maestro extends MaestroBase {
     v.closeModal = () => this.closeModal();
     v.submitTask = () => this.submitTask();
     v.modelPick = this.modelPickers();
+    // 剧本选项(新建任务)
+    if (this.state.modal === 'task' && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
+    v.playbookOpts = (this.live.playbooks || []).map((p) => ({ id: p.id, name: p.name }));
+    // 定时任务列表(任务页)
+    v.schedules = (this.live.schedules || []).map((s) => {
+      const sp = s.spec || {};
+      const rule = sp.kind === 'daily' ? '每天 ' + sp.at : sp.kind === 'weekly' ? '每周' + '日一二三四五六'[sp.dow] + ' ' + sp.at : sp.kind === 'hours' ? '每 ' + sp.n + ' 小时' : '?';
+      return { id: s.id, text: s.text, rule, last: s.last_run ? new Date(s.last_run).toLocaleString() : '未运行', on: !!s.enabled, onLabel: s.enabled ? '开' : '停', onBg: s.enabled ? '#E4F4EA' : '#F0EEE9', onC: s.enabled ? '#1F7A46' : '#6B6760', toggle: () => this.toggleSchedule(s.id), del: () => this.delSchedule(s.id) };
+    });
+    v.hasSchedules = v.schedules.length > 0;
+    if (this.state.screen === 'tasks' && !this.live.schedules) { this.live.schedules = []; this.fetchSchedules(); }
+    // 回放(canReplay 依赖 curT,在后面补)
+    v.openReplay = () => this.openReplay();
+    v.modalReplay = this.state.modal === 'replay';
+    const rp2 = this.live.replay || { events: [], logsByStep: {} };
+    v.repTitle = rp2.task || '';
+    v.repEvents = (rp2.events || []).map((e, i) => {
+      const d = e.data;
+      const txt = e.type === 'status' && d && d.step ? (d.step + ' → ' + d.v) : e.type === 'plan' ? ('拆解计划(' + ((d && d.steps) || '?') + '步)') : e.type + (typeof d === 'string' ? ': ' + d : '');
+      return { i, time: (e.ts || '').slice(11, 19), txt, sel: i === this.state.repSel, bg: i === this.state.repSel ? '#FFF6D6' : 'transparent', pick: () => this.setState({ repSel: i }) };
+    });
+    const selEv = (rp2.events || [])[this.state.repSel || 0];
+    const selStep = selEv && selEv.data && selEv.data.step;
+    v.repStep = selStep || '(任务级事件)';
+    v.repLogs = selStep ? ((rp2.logsByStep || {})[selStep] || []).join('\n') : ((rp2.logsByStep || {})[''] || []).join('\n');
+    // Webhook(账号弹窗)
+    if (this.state.modal === 'account' && !this.live.hookUrl) this.fetchHook();
+    v.hookUrl = this.live.hookUrl ? (location.origin + this.live.hookUrl) : '…';
+    v.resetHook = () => this.resetHook();
     v.submitAgent = () => this.submitAgent();
     v.submitPerson = () => this.submitPerson();
     v.modalTask = this.state.modal === 'task';
@@ -564,6 +593,9 @@ class Maestro extends MaestroBase {
     v.continueTask = () => this.continueTask();
     v.canRetry = !!(curT && canMod && curT.sk === 'failed'); // 失败任务:重试失败步骤(已完成的不重跑)
     v.retryTask = () => this.retryTask();
+    v.canReplay = !!(curT && ['done', 'failed', 'cancelled'].indexOf(curT.sk) >= 0); // 回放
+    v.savePlaybook = () => this.saveAsPlaybook();
+    v.canSavePb = !!(curT && curT.sk === 'done' && canMod); // 存为剧本
     v.modalContinue = this.state.modal === 'continue';
     v.continueSubmit = () => this.continueSubmit();
     // 应用广场
@@ -652,6 +684,26 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     fetch('/task/' + id + '/retry', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
   }
+  // —— 剧本 ——
+  fetchPlaybooks() { fetch('/api/playbooks').then((r) => r.json()).then((p) => { this.live.playbooks = p || []; this.scheduleRender(); }).catch(() => {}); }
+  saveAsPlaybook() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    const name = window.prompt('剧本名称(存下这套步骤,以后一键复用):'); if (!name) return;
+    fetch('/api/playbooks', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ taskId: id, name }) })
+      .then(() => { this.fetchPlaybooks(); }).catch(() => {});
+  }
+  // —— 定时任务 ——
+  fetchSchedules() { fetch('/api/schedules').then((r) => r.json()).then((s) => { this.live.schedules = s || []; this.scheduleRender(); }).catch(() => {}); }
+  toggleSchedule(id) { fetch('/api/schedules/' + id + '/toggle', { method: 'POST' }).then(() => this.fetchSchedules()).catch(() => {}); }
+  delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
+  // —— 回放 ——
+  openReplay() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    fetch('/api/replay/' + id).then((r) => r.json()).then((d) => { this.live.replay = d; this.setState({ modal: 'replay', repSel: 0 }); }).catch(() => {});
+  }
+  // —— Webhook ——
+  fetchHook() { fetch('/api/me/hook').then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
+  resetHook() { fetch('/api/me/hook/reset', { method: 'POST' }).then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
   notifyTask(m) { // 桌面通知:任务结束/需要人
     if (m.type !== 'task') return;
     const MAP = { done: '✅ 任务完成', failed: '❌ 任务失败', awaiting_input: '⚠ 任务等你决策', awaiting: '⏸ 任务待审批' };
@@ -922,7 +974,18 @@ class Maestro extends MaestroBase {
       const e = (document.getElementById(mp.effId) || {}).value || '';
       if (m || e) models[mp.agent] = { model: m || null, effort: e || null };
     });
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept, models }) })
+    const playbook = (document.getElementById('nt-playbook') || {}).value || null; // 用剧本:骨架复用不走LLM规划
+    // 定时重复:建 schedule 而非立即任务
+    const skind = (document.getElementById('nt-sched-kind') || {}).value || '';
+    if (skind) {
+      const sval = ((document.getElementById('nt-sched-val') || {}).value || '').trim();
+      const sdow = Number((document.getElementById('nt-sched-dow') || {}).value || 1);
+      const spec = skind === 'hours' ? { kind: 'hours', n: Number(sval) || 24 } : skind === 'weekly' ? { kind: 'weekly', dow: sdow, at: sval || '09:00' } : { kind: 'daily', at: sval || '09:00' };
+      fetch('/api/schedules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, dept, agents, models, playbook, spec }) })
+        .then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); this.fetchSchedules(); }).catch(() => {});
+      return;
+    }
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept, models, playbook }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {

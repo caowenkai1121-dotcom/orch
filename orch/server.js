@@ -40,11 +40,26 @@ app.post('/login', (req, res) => {
 app.post('/logout', (req, res) => { auth.logout(auth.tokenFromReq(req)); res.setHeader('Set-Cookie', 'orch_sess=; HttpOnly; Path=/; Max-Age=0'); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => req.user ? res.json(pubUser(req.user)) : res.status(401).json({ error: 'unauthorized' }));
 app.post('/api/me/password', (req, res) => { if (!req.user) return res.status(401).json({ error: 'unauthorized' }); store.setPassword(req.user.id, (req.body || {}).password || 'admin'); res.json({ ok: true }); });
+// Webhook 触发(鉴权闸前,凭 token):外部系统 POST /hook/<token> {text,project?} 即建任务
+app.post('/hook/:token', (req, res) => {
+  const p = store.personByHookToken(req.params.token);
+  if (!p) return res.status(401).json({ error: 'bad token' });
+  const text = ((req.body || {}).text || '').trim();
+  if (!text) return res.status(400).json({ error: '缺 text' });
+  const id = createAndRunTask(p.name, { text, project: (req.body || {}).project, refine: false });
+  store.addEvent(id, 'webhook', { by: p.id });
+  res.json({ id });
+});
+
 // 鉴权闸:此后所有接口都要求登录
 app.use((req, res, next) => { if (req.user) return next(); res.status(401).json({ error: 'unauthorized' }); });
 
 // 权限助手(perm.js,服务端强制)
 const { owns, canSeeTask, adminOnly } = perm.make(store);
+
+// 我的 Webhook 地址(取/重置)
+app.get('/api/me/hook', (req, res) => res.json({ url: '/hook/' + store.ensureHookToken(req.user.id) }));
+app.post('/api/me/hook/reset', (req, res) => res.json({ url: '/hook/' + store.resetHookToken(req.user.id) }));
 
 app.get('/tasks', (req, res) => res.json(store.listTasks()));
 app.get('/task/:id', (req, res) => { const t = store.getTask(Number(req.params.id)); if (!canSeeTask(req.user, t)) return res.status(403).json({ error: '无权限' }); res.json(t); });
@@ -99,24 +114,54 @@ app.post('/api/grant', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/task', (req, res) => {
-  const owner = req.user.name; // 归属=当前登录用户,忽略客户端传值
-  const project = req.body.project || '默认项目';
-  const models = req.body.models && typeof req.body.models === 'object' ? req.body.models : null; // {执行器id:模型}
-  const id = store.createTask(req.body.text, project, owner, { budget: req.body.budget, approve: req.body.approve, isolate: req.body.isolate, ask: req.body.ask, models });
+// 建任务并启动:表单/定时任务/Webhook 共用
+function createAndRunTask(ownerName, body) {
+  const project = body.project || '默认项目';
+  const models = body.models && typeof body.models === 'object' ? body.models : null; // {执行器id:{model,effort}}
+  const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve: body.approve, isolate: body.isolate, ask: body.ask, models });
   const ws = taskWorkspace(store.getTask(id));
   store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
-  res.json({ id });
   const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id);
-  const explicit = Array.isArray(req.body.agents) && req.body.agents.length > 0;
-  const sel = explicit ? req.body.agents.filter((a) => allAgents.includes(a)) : allAgents;
-  const refine = req.body.refine === undefined ? true : !!req.body.refine;
+  const explicit = Array.isArray(body.agents) && body.agents.length > 0;
+  const sel = explicit ? body.agents.filter((a) => allAgents.includes(a)) : allAgents;
+  const refine = body.refine === undefined ? true : !!body.refine;
+  // 剧本模式:按剧本骨架直接出计划(不走 LLM 规划,快且稳)
+  const pb = body.playbook ? store.getPlaybook(Number(body.playbook)) : null;
+  const planFromPlaybook = () => {
+    const p = JSON.parse(pb.plan);
+    const fill = (steps) => (steps || []).map((s) => ({ ...s, prompt: s.prompt ? s.prompt.split('{task}').join(body.text) : s.prompt, body: s.body ? fill(s.body) : undefined }));
+    return { task: body.text, steps: fill(p.steps) };
+  };
   runTask(id, {
     store, adapters, workspace: ws, runs,
-    makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), dept: req.body.dept || null, deptPools: store.allDeptExecutors(), orchestration: req.body.orchestration, refine, templatesDir, claude: adapters.claude }),
+    makePlan: pb
+      ? () => Promise.resolve(planFromPlaybook())
+      : (text) => makePlan(text, { mode: body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), dept: body.dept || null, deptPools: store.allDeptExecutors(), orchestration: body.orchestration, refine, templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
+  return id;
+}
+
+app.post('/task', (req, res) => {
+  const id = createAndRunTask(req.user.name, req.body || {}); // 归属=当前登录用户
+  res.json({ id });
 });
+
+// 剧本:存(从任务) / 列 / 删;新建任务 body.playbook=id 使用
+app.post('/api/playbooks', (req, res) => {
+  const t = store.getTask(Number((req.body || {}).taskId));
+  if (!t || !owns(req.user, t)) return res.status(403).json({ ok: false });
+  let plan = null; try { plan = JSON.parse(t.plan); } catch (e) {}
+  if (!plan || !plan.steps || !plan.steps.length) return res.json({ ok: false, error: '无计划可存' });
+  // 泛化:把具体任务文本替换成 {task} 占位,复用时回填新需求
+  const generalize = (steps) => (steps || []).forEach((s) => { if (s.prompt && t.text) s.prompt = s.prompt.split(t.text).join('{task}'); if (s.body) generalize(s.body); });
+  generalize(plan.steps);
+  const id = store.addPlaybook({ name: (req.body || {}).name || t.text.slice(0, 30), description: t.text.slice(0, 80), plan });
+  broadcastRaw({ type: 'agents' });
+  res.json({ id });
+});
+app.get('/api/playbooks', (req, res) => res.json(store.listPlaybooks().map((p) => ({ id: p.id, name: p.name, description: p.description }))));
+app.delete('/api/playbooks/:id', adminOnly, (req, res) => { store.deletePlaybook(Number(req.params.id)); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 
 // 按任务的 isolate 选工作目录:worktree(git仓内) / 每任务 data 目录(回退)
 function isGit(d) { try { execSync('git rev-parse --is-inside-work-tree', { cwd: d, stdio: 'ignore' }); return true; } catch (e) { return false; } }
@@ -247,6 +292,59 @@ app.post('/task/:id/cancel', (req, res) => {
   store.setTaskStatus(id, 'cancelled'); store.addEvent(id, 'task', 'cancelled'); broadcast({ taskId: id, type: 'task', data: 'cancelled' });
   res.json({ ok: true });
 });
+
+// 任务回放:事件时间线 + 每步日志(参考 Manus 会话回放)
+app.get('/api/replay/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.status(403).json({ ok: false });
+  const events = store.getEvents(t.id).map((e) => { let d = null; try { d = JSON.parse(e.data); } catch (x) { d = e.data; } return { ts: e.ts, type: e.type, data: d }; });
+  const logsByStep = {};
+  store.getLogs(t.id).forEach((l) => { (logsByStep[l.step_id || ''] = logsByStep[l.step_id || ''] || []).push(l.line); });
+  res.json({ task: t.text, status: t.status, events, logsByStep });
+});
+
+// —— 定时任务:每分钟检查,到点自动建任务(参考 Manus Scheduled Tasks) ——
+app.get('/api/schedules', (req, res) => res.json(store.listSchedules().filter((s) => req.user.admin || s.owner === req.user.name).map((s) => ({ ...s, spec: JSON.parse(s.spec || '{}') }))));
+app.post('/api/schedules', (req, res) => {
+  const b = req.body || {};
+  if (!b.text || !b.spec || !b.spec.kind) return res.json({ ok: false, error: '缺 text/spec' });
+  const id = store.addSchedule({ text: b.text, project: b.project, owner: req.user.name, spec: b.spec, dept: b.dept, agents: b.agents, models: b.models, playbook: b.playbook });
+  res.json({ id });
+});
+app.post('/api/schedules/:id/toggle', (req, res) => {
+  const s = store.listSchedules().find((x) => x.id === Number(req.params.id));
+  if (!s || (!req.user.admin && s.owner !== req.user.name)) return res.status(403).json({ ok: false });
+  store.setScheduleEnabled(s.id, !s.enabled); res.json({ ok: true });
+});
+app.delete('/api/schedules/:id', (req, res) => {
+  const s = store.listSchedules().find((x) => x.id === Number(req.params.id));
+  if (!s || (!req.user.admin && s.owner !== req.user.name)) return res.status(403).json({ ok: false });
+  store.deleteSchedule(s.id); res.json({ ok: true });
+});
+
+// 到点判断:daily HH:MM / weekly dow+HH:MM / every N 小时
+function scheduleDue(s, now) {
+  let spec = {}; try { spec = JSON.parse(s.spec || '{}'); } catch (e) { return false; }
+  const last = s.last_run ? new Date(s.last_run) : null;
+  const hhmm = (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  if (spec.kind === 'hours') return !last || (now - last) >= (Number(spec.n) || 1) * 3600e3;
+  if (spec.kind === 'daily') return hhmm(now) === spec.at && (!last || last.toDateString() !== now.toDateString());
+  if (spec.kind === 'weekly') return now.getDay() === Number(spec.dow) && hhmm(now) === spec.at && (!last || (now - last) > 6 * 24 * 3600e3);
+  return false;
+}
+setInterval(() => {
+  const now = new Date();
+  store.listSchedules().filter((s) => s.enabled).forEach((s) => {
+    if (!scheduleDue(s, now)) return;
+    store.setScheduleRun(s.id);
+    try {
+      const body = { text: s.text, project: s.project, dept: s.dept || null, agents: JSON.parse(s.agents || '[]'), models: s.models ? JSON.parse(s.models) : null, playbook: s.playbook || null, refine: false };
+      const id = createAndRunTask(s.owner, body);
+      store.addEvent(id, 'scheduled', { schedule: s.id });
+      console.log('定时任务触发: schedule', s.id, '→ task', id);
+    } catch (e) { console.log('定时任务失败:', e.message); }
+  });
+}, 60 * 1000).unref();
 
 const server = app.listen(3000, () => console.log('orch http://localhost:3000'));
 const wss = new WebSocketServer({ server });

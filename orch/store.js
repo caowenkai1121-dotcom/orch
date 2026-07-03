@@ -39,6 +39,12 @@ function open(file) {
       project TEXT, user_id TEXT, PRIMARY KEY(project, user_id));
     CREATE TABLE IF NOT EXISTS events(
       id INTEGER PRIMARY KEY, task_id INTEGER, ts TEXT, type TEXT, data TEXT);
+    CREATE TABLE IF NOT EXISTS playbooks(
+      id INTEGER PRIMARY KEY, name TEXT, description TEXT, plan TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS schedules(
+      id INTEGER PRIMARY KEY, text TEXT, project TEXT, owner TEXT, spec TEXT,
+      dept TEXT, agents TEXT, models TEXT, playbook INTEGER,
+      enabled INTEGER, last_run TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS usage(
       id INTEGER PRIMARY KEY, task_id INTEGER, step_id TEXT, agent TEXT,
       input_tokens INTEGER, output_tokens INTEGER, cost REAL, ts TEXT);
@@ -52,6 +58,7 @@ function open(file) {
   ensureCol('departments', 'flow', 'TEXT');
   ensureCol('tasks', 'models', 'TEXT');
   ensureCol('roles', 'memo', 'TEXT');
+  ensureCol('people', 'hook_token', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
@@ -64,6 +71,17 @@ function open(file) {
         .run(d.name || '应用', d.taskId, d.dir || '', d.entry || 'index.html', new Date().toISOString()).lastInsertRowid;
     },
     listApps() { return db.prepare('SELECT * FROM apps ORDER BY id DESC').all(); },
+    // 剧本:成功任务的计划骨架,可复用
+    addPlaybook(d) { return db.prepare('INSERT INTO playbooks(name,description,plan,created_at) VALUES(?,?,?,?)').run(d.name || '剧本', d.description || '', JSON.stringify(d.plan || {}), new Date().toISOString()).lastInsertRowid; },
+    listPlaybooks() { return db.prepare('SELECT * FROM playbooks ORDER BY id DESC').all(); },
+    getPlaybook(id) { return db.prepare('SELECT * FROM playbooks WHERE id=?').get(id); },
+    deletePlaybook(id) { db.prepare('DELETE FROM playbooks WHERE id=?').run(id); },
+    // 定时任务
+    addSchedule(d) { return db.prepare('INSERT INTO schedules(text,project,owner,spec,dept,agents,models,playbook,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,1,?)').run(d.text, d.project || '默认项目', d.owner, JSON.stringify(d.spec || {}), d.dept || null, JSON.stringify(d.agents || []), d.models ? JSON.stringify(d.models) : null, d.playbook || null, new Date().toISOString()).lastInsertRowid; },
+    listSchedules() { return db.prepare('SELECT * FROM schedules ORDER BY id DESC').all(); },
+    setScheduleEnabled(id, on) { db.prepare('UPDATE schedules SET enabled=? WHERE id=?').run(on ? 1 : 0, id); },
+    setScheduleRun(id) { db.prepare('UPDATE schedules SET last_run=? WHERE id=?').run(new Date().toISOString(), id); },
+    deleteSchedule(id) { db.prepare('DELETE FROM schedules WHERE id=?').run(id); },
     deleteApp(id) { db.prepare('DELETE FROM apps WHERE id=?').run(id); },
     setTaskDir(id, dir) { db.prepare('UPDATE tasks SET dir=? WHERE id=?').run(dir, id); },
     setTaskDecision(id, stepId, question) { db.prepare('UPDATE tasks SET blocked_step=?, question=? WHERE id=?').run(stepId, question, id); },
@@ -130,6 +148,16 @@ function open(file) {
       return id;
     },
     setPassword(id, pw) { db.prepare('UPDATE people SET password=? WHERE id=?').run(hashPw(pw), id); },
+    // Webhook token:外部系统凭 token 触发任务
+    ensureHookToken(id) {
+      const p = this.getPerson(id); if (!p) return null;
+      if (p.hook_token) return p.hook_token;
+      const t = crypto.randomBytes(16).toString('hex');
+      db.prepare('UPDATE people SET hook_token=? WHERE id=?').run(t, id);
+      return t;
+    },
+    resetHookToken(id) { db.prepare('UPDATE people SET hook_token=? WHERE id=?').run(crypto.randomBytes(16).toString('hex'), id); return this.getPerson(id).hook_token; },
+    personByHookToken(tok) { return tok ? db.prepare('SELECT * FROM people WHERE hook_token=?').get(tok) : null; },
     verifyLogin(name, pw) { const p = db.prepare('SELECT * FROM people WHERE name=?').get(name); return (p && p.password === hashPw(pw)) ? p : null; },
     // 部门
     listDepts() { return db.prepare('SELECT * FROM departments ORDER BY created_at').all(); },
