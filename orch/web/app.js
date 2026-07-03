@@ -432,6 +432,10 @@ class Maestro extends MaestroBase {
     v.costByAgent = ((this.live.usage && this.live.usage.byAgent) || []).filter((x) => x.cost > 0 || x.calls > 0).slice(0, 6);
     v.hasCostBreak = v.costByAgent.length > 0;
     v.costAllTime = '$' + (((this.live.usage && this.live.usage.allTime) || 0)).toFixed(3);
+    // 运行中Agent面板空态:显示最近完成任务(idle 时仪表盘仍有用)
+    v.noActiveAgents = ((this.live.counts || {}).runningAgents || 0) === 0;
+    v.hasActive = !v.noActiveAgents;
+    v.recentDone = (this.TASKS || []).filter((t) => t.sk === 'done').slice(0, 5).map((t) => ({ title: t.title, updated: t.updated, durLabel: t.durLabel || '', open: () => this.go('task', { taskId: t.id }) }));
     // 后台标签页也能看到待处理数
     try { const running = (this.live.counts || {}).runningTasks || 0; document.title = (v.attention.length ? '(' + v.attention.length + ') ' : (running ? '● ' : '')) + 'Maestro · 智能体编排工作台'; } catch (e) {}
     v.cv = this.realCv();
