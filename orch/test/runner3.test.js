@@ -199,3 +199,18 @@ test('会话化:rerunStep 只重跑指定步,其余保留', async () => {
   assert.equal(ran[0], true);                        // b 仍收到 a 的交接
   assert.match(store.getTask(id).steps.find((s) => s.step_id === 'b').output, /v2/);
 });
+
+test('失败自省:重跑注入上次失败原因', async () => {
+  const { open } = require('../store');
+  const { retryFailed } = require('../runner');
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [{ id: 'a', agent: 'x', prompt: 'p', deps: [] }] });
+  store.setStep(id, 'a', 'x', 'failed', '编译错误:缺少分号在第42行');
+  store.setTaskStatus(id, 'failed');
+  let seen = '';
+  const x = { async run({ prompt }) { seen = prompt; return { output: '修好了', success: true }; } };
+  await retryFailed(id, { store, adapters: { x }, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} });
+  assert.match(seen, /上次在此步失败/);
+  assert.match(seen, /缺少分号在第42行/);
+});

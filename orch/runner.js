@@ -97,6 +97,12 @@ function resumeTask(taskId, deps, stepId, answer) {
 }
 
 // 重试失败步骤:已完成步骤不重跑,只重跑失败/未完成的(限额恢复后一键续跑)
+// 收集失败步骤的上次输出 → 重跑时注入,让员工看到自己上次为何失败
+function failNotes(store, taskId) {
+  const m = {};
+  (store.getTask(taskId).steps || []).forEach((s) => { if (s.status === 'failed' && s.output) m[s.step_id] = String(s.output).slice(-800); });
+  return m;
+}
 function retryFailed(taskId, deps, initialNote) {
   const { store } = deps;
   const t = store.getTask(taskId);
@@ -105,7 +111,7 @@ function retryFailed(taskId, deps, initialNote) {
   const seedDone = {};
   store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
   if (store.addEvent) store.addEvent(taskId, 'retry', { skip: Object.keys(seedDone).length });
-  return execute(taskId, plan, deps, { seedDone, initialNote });
+  return execute(taskId, plan, deps, { seedDone, initialNote, lastFail: failNotes(store, taskId) });
 }
 
 // 经验沉淀:任务结束后用 LLM 复盘,给每位参与员工提炼一条经验、给总调度一条调度复盘,存入 roles.memo
@@ -159,10 +165,11 @@ function rerunStep(taskId, deps, stepId) {
   const top = new Set((plan.steps || []).map((s) => s.id));
   const seedDone = {};
   store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id) && s.step_id !== stepId) seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  const lastFail = failNotes(store, taskId);
   store.setStep(taskId, stepId, '', 'pending', null); // 清该步状态
   if (store.addEvent) store.addEvent(taskId, 'rerun', { step: stepId });
   store.addTaskMsg(taskId, 'system', '↻ 重跑步骤 ' + stepId + '(其余已完成步骤保留)。');
-  return execute(taskId, plan, deps, { seedDone });
+  return execute(taskId, plan, deps, { seedDone, lastFail });
 }
 
 // 限额自动重试:任务因执行器限额失败时,解析重置时间到点自动续跑(每任务最多2次)
@@ -250,6 +257,7 @@ async function execute(taskId, plan, deps, opts) {
     isCancelled: () => rec.cancelled,
     isPaused: () => rec.paused,
     skip: rec.skip,
+    lastFail: opts.lastFail || null, // 重跑时该步上次的失败输出
     takeNotes: () => { const t = rec.notes.splice(0).join('\n'); return t; }, // 用户中途指令,注入即消费
     onChild: (child) => rec.children.add(child),
     onUsage: (stepId, agent, u) => { store.addUsage(taskId, stepId, agent, u); emit(onEvent, taskId, stepId, 'usage', u); },
