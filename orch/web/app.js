@@ -367,6 +367,14 @@ class Maestro extends MaestroBase {
     this.fetchAll();
     this.openWS();
     this._poll = setInterval(() => { this.state.clockS += 20; this.fetchAll(); }, 20000); // WS 实时推送为主,轮询只兜底
+    // 全局快捷键:Cmd/Ctrl+K 或 / 聚焦搜索;Esc 关弹窗
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA';
+      if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); const s = document.getElementById('search'); if (s) s.focus(); }
+      else if (e.key === '/' && !typing) { e.preventDefault(); const s = document.getElementById('search'); if (s) s.focus(); }
+      else if (e.key === 'Escape' && this.state.modal) { this.setState({ modal: null }); }
+    });
   }
   startTimer() {} // 关闭原型的 mock 动画 tick
 
