@@ -442,9 +442,9 @@
           <sc-if value="{{ hasTaskLive }}">
           <pre style="margin:0 0 10px;max-height:130px;overflow:auto;background:#1A1814;color:#C9E4CA;border-radius:9px;padding:9px 12px;font-family:'JetBrains Mono',monospace;font-size:10.5px;line-height:1.5;white-space:pre-wrap;word-break:break-all;">{{ taskLive }}</pre>
           </sc-if>
-          <div style="display:flex;gap:8px;">
-            <input id="tm-input" onkeydown="{{ onMsgKey }}" placeholder="给团队发指令…(回车发送)" style="flex:1;height:36px;border:1px solid #E6E3DC;border-radius:10px;padding:0 12px;font-family:inherit;font-size:13px;box-sizing:border-box;">
-            <button onClick="{{ sendTaskMsg }}" style="height:36px;padding:0 16px;border-radius:10px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:13px;cursor:pointer;font-family:inherit;">发送</button>
+          <div style="display:flex;gap:8px;align-items:flex-end;">
+            <textarea id="tm-input" rows="1" onkeydown="{{ onMsgKey }}" oninput="{{ growMsg }}" placeholder="给团队发指令…(回车发送 · Shift+回车换行)" style="flex:1;min-height:36px;max-height:120px;border:1px solid #E6E3DC;border-radius:10px;padding:8px 12px;font-family:inherit;font-size:13px;box-sizing:border-box;resize:none;line-height:1.4;"></textarea>
+            <button onClick="{{ sendTaskMsg }}" style="height:36px;padding:0 16px;border-radius:10px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:13px;cursor:pointer;font-family:inherit;flex:none;">发送</button>
           </div>
         </div>
 

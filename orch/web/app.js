@@ -700,7 +700,8 @@ class Maestro extends MaestroBase {
     }));
     v.hasMsgs = v.taskMsgs.length > 0;
     v.sendTaskMsg = () => this.sendTaskMsg();
-    v.onMsgKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault && e.preventDefault(); this.sendTaskMsg(); } };
+    v.onMsgKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault && e.preventDefault(); const el = e.currentTarget; this.sendTaskMsg(); if (el) { el.style.height = 'auto'; } } };
+    v.growMsg = (e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; };
     v.msgHint = !curT ? '' : curT.sk === 'working' ? '发指令 → 注入下一个开始的步骤(实时纠偏)' : curT.sk === 'paused' ? '发消息 → 恢复执行并注入指令' : curT.sk === 'awaiting_input' ? '回答员工的问题 → 续跑' : curT.sk === 'awaiting' ? '任务待审批,先批准' : '发新需求 → 在原任务上继续开发';
     v.canPause = !!(curT && curT.sk === 'working' && canMod);
     v.pauseTaskUI = () => this.pauseTaskUI();
