@@ -347,3 +347,15 @@ test('agent累计成本(agentTotals)', () => {
   assert.equal(s.agentTotals('claude').cost, 0.08);
   assert.equal(s.agentTotals('codex').cost, 0.02);
 });
+
+test('agent平均步骤耗时(agentAvgSeconds)', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', 'P', 'admin', {});
+  s.setStep(id, 'a', 'claude', 'done', 'o');
+  // 造 running→done 事件:60秒
+  s.db.prepare("INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)").run(id, '2026-07-04T00:00:00.000Z', 'status', JSON.stringify({ step: 'a', v: 'running' }));
+  s.db.prepare("INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)").run(id, '2026-07-04T00:01:00.000Z', 'status', JSON.stringify({ step: 'a', v: 'done' }));
+  assert.equal(s.agentAvgSeconds('claude'), 60);
+  assert.equal(s.agentAvgSeconds('codex'), 0); // 无步骤
+});

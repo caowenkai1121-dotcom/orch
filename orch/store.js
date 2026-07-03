@@ -127,6 +127,21 @@ function open(file) {
     usageTodayByAgent() { const day = new Date().toISOString().slice(0, 10); return db.prepare("SELECT agent, COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage WHERE substr(ts,1,10)=? GROUP BY agent ORDER BY c DESC").all(day); },
     usageAllTime() { const r = db.prepare('SELECT COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage').get(); return { cost: r.c, calls: r.n }; },
     agentTotals(id) { const r = db.prepare('SELECT COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage WHERE agent=?').get(id); return { cost: r.c, calls: r.n }; }, // 单执行器累计成本(agent详情)
+    // 该执行器已完成步骤的平均耗时(秒):从 status 事件的 running→done 时差算
+    agentAvgSeconds(id) {
+      const rows = db.prepare("SELECT DISTINCT task_id FROM steps WHERE agent=? AND status='done'").all(id);
+      const mySteps = {}; db.prepare("SELECT task_id, step_id FROM steps WHERE agent=? AND status='done'").all(id).forEach((r) => { (mySteps[r.task_id] = mySteps[r.task_id] || {})[r.step_id] = 1; });
+      let total = 0, n = 0;
+      rows.forEach(({ task_id }) => {
+        const evs = db.prepare("SELECT ts, data FROM events WHERE task_id=? AND type='status' ORDER BY id").all(task_id);
+        const start = {};
+        evs.forEach((e) => { let d; try { d = JSON.parse(e.data); } catch (x) { return; } if (!d || !d.step) return;
+          if (d.v === 'running') start[d.step] = new Date(e.ts).getTime();
+          else if (d.v === 'done' && start[d.step] && mySteps[task_id] && mySteps[task_id][d.step]) { total += (new Date(e.ts).getTime() - start[d.step]) / 1000; n++; delete start[d.step]; }
+        });
+      });
+      return n ? Math.round(total / n) : 0;
+    },
     getTask(id) {
       const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
       if (!t) return null;

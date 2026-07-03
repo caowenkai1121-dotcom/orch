@@ -98,7 +98,8 @@ function buildAll(store, user) {
       action: running ? ((empNow ? empNow + ' · ' : '') + (lastLine(running.task_id, running.step_id) || ('执行 ' + running.step_id))) : '空闲 · 等待任务',
       actions: [], progress: cur ? progressOf(cur.id) : 0,
       model: r.model, success: tot ? Math.round(done / tot * 100) + '%' : '—', done,
-      avg: '—', cost: (function () { const c = store.agentTotals ? store.agentTotals(id).cost : 0; return c > 0 ? '$' + (Math.round(c * 1000) / 1000) : '—'; })(), caps: r.caps,
+      avg: (function () { const s = store.agentAvgSeconds ? store.agentAvgSeconds(id) : 0; return s > 0 ? (s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's') : '—'; })(),
+      cost: (function () { const c = store.agentTotals ? store.agentTotals(id).cost : 0; return c > 0 ? '$' + (Math.round(c * 1000) / 1000) : '—'; })(), caps: r.caps,
     };
   });
 
