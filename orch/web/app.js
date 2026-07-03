@@ -535,6 +535,16 @@ class Maestro extends MaestroBase {
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
     v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
     v.approveTask = () => this.approveTask();
+    // 审批前编辑计划
+    if (v.canApprove && this.live.rawPlanFor !== this.state.taskId) this.fetchRawPlan(this.state.taskId);
+    const rp = v.canApprove && this.live.rawPlanFor === this.state.taskId && this.live.rawPlan;
+    const cut = this.state.epCut || {};
+    v.editSteps = (rp && rp.steps ? rp.steps : []).filter((s) => !cut[s.id]).map((s, i) => ({
+      n: i + 1, id: s.id, isLoop: !!s.body, editable: !s.body,
+      who: s.role || s.agent || '',
+      prompt: s.body ? '' : (s.prompt || ''),
+      del: () => { const c = { ...(this.state.epCut || {}) }; c[s.id] = 1; this.setState({ epCut: c }); },
+    }));
     v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok') : '—';
     // #1 决策回答
     v.canAnswer = !!(curT && curT.sk === 'awaiting_input' && canMod);
@@ -642,10 +652,44 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     fetch('/task/' + id + '/retry', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {});
   }
+  notifyTask(m) { // 桌面通知:任务结束/需要人
+    if (m.type !== 'task') return;
+    const MAP = { done: '✅ 任务完成', failed: '❌ 任务失败', awaiting_input: '⚠ 任务等你决策', awaiting: '⏸ 任务待审批' };
+    const title = MAP[m.data]; if (!title) return;
+    try {
+      if (window.Notification && Notification.permission === 'granted' && document.hidden) {
+        const t = (this.TASKS || []).find((x) => x.id === m.taskId);
+        new Notification(title, { body: (t ? t.title : '任务 ' + m.taskId), tag: 'orch-task-' + m.taskId });
+      }
+    } catch (e) {}
+  }
+  fetchRawPlan(id) { // 审批编辑用:拉任务原始 plan JSON
+    fetch('/task/' + id).then((r) => r.json()).then((t) => {
+      let p = null; try { p = JSON.parse(t.plan); } catch (e) {}
+      this.live.rawPlan = p; this.live.rawPlanFor = id; this.state.epCut = {};
+      this.scheduleRender();
+    }).catch(() => {});
+  }
   approveTask() {
     const id = this.state.taskId;
     if (typeof id !== 'number') return;
-    fetch('/task/' + id + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(() => this.fetchAll()).catch(() => {});
+    // 合并编辑:textarea 改写 prompt,epCut 删步(并清理指向被删步的依赖)
+    let body = {};
+    const p = this.live.rawPlanFor === id && this.live.rawPlan;
+    if (p && p.steps) {
+      const cut = this.state.epCut || {};
+      const edits = {};
+      document.querySelectorAll('.ep-prompt').forEach((el) => { edits[el.getAttribute('data-sid')] = el.value; });
+      const steps = p.steps.filter((s) => !cut[s.id]).map((s) => {
+        const o = { ...s };
+        if (!o.body && edits[o.id] != null && edits[o.id].trim()) o.prompt = edits[o.id];
+        return o;
+      });
+      const ids = new Set(steps.map((s) => s.id));
+      steps.forEach((s) => { if (s.deps) s.deps = s.deps.filter((d) => ids.has(d)); });
+      body = { plan: { task: p.task, steps } };
+    }
+    fetch('/task/' + id + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(() => this.fetchAll()).catch(() => {});
   }
 
   // —— 登录/账号 ——
@@ -657,6 +701,7 @@ class Maestro extends MaestroBase {
       .then((r) => r.json().then((j) => ({ ok: r.ok, j }))).then(({ ok, j }) => {
         if (!ok) { this.setState({ loginErr: (j && j.error) || '登录失败' }); return; }
         this.state.needLogin = false; this.state.loginErr = ''; this.fetchAll();
+        try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
       }).catch(() => this.setState({ loginErr: '网络错误' }));
   }
   logout() { fetch('/logout', { method: 'POST' }).then(() => { this.state.me = null; this.setState({ modal: null, needLogin: true, screen: 'dash' }); }).catch(() => {}); }
@@ -943,6 +988,7 @@ class Maestro extends MaestroBase {
             this.scheduleRender();
           }
         } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents' || m.type === 'apps') {
+          this.notifyTask(m); // 桌面通知:任务完成/失败/待输入
           this.fetchAll();
           if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }
           if (this.live.activeId != null) this.fetchPlan(this.live.activeId);

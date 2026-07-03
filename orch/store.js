@@ -51,6 +51,7 @@ function open(file) {
   ensureCol('agents', 'kind', 'TEXT');
   ensureCol('departments', 'flow', 'TEXT');
   ensureCol('tasks', 'models', 'TEXT');
+  ensureCol('roles', 'memo', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
@@ -158,6 +159,13 @@ function open(file) {
       return id;
     },
     deleteRole(id) { db.prepare('DELETE FROM roles WHERE id=?').run(id); },
+    // 员工经验备忘:追加一条,保留最近10条(越用越聪明)
+    appendRoleMemo(id, line) {
+      const r = db.prepare('SELECT memo FROM roles WHERE id=?').get(id);
+      if (!r || !line) return;
+      const lines = (r.memo || '').split('\n').filter(Boolean).concat([String(line).replace(/\n/g, ' ').slice(0, 120)]).slice(-10);
+      db.prepare('UPDATE roles SET memo=? WHERE id=?').run(lines.join('\n'), id);
+    },
     // 项目授权
     grantProject(project, userId) { db.prepare('INSERT OR IGNORE INTO project_grants(project,user_id) VALUES(?,?)').run(project, userId); },
     revokeProject(project, userId) { db.prepare('DELETE FROM project_grants WHERE project=? AND user_id=?').run(project, userId); },
@@ -193,6 +201,10 @@ function open(file) {
       if (db.prepare('SELECT COUNT(*) n FROM people').get().n === 0) {
         const op = process.env.USERNAME || process.env.USER || 'operator';
         this.addPerson({ id: 'op', name: op, role: '操作者', email: op + '@local', password: 'admin', admin: 1 });
+      }
+      // 总调度经验行(存调度复盘,__system 部门不显示在员工墙)
+      if (!db.prepare("SELECT 1 FROM roles WHERE id='chief-orchestrator'").get()) {
+        this.addRole({ id: 'chief-orchestrator', dept: '__system', name: '总调度', emoji: '🎭', description: '任务拆解调度分配,最高权限', prompt: '' });
       }
       // 保证有 admin/admin 账号(登录提示一致)
       if (!db.prepare("SELECT 1 FROM people WHERE name='admin'").get()) {

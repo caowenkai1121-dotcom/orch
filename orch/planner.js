@@ -84,7 +84,7 @@ function validateRoles(plan, roleIds) {
 }
 
 // 总调度员:最高权限,可调度所有部门所有员工;注入部门流程规范与质量门方法论(参考 agents-orchestrator)
-async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId) {
+async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, chiefMemo) {
   const byDept = {};
   roles.forEach((r) => { (byDept[r.dept] = byDept[r.dept] || []).push(r); });
   const dName = {}; const dFlow = {};
@@ -99,7 +99,8 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId) {
   const catalog = scope.map((d) =>
     (dName[d] || d) + ': ' + (byDept[d] || []).map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')').join('、') + flowLine(d)
   ).join('\n');
-  const prompt = `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n\n`
+  const prompt = `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
+    + (chiefMemo ? `你的过往调度复盘(优先吸取):\n${chiefMemo}\n` : '') + '\n'
     + (deptId ? `本任务是「${dName[deptId] || deptId}」的部门任务,只用该部门员工,严格按其标准流程拆分(可选环节由你判断是否需要;质量门环节用 loop 包住"产出员工→门禁员工",失败重做)。\n` : '')
     + `公司部门与员工目录:\n${catalog}\n\n`
     + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取员工目录中的员工 id。`
@@ -125,7 +126,7 @@ function resolveRoles(steps, roleMap, allowed, deptPools) {
     let ex = r.executor || 'claude';
     if (eff.length && eff.indexOf(ex) < 0) ex = eff[0];
     s.agent = ex;
-    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + '\n\n【任务】' + s.prompt;
+    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + (r.memo ? '\n【过往经验】(此前任务复盘沉淀,优先复用)\n' + r.memo : '') + '\n\n【任务】' + s.prompt;
   });
 }
 
@@ -136,7 +137,9 @@ async function makePlan(text, opts) {
   let brief = text;
   if (refine && claude) { try { brief = await refineBrief(text, claude); } catch (e) {} }
   const orch = (orchestration || '').trim();
-  const deptRoles = dept ? (roles || []).filter((r) => r.dept === dept) : (roles || []);
+  const chief = (roles || []).find((r) => r.id === 'chief-orchestrator'); // 总调度经验行
+  const empRoles = (roles || []).filter((r) => r.dept !== '__system');    // __system 不进员工目录
+  const deptRoles = dept ? empRoles.filter((r) => r.dept === dept) : empRoles;
   const roleMap = {}; deptRoles.forEach((r) => { roleMap[r.id] = r; });
   const roleIds = Object.keys(roleMap);
 
@@ -147,7 +150,7 @@ async function makePlan(text, opts) {
   // 2) 员工模式(默认):总调度按部门员工目录与流程规范拆分;部门任务只用该部门员工
   if (roleIds.length && claude && mode !== 'template') {
     try {
-      const p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept);
+      const p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo);
       if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed, deptPools); return p; }
     } catch (e) { /* 落到执行器模式 */ }
   }

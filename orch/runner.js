@@ -50,6 +50,56 @@ function retryFailed(taskId, deps) {
   return execute(taskId, plan, deps, { seedDone });
 }
 
+// 经验沉淀:任务结束后用 LLM 复盘,给每位参与员工提炼一条经验、给总调度一条调度复盘,存入 roles.memo
+// 下次同员工/调度接任务时自动注入 → 越用越聪明。失败任务的教训同样提炼。
+async function harvestExperience(taskId, deps) {
+  const { store, adapters } = deps;
+  if (!adapters || !adapters.claude) return;
+  const t = store.getTask(taskId);
+  let plan = {}; try { plan = JSON.parse(t.plan) || {}; } catch (e) { return; }
+  const stepRole = {}; const walk = (arr) => (arr || []).forEach((s) => { if (s.body) walk(s.body); else if (s.role) stepRole[s.id] = s.role; });
+  walk(plan.steps);
+  if (!Object.keys(stepRole).length) return; // 非员工模式不复盘
+  if (store.getEvents(taskId).some((e) => e.type === 'harvest')) return; // 每任务只复盘一次
+  store.addEvent(taskId, 'harvest', { at: t.status });
+  const lines = (t.steps || []).filter((s) => stepRole[s.step_id]).map((s) =>
+    '步骤 ' + s.step_id + ' | 员工 ' + stepRole[s.step_id] + ' | 结果 ' + s.status + ' | 产出摘要: ' + String(s.output || '').replace(/\s+/g, ' ').slice(-400));
+  const prompt = '你是团队复盘专家。任务「' + (t.text || '') + '」已结束(状态 ' + t.status + ')。各步骤:\n' + lines.join('\n')
+    + '\n\n输出 JSON:{"employees":{"<员工id>":"一条≤60字可复用经验(成功套路或踩过的坑,具体不空话)"},"chief":"一条≤80字调度复盘(步骤划分/指派/质量门下次怎么改进)"}。'
+    + '只为值得记的员工写经验(没有就省略该员工),只输出 JSON。';
+  try {
+    const { output } = await adapters.claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
+    const j = JSON.parse((output.match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    Object.entries(j.employees || {}).forEach(([rid, line]) => store.appendRoleMemo(rid, line));
+    if (j.chief) store.appendRoleMemo('chief-orchestrator', j.chief);
+  } catch (e) { /* 复盘失败不影响任务 */ }
+}
+
+// 限额自动重试:任务因执行器限额失败时,解析重置时间到点自动续跑(每任务最多2次)
+function scheduleAutoRetry(taskId, deps) {
+  const { store } = deps;
+  const t = store.getTask(taskId);
+  const hit = (t.steps || []).filter((s) => s.status === 'failed').map((s) => s.output || '')
+    .find((o) => /hit your session limit|usage limit|rate limit/i.test(o));
+  if (!hit) return;
+  const n = store.getEvents(taskId).filter((e) => e.type === 'auto_retry').length;
+  if (n >= 2) return; // 防死循环
+  const m = hit.match(/resets\s+(\d{1,2}):(\d{2})\s*(am|pm)/i);
+  let delay = 30 * 60 * 1000; // 解析不到重置时间:30分钟兜底
+  if (m) {
+    let h = Number(m[1]) % 12; if (/pm/i.test(m[3])) h += 12;
+    const target = new Date(); target.setHours(h, Number(m[2]) + 3, 0, 0); // +3分钟缓冲
+    if (target <= new Date()) target.setDate(target.getDate() + 1);
+    delay = target.getTime() - Date.now();
+  }
+  store.addEvent(taskId, 'auto_retry', { inMin: Math.round(delay / 60000) });
+  store.addLog(taskId, '', '⏳ 检测到执行器限额,已排定 ' + Math.round(delay / 60000) + ' 分钟后自动重试失败步骤(第 ' + (n + 1) + '/2 次,期间也可手动重试)。');
+  const tm = setTimeout(() => {
+    try { const cur = store.getTask(taskId); if (cur && cur.status === 'failed') retryFailed(taskId, deps); } catch (e) {}
+  }, delay);
+  if (tm.unref) tm.unref(); // 不阻止进程退出(重启后由僵尸恢复兜底)
+}
+
 // 继续开发:在原任务上追加新一轮步骤(不新建任务),复用产出目录
 async function continueTask(taskId, deps, text) {
   const { store } = deps;
@@ -133,6 +183,8 @@ async function execute(taskId, plan, deps, opts) {
     store.setTaskStatus(taskId, final);
     if (store.addEvent) store.addEvent(taskId, 'task', final);
     emit(onEvent, taskId, null, 'task', final);
+    if (final === 'failed') { try { scheduleAutoRetry(taskId, deps); } catch (e) {} }
+    if (final === 'done' || final === 'failed') harvestExperience(taskId, deps).catch(() => {}); // 异步复盘,不阻塞
   } catch (e) {
     store.setTaskStatus(taskId, 'failed');
     emit(onEvent, taskId, null, 'task', 'failed: ' + e.message);
@@ -145,4 +197,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience };

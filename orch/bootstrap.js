@@ -69,4 +69,17 @@ function scanAgents(store) {
   return n;
 }
 
-module.exports = { listFilesIn, importDataDir, buildAdapters, scanAgents };
+// 服务重启恢复:上次进程死掉时 running/planning 的任务已成僵尸 → 标记失败并留提示,可「重试失败步骤」续跑
+function recoverZombies(store) {
+  const zombies = store.listTasks().filter((t) => t.status === 'running' || t.status === 'planning');
+  zombies.forEach((t) => {
+    store.setTaskStatus(t.id, 'failed');
+    store.addEvent(t.id, 'task', 'interrupted');
+    store.addLog(t.id, '', '⚠ 服务重启,任务执行被中断(非任务本身错误)。点「↻ 重试失败步骤」续跑,已完成步骤不会重跑。');
+    // 运行中的步骤一并标失败,重试时会重跑这些步骤
+    (store.getTask(t.id).steps || []).forEach((s) => { if (s.status === 'running') store.setStep(t.id, s.step_id, s.agent, 'failed', s.output); });
+  });
+  if (zombies.length) console.log('恢复中断任务:', zombies.length, '个(已标记失败,可重试续跑)');
+}
+
+module.exports = { listFilesIn, importDataDir, buildAdapters, scanAgents, recoverZombies };

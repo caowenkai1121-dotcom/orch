@@ -76,3 +76,19 @@ test('部门执行器池:员工执行器不在池内则用池内执行器', asyn
   const plan = await makePlan('活', { agents: ['claude', 'gemini'], roles, depts: [], deptPools: { engineering: ['gemini'] }, refine: false, templatesDir: __dirname, claude: fakeClaude });
   assert.equal(plan.steps[0].agent, 'gemini'); // 池限定 gemini → claude 被替换
 });
+
+test('经验注入:员工memo进角色卡,调度复盘进总调度提示', async () => {
+  const roles = [
+    { id: 'r1', dept: 'engineering', name: 'x', description: '', prompt: '你是X', memo: '上次坑:file://被封,起http服务', executor: 'claude' },
+    { id: 'chief-orchestrator', dept: '__system', name: '总调度', description: '', prompt: '', memo: '上次复盘:质量门该放最后', executor: 'claude' },
+  ];
+  const fakeClaude = { async run({ prompt }) {
+    assert.match(prompt, /过往调度复盘/);              // B2 调度复盘注入
+    assert.match(prompt, /质量门该放最后/);
+    assert.ok(!/chief-orchestrator\(/.test(prompt));   // __system 不进员工目录
+    return { output: '{"steps":[{"id":"a","role":"r1","prompt":"干活","deps":[]}]}', success: true };
+  } };
+  const plan = await makePlan('活', { agents: ['claude'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.match(plan.steps[0].prompt, /过往经验/);       // B1 员工经验注入
+  assert.match(plan.steps[0].prompt, /file:\/\/被封/);
+});

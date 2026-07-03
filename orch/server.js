@@ -14,6 +14,7 @@ const ROOT = process.cwd();
 const store = open(path.join(__dirname, 'orch.db'));
 store.seed();
 boot.importDataDir(store, ROOT);
+boot.recoverZombies(store); // 上次进程中断的任务 → 标失败可重试
 let adapters = boot.buildAdapters(store);
 if (boot.scanAgents(store)) adapters = boot.buildAdapters(store);
 const listFilesIn = boot.listFilesIn;
