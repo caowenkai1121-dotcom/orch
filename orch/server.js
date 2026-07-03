@@ -7,63 +7,16 @@ const { makePlan } = require('./planner');
 const { makeWorkspace, taskDir, worktreeDir } = require('./workspace');
 const { runTask } = require('./runner');
 const api = require('./api');
-const generic = require('./adapters/generic');
+const boot = require('./bootstrap');
+const perm = require('./perm');
 
 const ROOT = process.cwd();
 const store = open(path.join(__dirname, 'orch.db'));
 store.seed();
-
-// 扫描 data/ 目录,把历史产出(DB 里没有的)导入为已完成任务 → 换库/改代码后仍能看到以前的项目
-function importDataDir() {
-  const dataRoot = path.join(ROOT, 'data');
-  if (!fs.existsSync(dataRoot)) return;
-  const dirs = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && e.name !== '.git' && e.name !== 'node_modules').map((e) => e.name); } catch (e) { return []; } };
-  const seen = new Set(store.listTasks().map((t) => t.dir).filter(Boolean).map((d) => path.resolve(d)));
-  let n = 0;
-  for (const owner of dirs(dataRoot)) {
-    for (const project of dirs(path.join(dataRoot, owner))) {
-      for (const folder of dirs(path.join(dataRoot, owner, project))) {
-        const full = path.resolve(dataRoot, owner, project, folder);
-        if (seen.has(full)) continue;
-        if (!listFilesIn(full).length) continue; // 空目录跳过
-        const text = folder.replace(/-\d+$/, '') || folder;
-        const id = store.createTask(text, project, owner, {});
-        store.setTaskStatus(id, 'done');
-        store.setTaskDir(id, full);
-        store.setStep(id, 'imported', 'claude', 'done', '历史产出(从 data 目录导入)');
-        n++;
-      }
-    }
-  }
-  if (n) console.log('导入历史项目产出:', n, '个任务');
-}
-importDataDir();
-
-// 适配器注册表从 DB 的 agent 定义构建,新增 agent 后重建
-function buildAdapters() {
-  const m = { echo: require('./adapters/echo') };
-  store.listAgents().forEach((a) => { m[a.id] = generic.make(a); });
-  m.claude = require('./adapters/claude'); // claude 用 stream-json 专用适配器
-  return m;
-}
-let adapters = buildAdapters();
-
-// 自动发现已安装的 CLI 智能体(claude/codex 已 seed;这里补 hermes/gemini/aider 等)。用户无需手动添加 CLI agent。
-function cmdExists(cmd) { try { require('child_process').execSync((process.platform === 'win32' ? 'where ' : 'command -v ') + cmd, { stdio: 'ignore' }); return true; } catch (e) { return false; } }
-const KNOWN_CLI = [
-  { id: 'hermes', name: 'Hermes', command: 'hermes', args: ['-p'], model: 'hermes CLI', caps: ['代码生成'], color: '#2FAE9E', avatar: 'H', dept: 'dev' },
-  { id: 'gemini', name: 'Gemini', command: 'gemini', args: ['-p', '--yolo'], model: 'gemini CLI', caps: ['代码生成'], color: '#E0922E', avatar: 'G', dept: 'dev' },
-  { id: 'aider', name: 'Aider', command: 'aider', args: ['--yes-always'], model: 'aider CLI', caps: ['代码修改'], color: '#E06A63', avatar: 'A', dept: 'dev' },
-  { id: 'qwen', name: 'Qwen', command: 'qwen', args: ['-p'], model: 'qwen CLI', caps: ['代码生成'], color: '#9B59B6', avatar: 'Q', dept: 'dev' },
-  { id: 'cursor-agent', name: 'Cursor Agent', command: 'cursor-agent', args: [], model: 'cursor CLI', caps: ['代码生成'], color: '#3C3933', avatar: 'Cu', dept: 'dev' },
-];
-function scanAgents() {
-  const have = new Set(store.listAgents().map((a) => a.id));
-  let n = 0;
-  KNOWN_CLI.forEach((a) => { if (!have.has(a.id) && cmdExists(a.command)) { store.addAgent(Object.assign({}, a, { kind: 'cli' })); n++; } });
-  if (n) { adapters = buildAdapters(); console.log('自动发现 CLI 智能体:', n, '个'); }
-}
-scanAgents();
+boot.importDataDir(store, ROOT);
+let adapters = boot.buildAdapters(store);
+if (boot.scanAgents(store)) adapters = boot.buildAdapters(store);
+const listFilesIn = boot.listFilesIn;
 
 const runs = new Map(); // 运行态注册表:taskId -> { cancelled, children }
 const workspace = makeWorkspace(ROOT);
@@ -89,17 +42,8 @@ app.post('/api/me/password', (req, res) => { if (!req.user) return res.status(40
 // 鉴权闸:此后所有接口都要求登录
 app.use((req, res, next) => { if (req.user) return next(); res.status(401).json({ error: 'unauthorized' }); });
 
-// 权限助手
-const owns = (u, t) => !!(u && t && (u.admin || t.owner === u.name));
-function visibleProjects(u) { // null=全部可见(管理员)
-  if (!u || u.admin) return null;
-  const set = new Set();
-  store.listTasks().forEach((t) => { if (t.owner === u.name) set.add(t.project || '默认项目'); });
-  store.listGrants().forEach((g) => { if (g.user_id === u.id) set.add(g.project); });
-  store.listProjects().forEach((p) => { if (p.owner === u.id) set.add(p.name); });
-  return set;
-}
-const canSeeTask = (u, t) => { if (!u || !t) return false; if (u.admin || t.owner === u.name) return true; const s = visibleProjects(u); return !!(s && s.has(t.project || '默认项目')); };
+// 权限助手(perm.js,服务端强制)
+const { owns, canSeeTask, adminOnly } = perm.make(store);
 
 app.get('/tasks', (req, res) => res.json(store.listTasks()));
 app.get('/task/:id', (req, res) => { const t = store.getTask(Number(req.params.id)); if (!canSeeTask(req.user, t)) return res.status(403).json({ error: '无权限' }); res.json(t); });
@@ -111,15 +55,14 @@ app.get('/api/relay/:id', (req, res) => { if (!canSeeTask(req.user, store.getTas
 app.get('/api/plan/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.plan(store, Number(req.params.id))); });
 app.get('/api/agentlog/:id', (req, res) => res.json(api.agentLog(store, req.params.id)));
 
-const adminOnly = (req, res, next) => req.user.admin ? next() : res.status(403).json({ error: '需管理员' });
 app.post('/api/agents', adminOnly, (req, res) => {
   const id = store.addAgent(req.body || {});
-  adapters = buildAdapters();
+  adapters = boot.buildAdapters(store);
   broadcastRaw({ type: 'agents' });
   res.json({ id });
 });
-app.put('/api/agents/:id', adminOnly, (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
-app.delete('/api/agents/:id', adminOnly, (req, res) => { store.deleteAgent(req.params.id); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.put('/api/agents/:id', adminOnly, (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.delete('/api/agents/:id', adminOnly, (req, res) => { store.deleteAgent(req.params.id); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.get('/api/projects', (req, res) => res.json(store.listProjects()));
 app.post('/api/projects', (req, res) => {
   const id = store.addProject({ ...(req.body || {}), owner: req.user.id });
@@ -138,7 +81,7 @@ app.delete('/api/roles/:id', adminOnly, (req, res) => { store.deleteRole(req.par
 // #3 部门 CRUD + 为部门设置 agent
 app.post('/api/depts', adminOnly, (req, res) => { const id = store.addDept(req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ id }); });
 app.delete('/api/depts/:id', adminOnly, (req, res) => { store.deleteDept(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
-app.post('/api/depts/:id/agents', adminOnly, (req, res) => { ((req.body || {}).agentIds || []).forEach((a) => store.setAgentDept(a, req.params.id)); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.post('/api/depts/:id/agents', adminOnly, (req, res) => { ((req.body || {}).agentIds || []).forEach((a) => store.setAgentDept(a, req.params.id)); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 // 部门执行器池:该部门任务只能用这些执行器
 app.post('/api/depts/:id/executors', adminOnly, (req, res) => { store.setDeptExecutors(req.params.id, (req.body || {}).agentIds || []); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 // 部门标准作业流程(可编辑)
@@ -222,22 +165,6 @@ app.get('/api/files/:id', (req, res) => {
   walk(t.dir, '');
   res.json(out.slice(0, 500));
 });
-
-// 列出目录下所有文件(相对路径)
-function listFilesIn(dir) {
-  const out = [];
-  const walk = (d, rel) => {
-    if (out.length > 500) return;
-    let items = []; try { items = fs.readdirSync(d, { withFileTypes: true }); } catch (e) { return; }
-    for (const it of items) {
-      if (it.name === '.git' || it.name === 'node_modules') continue;
-      const rp = rel ? rel + '/' + it.name : it.name;
-      if (it.isDirectory()) walk(path.join(d, it.name), rp); else out.push(rp);
-    }
-  };
-  walk(dir, '');
-  return out;
-}
 
 // 一键发布到应用广场(仅管理员)
 app.post('/api/apps', adminOnly, (req, res) => {
