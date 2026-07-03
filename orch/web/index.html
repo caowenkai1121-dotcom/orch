@@ -710,7 +710,10 @@
                 <sc-if value="{{ isAdmin }}"><button onClick="{{ e.del }}" style="width:24px;height:24px;border:none;background:transparent;cursor:pointer;color:#C9C4BA;font-size:13px;" style-hover="color:#B4541E">✕</button></sc-if>
               </div>
               <div style="font-size:11.5px;color:#8A857C;margin-top:9px;line-height:1.55;min-height:34px;">{{ e.description }}</div>
-              <sc-if value="{{ e.perf }}"><div style="font-size:10.5px;color:#2E9E5B;margin-top:6px;font-weight:600;">📊 {{ e.perf }}</div></sc-if>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                <sc-if value="{{ e.perf }}"><span style="font-size:10.5px;color:#2E9E5B;font-weight:600;">📊 {{ e.perf }}</span></sc-if>
+                <sc-if value="{{ e.memoN }}"><span title="{{ e.memo }}" style="font-size:10.5px;color:#7C6FD9;font-weight:600;cursor:help;">🧠 {{ e.memoN }} 条经验</span></sc-if>
+              </div>
             </div>
           </sc-for>
         </div>
