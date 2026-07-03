@@ -414,6 +414,11 @@ class Maestro extends MaestroBase {
     const v = super.renderVals();
     v.toast = this.live.toastMsg || '';
     v.metrics = this.realMetrics();
+    // 需关注:失败/待审批/待输入的任务(无人值守操作者优先处理)
+    const attMeta = { failed: { label: '失败', bg: '#FBE9E7', c: '#B4541E', hint: '可重试' }, awaiting: { label: '待审批', bg: '#FEF3D6', c: '#8a6d00', hint: '批准/编辑计划' }, awaiting_input: { label: '待输入', bg: '#FBE9E7', c: '#B4541E', hint: '员工在等你回答' } };
+    v.attention = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
+    v.hasAttention = v.attention.length > 0;
+    v.attentionN = v.attention.length;
     v.cv = this.realCv();
     v.graph = this.realGraph();
     v.orchLog = (this.state.activity || []).slice(0, 8).map((e) => ({ time: e.time, c: e.c, a: e.a, txt: e.t }));
