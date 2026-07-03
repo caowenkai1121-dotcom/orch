@@ -770,7 +770,7 @@ class Maestro extends MaestroBase {
     const openApp = this.state.openApp;
     v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
     v.closeApp = () => this.setState({ openApp: null });
-    v.apps = (this.live.apps || []).map((a) => ({ ...a, canDel: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), del: () => this.delApp(a.id) }));
+    v.apps = (this.live.apps || []).map((a) => ({ ...a, canDel: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), openTask: () => this.go('task', { taskId: a.taskId }), del: () => this.delApp(a.id) }));
     if (v.isApps) { v.crumbRoot = '工作区'; v.crumbLeaf = '应用广场'; }
     return v;
   }
