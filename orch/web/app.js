@@ -600,9 +600,11 @@ class Maestro extends MaestroBase {
     v.deptOpts = (this.DEPTS || []).map((d) => ({ id: d.id, name: d.name })).sort((a, b) => (a.id === v.naDept ? 0 : 1) - (b.id === v.naDept ? 0 : 1)); // 当前部门置顶=默认选中
     // —— 部门员工(角色) ——
     const curD = (this.DEPTS || []).find((d) => d.id === this.state.deptId);
-    v.deptEmployees = ((curD && curD.employees) || []).map((e) => ({ ...e, del: () => this.fireEmp(e.id, e.name) }));
+    v.deptEmployees = ((curD && curD.employees) || []).map((e) => ({ ...e, del: () => this.fireEmp(e.id, e.name), edit: () => this.editEmp(e.id) }));
     v.deptEmpN = v.deptEmployees.length;
-    v.hireEmp = () => this.setState({ modal: 'hire' });
+    v.hireEmp = () => this.setState({ modal: 'hire', editRoleId: null });
+    v.hireIsEdit = !!this.state.editRoleId;
+    v.notHireEdit = !this.state.editRoleId;
     v.modalHire = this.state.modal === 'hire';
     v.submitHire = () => this.submitHire();
     v.execOpts = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => ({ id: a.id, name: a.name }));
@@ -961,8 +963,17 @@ class Maestro extends MaestroBase {
   submitHire() {
     const g = (id) => (document.getElementById(id) || {}).value || '';
     if (!g('he-name').trim()) return;
-    fetch('/api/roles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: this.state.deptId, name: g('he-name').trim(), description: g('he-desc'), prompt: g('he-prompt'), executor: g('he-exec') || 'claude' }) })
-      .then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
+    const eid = this.state.editRoleId;
+    const body = JSON.stringify({ dept: this.state.deptId, name: g('he-name').trim(), description: g('he-desc'), prompt: g('he-prompt'), executor: g('he-exec') || 'claude' });
+    const req = eid ? fetch('/api/roles/' + eid, { method: 'PUT', headers: { 'content-type': 'application/json' }, body }) : fetch('/api/roles', { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    req.then(() => { this.toast(eid ? '✓ 已更新员工角色卡' : '✓ 已雇佣员工'); this.setState({ modal: null, editRoleId: null }); this.fetchAll(); }).catch(() => {});
+  }
+  editEmp(id) { // 拉全量角色卡预填,进编辑模式
+    fetch('/api/roles/' + id).then((r) => r.ok ? r.json() : null).then((role) => {
+      if (!role) return;
+      this.setState({ modal: 'hire', editRoleId: id });
+      setTimeout(() => { const set = (i, v) => { const el = document.getElementById(i); if (el) el.value = v || ''; }; set('he-name', role.name); set('he-desc', role.description); set('he-prompt', role.prompt); set('he-exec', role.executor); }, 80);
+    }).catch(() => {});
   }
   fireEmp(id, name) { if (!window.confirm('移除员工「' + name + '」?')) return; fetch('/api/roles/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
   // —— 部门任务 + 流程编辑 + 执行器池 ——

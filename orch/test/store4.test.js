@@ -234,3 +234,18 @@ test('累计总成本', () => {
   assert.equal(s.usageAllTime().cost, 0.08);
   assert.equal(s.usageAllTime().calls, 2);
 });
+
+test('编辑角色卡保留 memo 与绩效(updateRole)', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const rid = 'engineering-frontend-developer';
+  s.appendRoleMemo(rid, '踩坑:xxx'); s.addRoleStat(rid, true); s.addRoleStat(rid, false);
+  s.updateRole(rid, { name: '高级前端', description: '新描述', prompt: '新提示词', executor: 'codex' });
+  const r = s.getRole(rid);
+  assert.equal(r.name, '高级前端');
+  assert.equal(r.prompt, '新提示词');
+  assert.equal(r.executor, 'codex');
+  assert.match(r.memo || '', /踩坑:xxx/);   // memo 保留
+  assert.equal(r.done_count, 1);             // 绩效保留
+  assert.equal(r.empty_count, 1);
+});
