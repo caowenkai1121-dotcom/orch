@@ -214,3 +214,18 @@ test('失败自省:重跑注入上次失败原因', async () => {
   assert.match(seen, /上次在此步失败/);
   assert.match(seen, /缺少分号在第42行/);
 });
+
+test('复盘:喂入每步产出文件数,0文件提示别空转', async () => {
+  const { open } = require('../store');
+  const { harvestExperience } = require('../runner');
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [{ id: 'a', role: 'engineering-frontend-developer', prompt: 'p', deps: [] }] });
+  store.setStep(id, 'a', 'claude', 'done', '我写好了页面');
+  store.addEvent(id, 'files', { step: 'a', n: 0 }); // 空转
+  let seen = '';
+  const claude = { async run({ prompt }) { seen = prompt; return { output: '{"employees":{}}', success: true }; } };
+  await harvestExperience(id, { store, adapters: { claude } });
+  assert.match(seen, /产出文件 0/);
+  assert.match(seen, /别只描述不落盘|没落盘/);
+});

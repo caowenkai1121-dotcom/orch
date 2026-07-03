@@ -129,10 +129,11 @@ async function harvestExperience(taskId, deps) {
   if (!Object.keys(stepRole).length) return; // 非员工模式不复盘
   if (store.getEvents(taskId).some((e) => e.type === 'harvest')) return; // 每任务只复盘一次
   store.addEvent(taskId, 'harvest', { at: t.status });
+  const fileN = {}; store.getEvents(taskId).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); fileN[d.step] = d.n; } catch (x) {} } });
   const lines = (t.steps || []).filter((s) => stepRole[s.step_id]).map((s) =>
-    '步骤 ' + s.step_id + ' | 员工 ' + stepRole[s.step_id] + ' | 结果 ' + s.status + ' | 产出摘要: ' + String(s.output || '').replace(/\s+/g, ' ').slice(-400));
-  const prompt = '你是团队复盘专家。任务「' + (t.text || '') + '」已结束(状态 ' + t.status + ')。各步骤:\n' + lines.join('\n')
-    + '\n\n输出 JSON:{"employees":{"<员工id>":"一条≤60字可复用经验(成功套路或踩过的坑,具体不空话)"},"chief":"一条≤80字调度复盘(步骤划分/指派/质量门下次怎么改进)"}。'
+    '步骤 ' + s.step_id + ' | 员工 ' + stepRole[s.step_id] + ' | 结果 ' + s.status + ' | 产出文件 ' + (fileN[s.step_id] != null ? fileN[s.step_id] : '?') + ' | 产出摘要: ' + String(s.output || '').replace(/\s+/g, ' ').slice(-400));
+  const prompt = '你是团队复盘专家。任务「' + (t.text || '') + '」已结束(状态 ' + t.status + ')。各步骤(产出文件=该步真实改动的文件数,0=声称做了却没落盘,是要记的坑):\n' + lines.join('\n')
+    + '\n\n输出 JSON:{"employees":{"<员工id>":"一条≤60字可复用经验(成功套路或踩过的坑,具体不空话;若该员工产出文件为0要点明别只描述不落盘)"},"chief":"一条≤80字调度复盘(步骤划分/指派/质量门下次怎么改进)"}。'
     + '只为值得记的员工写经验(没有就省略该员工),只输出 JSON。';
   try {
     const { output } = await adapters.claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
