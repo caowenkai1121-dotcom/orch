@@ -72,3 +72,17 @@ test('删除任务:级联清 steps/logs/events/usage/msgs/apps', () => {
   assert.equal(s.getTaskMsgs(id).length, 0);
   assert.equal(s.listApps().filter((a) => a.task_id === id).length, 0);
 });
+
+test('步骤产出核验:commitStep返回改动文件数,relay标注', () => {
+  const { open } = require('../store');
+  const { relay } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('活', '默认项目', 'admin', {});
+  s.setStep(id, 'a', 'claude', 'done', '做完了');
+  s.setStep(id, 'b', 'claude', 'done', '声称做了但没产出');
+  s.addEvent(id, 'files', { step: 'a', n: 3 });
+  s.addEvent(id, 'files', { step: 'b', n: 0 });
+  const r = relay(s, id);
+  assert.equal(r.find((x) => x.title === 'a').filesLabel, '📄 3 文件');
+  assert.equal(r.find((x) => x.title === 'b').filesLabel, '⚠ 无产出');
+});

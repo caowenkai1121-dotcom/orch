@@ -212,13 +212,16 @@ function relay(store, id) {
   const stepRole = planRoleMap(t);
   const RV = roleView(store);
   const durs = stepDurations(store, id);
+  const files = {}; (store.getEvents ? store.getEvents(id) : []).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); files[d.step] = d.n; } catch (x) {} } });
   return (t.steps || []).map((s) => {
     const emp = stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
     const r = ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' };
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
     const summary = (s.output && s.output.trim()) ? s.output.trim().slice(-300) : (last || ('状态: ' + s.status));
     const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;
-    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, time: '', dur: durs[s.step_id] || '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    const fn = files[s.step_id];
+    const filesLabel = s.status === 'done' ? (fn > 0 ? '📄 ' + fn + ' 文件' : '⚠ 无产出') : '';
+    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, time: '', dur: durs[s.step_id] || '', filesLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
   });
 }
 

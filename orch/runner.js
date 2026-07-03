@@ -21,10 +21,13 @@ function ensureOutputGit(dir) {
 }
 function commitStep(dir, label) {
   try {
-    if (!dir || !fs.existsSync(path.join(dir, '.git'))) return;
+    if (!dir || !fs.existsSync(path.join(dir, '.git'))) return { files: 0 };
     execSync('git add -A', { cwd: dir, stdio: 'ignore' });
+    const staged = execSync('git diff --cached --name-only', { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    if (!staged) return { files: 0 }; // 无改动:该步没产出文件
     execSync('git -c user.name=orch -c user.email=orch@local commit -q -m ' + JSON.stringify(label), { cwd: dir, stdio: 'ignore' });
-  } catch (e) { /* 无改动或 git 失败:静默 */ }
+    return { files: staged.split('\n').filter(Boolean).length };
+  } catch (e) { return { files: 0 }; }
 }
 // 目标/阶段状态/产出摘要/错误表,由 DB 状态渲染(幂等,永远准确);员工经简报可见,下游随时读全局进展。
 function writePlanFile(taskId, store, dir) {
@@ -275,7 +278,7 @@ async function execute(taskId, plan, deps, opts) {
       if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status });
       emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]);
       writePlanFile(taskId, store, task.dir);
-      if (status === 'done' && gitOk) commitStep(task.dir, '步骤 ' + stepId + ' 完成'); // 每步一个 commit,供改动审查
+      if (status === 'done' && gitOk) { const c = commitStep(task.dir, '步骤 ' + stepId + ' 完成'); if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n: c.files }); } // 每步 commit + 记录产出文件数(识别空转步骤)
     },
   };
   writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)
