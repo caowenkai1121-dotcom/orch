@@ -389,6 +389,8 @@ class Maestro extends MaestroBase {
     setTimeout(() => { this._pending = false; this.setState({}); }, 200);
   }
 
+  toast(msg) { this.live.toastMsg = msg; this.setState({}); clearTimeout(this._toastT); this._toastT = setTimeout(() => { this.live.toastMsg = ''; this.setState({}); }, 2600); }
+
   renderVals() {
     // 渲染前把基类用到的 RELAY(当前任务) / PLAN(活动任务) 同步成真实数据
     const _tid = this.state.taskId;
@@ -402,6 +404,7 @@ class Maestro extends MaestroBase {
     const activeId = this.live.activeId != null ? this.live.activeId : (this.TASKS[0] && this.TASKS[0].id);
     this.PLAN = (activeId != null && this.live.plan[activeId]) || [];
     const v = super.renderVals();
+    v.toast = this.live.toastMsg || '';
     v.metrics = this.realMetrics();
     v.cv = this.realCv();
     v.graph = this.realGraph();
@@ -1034,12 +1037,12 @@ class Maestro extends MaestroBase {
     if (!text) return;
     el.value = '';
     fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, refine: true }) })
-      .then((r) => r.json()).then(() => { this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+      .then((r) => r.json()).then(() => { this.toast('✓ 已下发,正在拆分任务'); this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => this.toast('✗ 下发失败'));
   }
   delTask() {
     const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
     if (!t || !window.confirm('删除任务「' + t.title + '」及其全部记录?此操作不可恢复。')) return;
-    fetch('/task/' + id, { method: 'DELETE' }).then((r) => r.json()).then((d) => { if (d.ok) { this.go('tasks'); this.fetchAll(); } else window.alert(d.error || '删除失败'); }).catch(() => {});
+    fetch('/task/' + id, { method: 'DELETE' }).then((r) => r.json()).then((d) => { if (d.ok) { this.toast('✓ 已删除任务'); this.go('tasks'); this.fetchAll(); } else this.toast('✗ ' + (d.error || '删除失败')); }).catch(() => {});
   }
   cloneTask() {
     const t = (this.TASKS || []).find((x) => x.id === this.state.taskId);
