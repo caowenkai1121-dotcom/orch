@@ -210,3 +210,12 @@ test('sanitizeDeps 归一化畸形 steps(防execute崩)', () => {
   assert.equal(p.steps.length, 1);
   assert.equal(p.steps[0].id, 'a');
 });
+
+test('调度提示含粒度匹配(避免过度拆分)', async () => {
+  const roles = [{ id: 'engineering-rapid-prototyper', dept: 'engineering', name: '快速原型', description: '', prompt: 'p', executor: 'claude' }];
+  let seen = '';
+  const fakeClaude = { async run({ prompt }) { seen = prompt; return { output: '{"steps":[{"id":"a","role":"engineering-rapid-prototyper","prompt":"x","deps":[]}]}', success: true }; } };
+  await makePlan('活', { agents: ['claude'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.match(seen, /拆分粒度匹配任务复杂度/);
+  assert.match(seen, /简单任务.*1-2步/);
+});
