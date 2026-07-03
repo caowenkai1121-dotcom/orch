@@ -65,10 +65,14 @@ function writePlanFile(taskId, store, dir) {
 
 // 出 plan →(审批模式暂停待批,否则执行)
 async function runTask(taskId, deps) {
-  const { store, onEvent, makePlan } = deps;
+  const { store, onEvent, makePlan, runs } = deps;
   store.setTaskStatus(taskId, 'planning');
   const task = store.getTask(taskId);
-  const plan = await makePlan(task.text);
+  // 提前建运行态,让规划期(LLM 拆分)的子进程可被取消
+  const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(taskId)));
+  const plan = await makePlan(task.text, rec ? (c) => rec.children.add(c) : undefined);
+  if (rec && rec.cancelled) return; // 规划期间被取消:不继续
+  store.setPlan(taskId, plan);
   store.setPlan(taskId, plan);
   if (store.addEvent) store.addEvent(taskId, 'plan', { steps: (plan.steps || []).length });
   emit(onEvent, taskId, null, 'plan', plan);

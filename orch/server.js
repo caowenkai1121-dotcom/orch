@@ -140,7 +140,7 @@ function createAndRunTask(ownerName, body) {
     store, adapters, workspace: ws, runs,
     makePlan: pb
       ? () => Promise.resolve(planFromPlaybook())
-      : (text) => makePlan(text, { mode: body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), dept: body.dept || null, deptPools: store.allDeptExecutors(), orchestration: body.orchestration, refine, templatesDir, claude: adapters.claude }),
+      : (text, onChild) => makePlan(text, { mode: body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), dept: body.dept || null, deptPools: store.allDeptExecutors(), orchestration: body.orchestration, refine, templatesDir, claude: adapters.claude, onChild }),
     onEvent: broadcast,
   });
   return id;

@@ -204,7 +204,9 @@ function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
 
 // agents=所选执行器;roles/depts=员工目录;dept=部门任务;deptPools=部门执行器池;orchestration=文字编排;refine=需求细化
 async function makePlan(text, opts) {
-  const { mode, agents, roles, depts, dept, deptPools, explicit, orchestration, refine, templatesDir, claude } = opts;
+  const { mode, agents, roles, depts, dept, deptPools, explicit, orchestration, refine, templatesDir, onChild } = opts;
+  // 包装 claude 注入 onChild:规划期的 LLM 子进程也注册到运行态,支持取消(否则卡住只能等超时)
+  const claude = (onChild && opts.claude) ? { run: (o) => opts.claude.run(Object.assign({}, o, { onChild })) } : opts.claude;
   const allowed = (agents && agents.length) ? agents : ['claude'];
   let brief = text;
   if (refine && claude) { try { brief = await refineBrief(text, claude); } catch (e) {} }

@@ -172,3 +172,11 @@ test('流程位置注入:员工获知上游/下游/质量门', async () => {
   assert.match(plan.steps[0].prompt, /下游:代码评审/);
   assert.match(plan.steps[1].prompt, /你\(质量门\)/); // 评审是质量门
 });
+
+test('规划可取消:makePlan 把 onChild 透传给 LLM 调用', async () => {
+  let gotOnChild = null;
+  const fakeClaude = { async run(o) { gotOnChild = o.onChild; return { output: '{"steps":[{"id":"a","agent":"claude","prompt":"x","deps":[]}]}', success: true }; } };
+  const cb = () => {};
+  await makePlan('活', { agents: ['claude', 'codex'], roles: [], depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude, onChild: cb });
+  assert.equal(typeof gotOnChild, 'function'); // 规划子进程回调被透传
+});
