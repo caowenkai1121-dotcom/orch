@@ -144,10 +144,20 @@ function coerceRoles(steps, roleIds) {
   walk(steps);
 }
 
+// 经验按与当前任务的相关性排序,取最相关的若干条(避免无脑注入不相关经验)
+function relevantMemo(memo, taskText, keep) {
+  const lines = (memo || '').split('\n').filter(Boolean);
+  if (lines.length <= keep) return lines.join('\n');
+  const toks = (s) => (s.toLowerCase().match(/[a-z0-9]+|[一-鿿]/gi) || []); // 英文词+中文字
+  const tw = new Set(toks(taskText || ''));
+  const score = (l) => toks(l).filter((w) => tw.has(w)).length;
+  return lines.map((l, i) => ({ l, s: score(l), i })).sort((a, b) => b.s - a.s || b.i - a.i).slice(0, keep).sort((a, b) => a.i - b.i).map((x) => x.l).join('\n');
+}
+
 // 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 与部门执行器池内)
-function resolveRoles(steps, roleMap, allowed, deptPools) {
+function resolveRoles(steps, roleMap, allowed, deptPools, taskText) {
   (steps || []).forEach((s) => {
-    if (s.body) { resolveRoles(s.body, roleMap, allowed, deptPools); return; }
+    if (s.body) { resolveRoles(s.body, roleMap, allowed, deptPools, taskText); return; }
     if (!s.role) return;
     const r = roleMap[s.role];
     if (!r) { s.agent = s.agent || allowed[0]; return; }
@@ -157,7 +167,8 @@ function resolveRoles(steps, roleMap, allowed, deptPools) {
     let ex = r.executor || 'claude';
     if (eff.length && eff.indexOf(ex) < 0) ex = eff[0];
     s.agent = ex;
-    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + (r.memo ? '\n【过往经验】(此前任务复盘沉淀,优先复用)\n' + r.memo : '') + '\n\n【任务】' + s.prompt;
+    const memo = r.memo ? relevantMemo(r.memo, taskText || s.prompt, 5) : '';
+    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + (memo ? '\n【过往经验】(此前任务复盘沉淀,已按当前任务相关性优选,优先复用)\n' + memo : '') + '\n\n【任务】' + s.prompt;
   });
 }
 
@@ -188,7 +199,7 @@ async function makePlan(text, opts) {
         const bad = badRoles(p, roleIds);
         if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
       }
-      if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed, deptPools); return p; }
+      if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed, deptPools, text); return p; }
     } catch (e) { /* 落到执行器模式 */ }
   }
   // 3) 有文字编排 → 按编排(执行器模式)

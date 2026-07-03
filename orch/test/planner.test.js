@@ -128,3 +128,17 @@ test('计划自愈:makePlan LLM拼错role→重拆一次成功', async () => {
   assert.equal(plan.steps[0].role, 'engineering-frontend-developer');
   assert.equal(call, 2);
 });
+
+test('经验相关性注入:按任务文本优选相关经验', async () => {
+  const roles = [{ id: 'r1', dept: 'engineering', name: 'x', description: '', prompt: '你是X',
+    memo: '登录页要做记住密码\n图表用 canvas 手绘性能好\n表单校验前后端都要做\n深色模式用 CSS 变量\n移动端断点 375\n列表虚拟滚动防卡顿', executor: 'claude' }];
+  let seen = '';
+  const fakeClaude = { async run() { return { output: '{"steps":[{"id":"a","role":"r1","prompt":"做数据图表看板","deps":[]}]}', success: true }; } };
+  const plan = await makePlan('做数据图表看板', { agents: ['claude'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  const p = plan.steps[0].prompt;
+  assert.match(p, /过往经验/);
+  assert.match(p, /canvas 手绘/);        // "图表"相关经验入选
+  assert.ok(!/深色模式/.test(p));        // 不相关经验被挤掉(6条优选5条)
+  const body = p.split('【过往经验】')[1].split('【任务】')[0].split('\n').filter(Boolean);
+  assert.equal(body.length - 1, 5);      // 去掉标题行=5条经验
+});

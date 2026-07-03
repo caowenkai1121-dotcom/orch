@@ -46,3 +46,14 @@ test('剧本与定时任务 CRUD', () => {
   assert.equal(s.personByHookToken(tok).id, 'admin');
   assert.notEqual(s.resetHookToken('admin'), tok);        // 重置换新
 });
+
+test('员工经验去重:高度相似不重复记', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const rid = 'engineering-frontend-developer';
+  s.appendRoleMemo(rid, 'file://被封时改用本地http服务');
+  s.appendRoleMemo(rid, 'file 协议被封,起本地 http 服务解决');  // 高度相似→跳过
+  s.appendRoleMemo(rid, '移动端要做汉堡菜单适配');                // 不同→记
+  const memo = s.getRole(rid).memo.split('\n').filter(Boolean);
+  assert.equal(memo.length, 2);
+});

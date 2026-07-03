@@ -192,11 +192,17 @@ function open(file) {
       return id;
     },
     deleteRole(id) { db.prepare('DELETE FROM roles WHERE id=?').run(id); },
-    // 员工经验备忘:追加一条,保留最近10条(越用越聪明)
+    // 员工经验备忘:追加一条(与已有高度相似则跳过去重),保留最近10条(越用越聪明)
     appendRoleMemo(id, line) {
       const r = db.prepare('SELECT memo FROM roles WHERE id=?').get(id);
       if (!r || !line) return;
-      const lines = (r.memo || '').split('\n').filter(Boolean).concat([String(line).replace(/\n/g, ' ').slice(0, 120)]).slice(-10);
+      const clean = String(line).replace(/\n/g, ' ').slice(0, 120);
+      const toks = (s) => new Set((s.toLowerCase().match(/[a-z0-9]+|[一-鿿]/gi) || [])); // 英文词+中文字
+      const nw = toks(clean);
+      const existing = (r.memo || '').split('\n').filter(Boolean);
+      const dup = existing.some((e) => { const ew = toks(e); const inter = [...nw].filter((w) => ew.has(w)).length; const uni = new Set([...nw, ...ew]).size; return uni && inter / uni > 0.45; });
+      if (dup) return; // 与已有经验高度重叠:不重复记
+      const lines = existing.concat([clean]).slice(-10);
       db.prepare('UPDATE roles SET memo=? WHERE id=?').run(lines.join('\n'), id);
     },
     // 项目授权
