@@ -622,6 +622,7 @@ class Maestro extends MaestroBase {
     v.hasPatch = v.patchLines.length > 0;
     v.noPatch = !v.hasPatch;
     v.continueFromDiff = () => this.continueFromDiff();
+    v.downloadZip = () => this.downloadZip();
     // #发布/继续
     v.canPublish = !!(curT && curT.sk === 'done' && this.state.me && this.state.me.admin && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path))); // 仅管理员可发布
     v.publishApp = () => this.publishApp();
@@ -701,6 +702,7 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: t && t.blockedStep, answer: answer.trim() }) }).then(() => this.fetchAll()).catch(() => {});
   }
   openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
+  downloadZip() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/download/' + id, '_blank'); }
   goApps() { this.setState({ screen: 'apps', openApp: null }); }
   publishApp() {
     const id = this.state.taskId; if (typeof id !== 'number') return;

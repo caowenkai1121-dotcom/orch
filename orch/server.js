@@ -242,6 +242,21 @@ app.post('/task/:id/continue', (req, res) => {
   }, text);
 });
 
+// 产出打包下载:git archive 出 zip(产出已版本化,零依赖)
+app.get('/api/download/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.sendStatus(403);
+  if (!t || !t.dir || !fs.existsSync(path.join(t.dir, '.git'))) return res.status(404).json({ error: '产出未版本化,无法打包(任务需先跑出产出)' });
+  const name = (t.text || 'output').replace(/[^\p{L}\p{N}]+/gu, '_').slice(0, 30) + '.zip';
+  res.setHeader('Content-Type', 'application/zip');
+  // RFC5987:中文文件名走 filename*,ASCII 兜底 filename(header 不能含非 latin1 字符)
+  res.setHeader('Content-Disposition', "attachment; filename=\"output-" + t.id + ".zip\"; filename*=UTF-8''" + encodeURIComponent(name));
+  const p = require('child_process').spawn('git', ['archive', '--format=zip', 'HEAD'], { cwd: t.dir });
+  p.stdout.pipe(res);
+  p.on('error', () => { if (!res.headersSent) res.sendStatus(500); });
+  p.stderr.on('data', () => {});
+});
+
 // 静态服务产出文件(供预览);防目录穿越
 app.get('/output/:id/*splat', (req, res) => {
   const t = store.getTask(Number(req.params.id));

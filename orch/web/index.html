@@ -513,6 +513,7 @@
           <span style="font-size:13.5px;font-weight:650;">产出物预览</span>
           <div style="flex:1;"></div>
           <sc-if value="{{ preview.canSource }}"><button onClick="{{ toggleSrc }}" style="height:30px;padding:0 12px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12.5px;cursor:pointer;font-family:inherit;">{{ preview.toggleLabel }}</button></sc-if>
+          <sc-if value="{{ hasDiffs }}"><button onClick="{{ downloadZip }}" style="height:30px;padding:0 12px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12.5px;cursor:pointer;font-family:inherit;">⬇ 下载 zip</button></sc-if>
           <button onClick="{{ openDir }}" style="height:30px;padding:0 12px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12.5px;cursor:pointer;font-family:inherit;">📁 打开目录</button>
         </div>
         <div style="display:grid;grid-template-columns:230px 1fr;gap:14px;">
