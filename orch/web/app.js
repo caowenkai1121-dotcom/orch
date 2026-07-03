@@ -1219,7 +1219,11 @@ class Maestro extends MaestroBase {
     setTimeout(() => { const el = document.getElementById('nt-text'); if (el && t) el.value = t.title; }, 60); // 填 DOM,避免 render 覆盖
   }
   // —— 弹窗 ——
-  newTask() { this.setState({ modal: 'task', taskDept: null }); }
+  newTask() {
+    this.setState({ modal: 'task', taskDept: null });
+    const lp = this.live.lastProject;
+    if (lp && lp !== '默认项目') setTimeout(() => { const el = document.getElementById('nt-proj-sel'); if (el && [...el.options].some((o) => o.value === lp)) el.value = lp; }, 80);
+  }
   newAgent() { this.setState({ modal: 'agent', editAgent: null }); }
   editCurAgent() { const a = this.AGENTS.find((x) => x.id === this.state.agentId); if (a) this.setState({ modal: 'agent', editAgent: a }); }
   delCurAgent() { const id = this.state.agentId; if (!id || !window.confirm('删除该 Agent?')) return; fetch('/api/agents/' + id, { method: 'DELETE' }).then(() => { this.setState({ screen: 'agents' }); this.fetchAll(); }).catch(() => {}); }
@@ -1266,6 +1270,7 @@ class Maestro extends MaestroBase {
     const sel = (document.getElementById('nt-proj-sel') || {}).value || '';
     const nw = (document.getElementById('nt-proj-new') || {}).value || '';
     const project = (nw.trim() || sel || '默认项目');
+    this.live.lastProject = project; // 记住,下次新建预填
     const modeEl = document.querySelector('input[name="nt-mode"]:checked');
     const mode = modeEl ? modeEl.value : 'llm';
     const user = this.currentName();
