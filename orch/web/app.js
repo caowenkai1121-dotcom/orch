@@ -663,6 +663,11 @@ class Maestro extends MaestroBase {
     v.hasFiles = !!filesReady;
     v.files = (filesReady ? this.live.files : []).map((f) => ({ path: f.path, bg: (f.path === this.state.previewFile ? '#F2F0EA' : 'transparent'), open: () => this.setState({ previewFile: f.path, srcMode: false }) }));
     v.preview = this.previewOf(this.state.taskId);
+    // 团队备忘(findings.md):团队共享记忆,去掉模板样板头只留真实内容才显示
+    const fnd = (this.live.findingsFor === this.state.taskId ? (this.live.findings || '') : '');
+    const fndBody = fnd.replace(/^#[^\n]*\n+/, '').replace(/^>[^\n]*\n+/gm, '').trim();
+    v.hasFindings = fndBody.length > 20;
+    v.findingsText = fndBody;
     v.toggleSrc = () => this.toggleSrc();
     // 产出改动(diff)
     if (curT && this.live.diffsFor !== this.state.taskId) this.fetchDiffs(this.state.taskId);
@@ -779,7 +784,8 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/continue', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
       .then((r) => r.json()).then((d) => { this.setState({ modal: null }); if (d && d.id) this.go('task', { taskId: d.id }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
-  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.json()).then((fs) => { this.live.files = fs || []; this.live.filesFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.json()).then((fs) => { this.live.files = fs || []; this.live.filesFor = id; this.scheduleRender(); if ((fs || []).some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
+  fetchFindings(id) { fetch('/output/' + id + '/findings.md').then((r) => r.ok ? r.text() : '').then((txt) => { this.live.findings = txt || ''; this.live.findingsFor = id; this.scheduleRender(); }).catch(() => {}); }
   previewOf(id) {
     const p = this.state.previewFile;
     if (!p) return { none: true, hint: '选择左侧文件预览' };
