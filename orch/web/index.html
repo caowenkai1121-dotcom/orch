@@ -452,7 +452,8 @@
           <sc-if value="{{ hasMsgs }}">
           <div style="display:flex;flex-direction:column;gap:7px;max-height:220px;overflow:auto;margin-bottom:10px;">
             <sc-for list="{{ taskMsgs }}" as="tm">
-              <div style="display:flex;justify-content:{{ tm.al }};">
+              <div style="display:flex;flex-direction:column;align-items:{{ tm.al }};">
+                <sc-if value="{{ tm.label }}"><span style="font-size:10px;color:#A39E94;font-weight:600;margin:0 3px 2px;">{{ tm.label }}</span></sc-if>
                 <div style="max-width:78%;background:{{ tm.bg }};color:{{ tm.fg }};border-radius:11px;padding:7px 11px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word;">{{ tm.txt }}<span style="font-size:10px;opacity:.55;margin-left:7px;">{{ tm.time }}</span></div>
               </div>
             </sc-for>

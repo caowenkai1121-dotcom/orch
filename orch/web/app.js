@@ -719,7 +719,8 @@ class Maestro extends MaestroBase {
     v.taskMsgs = ((this.live.msgsFor === this.state.taskId && this.live.msgs) || []).slice(-30).map((m) => ({
       mine: m.who === 'user', txt: m.text, time: (m.ts || '').slice(11, 16),
       al: m.who === 'user' ? 'flex-end' : 'flex-start',
-      bg: m.who === 'user' ? '#1A1814' : '#F4F2ED', fg: m.who === 'user' ? '#fff' : '#3C3933',
+      label: m.who === 'user' ? '' : (m.who === 'system' ? '⚙ 系统' : '🤖 团队'),
+      bg: m.who === 'user' ? '#1A1814' : (m.who === 'system' ? '#F0EEE9' : '#F4F2ED'), fg: m.who === 'user' ? '#fff' : '#3C3933',
     }));
     v.hasMsgs = v.taskMsgs.length > 0;
     v.sendTaskMsg = () => this.sendTaskMsg();
