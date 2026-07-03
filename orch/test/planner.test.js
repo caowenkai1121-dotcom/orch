@@ -180,3 +180,19 @@ test('规划可取消:makePlan 把 onChild 透传给 LLM 调用', async () => {
   await makePlan('活', { agents: ['claude', 'codex'], roles: [], depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude, onChild: cb });
   assert.equal(typeof gotOnChild, 'function'); // 规划子进程回调被透传
 });
+
+test('需求细化启发式:长需求跳过refine,短需求细化', async () => {
+  let refineCalled = 0;
+  const fakeClaude = { async run({ prompt }) {
+    if (/资深产品经理/.test(prompt)) { refineCalled++; return { output: '细化后', success: true }; }
+    return { output: '{"steps":[{"id":"a","agent":"claude","prompt":"x","deps":[]}]}', success: true };
+  } };
+  // 短需求(<160) → 应细化
+  await makePlan('做个登录页', { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(refineCalled, 1);
+  // 长需求(>=160) → 跳过细化
+  refineCalled = 0;
+  const longText = '开发一个电商后台管理系统'.repeat(15); // 180 字 >160
+  await makePlan(longText, { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(refineCalled, 0);
+});

@@ -209,7 +209,9 @@ async function makePlan(text, opts) {
   const claude = (onChild && opts.claude) ? { run: (o) => opts.claude.run(Object.assign({}, o, { onChild })) } : opts.claude;
   const allowed = (agents && agents.length) ? agents : ['claude'];
   let brief = text;
-  if (refine && claude) { try { brief = await refineBrief(text, claude); } catch (e) {} }
+  // 需求细化只对"短/含糊"的需求做(长需求已足够详细,省一次 LLM 调用与延迟)
+  const needRefine = refine && claude && (text || '').length < 160;
+  if (needRefine) { try { brief = await refineBrief(text, claude); } catch (e) {} }
   const orch = (orchestration || '').trim();
   const chief = (roles || []).find((r) => r.id === 'chief-orchestrator'); // 总调度经验行
   const empRoles = (roles || []).filter((r) => r.dept !== '__system');    // __system 不进员工目录
