@@ -905,7 +905,7 @@ class Maestro extends MaestroBase {
   toggleSchedule(id) { fetch('/api/schedules/' + id + '/toggle', { method: 'POST' }).then(() => this.fetchSchedules()).catch(() => {}); }
   delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
   // —— 产出改动(diff) ——
-  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { this.live.diffs = Array.isArray(d) ? d : []; this.live.diffsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { d = Array.isArray(d) ? d : []; this.live.diffs = d; this.live.diffsFor = id; if (!this.state.diffSha && d.length && this.state.taskId === id) this.openDiff(d[0].sha); else this.scheduleRender(); }).catch(() => {}); }
   openDiff(sha) {
     const id = this.state.taskId;
     fetch('/api/diff/' + id + '/' + sha).then((r) => r.json()).then((d) => { this.live.patch = d.patch || ''; this.setState({ diffSha: sha }); }).catch(() => {});
