@@ -96,8 +96,9 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     return ' 标准流程: ' + f.map((s) => (names[s.role] || s.role) + (s.optional ? '(可选)' : '') + (s.gate ? '(质量门)' : '')).join('→');
   };
   const scope = deptId ? [deptId] : Object.keys(byDept);
+  const stat = (r) => { const dn = r.done_count || 0, en = r.empty_count || 0; return (dn + en) >= 2 ? ' [记录:' + dn + '落盘/' + en + '空转]' : ''; };
   const catalog = scope.map((d) =>
-    (dName[d] || d) + ': ' + (byDept[d] || []).map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')').join('、') + flowLine(d)
+    (dName[d] || d) + ': ' + (byDept[d] || []).map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')' + stat(r)).join('、') + flowLine(d)
   ).join('\n');
   const prompt = `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
     + (chiefMemo ? `你的过往调度复盘(优先吸取):\n${chiefMemo}\n` : '') + '\n'
@@ -106,6 +107,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行。`
+    + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
     + `调度要求:1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分的这些 role 不在员工目录里,请只用目录中真实存在的员工 id 重新拆分:${feedback}` : '')
     + `\n任务: ${text}`;

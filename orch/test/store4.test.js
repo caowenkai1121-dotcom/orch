@@ -157,3 +157,18 @@ test('步骤耗时:运行中显示实时⏱,完成显示固定时长', () => {
   assert.ok(!/⏱/.test(ra.dur));       // 完成步:固定时长,无 ⏱
   assert.match(rb.dur, /⏱/);           // 运行步:实时耗时
 });
+
+test('员工绩效:落盘/空转累计,catalog达阈值展示', async () => {
+  const { open } = require('../store');
+  const { makePlan } = require('../planner');
+  const s = open(':memory:'); s.seed();
+  const rid = 'engineering-frontend-developer';
+  s.addRoleStat(rid, true); s.addRoleStat(rid, true); s.addRoleStat(rid, false); // 2落盘1空转
+  const r = s.getRole(rid);
+  assert.equal(r.done_count, 2); assert.equal(r.empty_count, 1);
+  // catalog 注入(达 2 样本阈值)
+  let seen = '';
+  const fake = { async run({ prompt }) { seen = prompt; return { output: '{"steps":[{"id":"a","role":"' + rid + '","prompt":"x","deps":[]}]}', success: true }; } };
+  await makePlan('活', { agents: ['claude'], roles: s.listRoles(), depts: s.listDepts(), refine: false, templatesDir: __dirname, claude: fake });
+  assert.match(seen, /记录:2落盘\/1空转/);
+});

@@ -234,8 +234,8 @@ async function execute(taskId, plan, deps, opts) {
   const task = store.getTask(taskId);
   store.setTaskStatus(taskId, 'running');
 
-  const agentOf = {};
-  const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else agentOf[s.id] = s.agent; });
+  const agentOf = {}; const roleOf = {};
+  const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else { agentOf[s.id] = s.agent; if (s.role) roleOf[s.id] = s.role; } });
   collect(plan.steps || []);
 
   // 任务简报:让员工知道全局与自己在流水线中的位置(上游谁/下游谁)
@@ -279,7 +279,7 @@ async function execute(taskId, plan, deps, opts) {
       if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status });
       emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]);
       writePlanFile(taskId, store, task.dir);
-      if (status === 'done' && gitOk) { const c = commitStep(task.dir, '步骤 ' + stepId + ' 完成'); if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n: c.files }); } // 每步 commit + 记录产出文件数(识别空转步骤)
+      if (status === 'done' && gitOk) { const c = commitStep(task.dir, '步骤 ' + stepId + ' 完成'); if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n: c.files }); if (roleOf[stepId] && store.addRoleStat) store.addRoleStat(roleOf[stepId], c.files > 0); } // 每步 commit + 记录产出文件数 + 员工绩效(落盘/空转)
     },
   };
   writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)

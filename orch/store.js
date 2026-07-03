@@ -60,6 +60,8 @@ function open(file) {
   ensureCol('departments', 'flow', 'TEXT');
   ensureCol('tasks', 'models', 'TEXT');
   ensureCol('roles', 'memo', 'TEXT');
+  ensureCol('roles', 'done_count', 'INTEGER');
+  ensureCol('roles', 'empty_count', 'INTEGER');
   ensureCol('people', 'hook_token', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
@@ -191,6 +193,8 @@ function open(file) {
     // 角色(部门员工)
     listRoles() { return db.prepare('SELECT * FROM roles ORDER BY dept, id').all(); },
     getRole(id) { return db.prepare('SELECT * FROM roles WHERE id=?').get(id); },
+    // 组织级绩效:员工步骤有落盘=done+1,空转=empty+1
+    addRoleStat(id, produced) { db.prepare('UPDATE roles SET ' + (produced ? 'done_count=COALESCE(done_count,0)+1' : 'empty_count=COALESCE(empty_count,0)+1') + ' WHERE id=?').run(id); },
     addRole(d) {
       const id = d.id || (String(d.name || 'role').toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-') || 'role') + '-' + (db.prepare('SELECT COUNT(*) n FROM roles').get().n + 1);
       db.prepare('INSERT OR REPLACE INTO roles(id,dept,name,emoji,description,prompt,executor) VALUES(?,?,?,?,?,?,?)')
