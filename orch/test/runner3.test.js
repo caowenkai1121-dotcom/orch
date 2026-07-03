@@ -99,3 +99,32 @@ test('经验沉淀:复盘写入员工与总调度memo,每任务一次', async ()
   // 再跑一次:不重复复盘
   await harvestExperience(id, { store, adapters: { claude: { async run() { throw new Error('不应再调'); } } } });
 });
+
+test('文件化规划:task_plan.md 渲染阶段/摘要/错误表,findings.md 初始化', () => {
+  const { open } = require('../store');
+  const { writePlanFile } = require('../runner');
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-'));
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('做个页面', '默认项目', 'admin', {});
+  store.setTaskDir(id, dir);
+  store.setPlan(id, { steps: [
+    { id: 'build', agent: 'claude', role: 'engineering-frontend-developer', prompt: 'p', deps: [] },
+    { id: 'check', agent: 'codex', role: 'testing-api-tester', prompt: 'p', deps: ['build'] },
+  ] });
+  store.setStep(id, 'build', 'claude', 'done', '页面完成,含交接备忘');
+  store.setStep(id, 'check', 'codex', 'failed', '端口被占用启动失败');
+  writePlanFile(id, store, dir);
+  const plan = fs.readFileSync(path.join(dir, 'task_plan.md'), 'utf8');
+  assert.match(plan, /做个页面/);                 // 目标
+  assert.match(plan, /build — engineering-frontend-developer/);
+  assert.match(plan, /✓ 完成/);                   // 状态
+  assert.match(plan, /页面完成,含交接备忘/);       // 产出摘要
+  assert.match(plan, /错误记录/);                  // 错误表
+  assert.match(plan, /端口被占用/);
+  assert.ok(fs.existsSync(path.join(dir, 'findings.md'))); // findings 初始化
+  const f1 = fs.readFileSync(path.join(dir, 'findings.md'), 'utf8');
+  fs.writeFileSync(path.join(dir, 'findings.md'), f1 + '- 员工写的发现\n');
+  writePlanFile(id, store, dir); // 再渲染:findings 不被覆盖
+  assert.match(fs.readFileSync(path.join(dir, 'findings.md'), 'utf8'), /员工写的发现/);
+});

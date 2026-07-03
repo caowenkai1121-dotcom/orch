@@ -1,4 +1,39 @@
 const { runPlan, AUTONOMY, ASK } = require('./engine');
+const fs = require('fs');
+const path = require('path');
+
+// —— 文件化规划(参考 Manus planning-with-files):引擎在任务目录维护 task_plan.md ——
+// 目标/阶段状态/产出摘要/错误表,由 DB 状态渲染(幂等,永远准确);员工经简报可见,下游随时读全局进展。
+function writePlanFile(taskId, store, dir) {
+  try {
+    if (!dir || !fs.existsSync(dir)) return;
+    const t = store.getTask(taskId);
+    let plan = {}; try { plan = JSON.parse(t.plan) || {}; } catch (e) { return; }
+    const st = {}; (t.steps || []).forEach((s) => { st[s.step_id] = s; });
+    const mark = { done: '✓ 完成', running: '▶ 进行中', failed: '✗ 失败' };
+    const flat = [];
+    const walk = (arr, loopTag) => (arr || []).forEach((s) => { if (s.body) walk(s.body, '(质量环)'); else flat.push({ id: s.id, role: s.role || s.agent, tag: loopTag || '' }); });
+    walk(plan.steps);
+    const lines = ['# 任务计划(引擎自动维护,请勿手改)', '', '## 目标', t.text || '', '', '## 阶段'];
+    flat.forEach((s, i) => {
+      const row = st[s.id] || {};
+      const summary = (row.output || '').replace(/\s+/g, ' ').slice(-160);
+      lines.push('### ' + (i + 1) + '. ' + s.id + ' — ' + (s.role || '') + ' ' + s.tag);
+      lines.push('- 状态: ' + (mark[row.status] || '待执行'));
+      if (summary) lines.push('- 产出摘要: ' + summary);
+    });
+    const errs = (t.steps || []).filter((s) => s.status === 'failed' && s.output);
+    if (errs.length) {
+      lines.push('', '## 错误记录(不要重复同样的失败做法,换思路)', '', '| 步骤 | 错误摘要 |', '|------|----------|');
+      errs.forEach((s) => lines.push('| ' + s.step_id + ' | ' + String(s.output).replace(/\s+/g, ' ').replace(/\|/g, '/').slice(-140) + ' |'));
+    }
+    lines.push('', '> 团队共享发现/决策/踩坑请写 findings.md');
+    fs.writeFileSync(path.join(dir, 'task_plan.md'), lines.join('\n'), 'utf8');
+    // findings.md:初始化一次,内容归员工维护
+    const fp = path.join(dir, 'findings.md');
+    if (!fs.existsSync(fp)) fs.writeFileSync(fp, '# 团队发现与决策(findings)\n\n> 所有员工共享的外部记忆:重要发现、技术决策(含理由)、踩过的坑,完成工作前追加写入。\n\n', 'utf8');
+  } catch (e) { /* 文件化规划失败不影响执行 */ }
+}
 
 // 出 plan →(审批模式暂停待批,否则执行)
 async function runTask(taskId, deps) {
@@ -162,11 +197,13 @@ async function execute(taskId, plan, deps, opts) {
       if (/hit your session limit|rate limit|usage limit/i.test(out || '')) {
         store.addLog(taskId, stepId, '⚠ 执行器会话限额(非任务本身错误)。限额重置后在任务详情点「↻ 重试失败步骤」续跑,已完成步骤不会重跑。');
       }
+      writePlanFile(taskId, store, task.dir); // 产出摘要进 task_plan.md
     },
     onDecision: (stepId, q) => { pending = { stepId, q }; },
     onLog: (stepId, line) => { store.addLog(taskId, stepId, line); emit(onEvent, taskId, stepId, 'log', line, agentOf[stepId]); },
-    onStatus: (stepId, status) => { store.setStep(taskId, stepId, agentOf[stepId] || '', status, null); if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status }); emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]); },
+    onStatus: (stepId, status) => { store.setStep(taskId, stepId, agentOf[stepId] || '', status, null); if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status }); emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]); writePlanFile(taskId, store, task.dir); },
   };
+  writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)
 
   try {
     const done = await runPlan(plan, ctx);
@@ -197,4 +234,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile };

@@ -49,7 +49,8 @@ async function runStep(step, ctx, prevOutput) {
   // 任务简报:全局目标+流水线位置+工作目录现状 → 员工带着现场感知干活
   const b = ctx.brief ? ctx.brief(step.id) : '';
   const files = dirBrief(workdir);
-  const briefTxt = (b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '') + '\n\n') : '';
+  const briefTxt = (b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
+    + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '') + '\n\n') : '';
   const prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
   ctx.onStatus(step.id, 'running');
   const s = sem(); await s.acquire();
