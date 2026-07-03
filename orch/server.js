@@ -246,6 +246,16 @@ app.post('/task/:id/continue', (req, res) => {
   }, text);
 });
 
+// 任务 Markdown 报告下载(人读归档)
+app.get('/api/report/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.sendStatus(403);
+  const md = api.taskReport(store, Number(req.params.id));
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', "attachment; filename=\"report-" + t.id + ".md\"");
+  res.send(md);
+});
+
 // 产出打包下载:git archive 出 zip(产出已版本化,零依赖)
 app.get('/api/download/:id', (req, res) => {
   const t = store.getTask(Number(req.params.id));

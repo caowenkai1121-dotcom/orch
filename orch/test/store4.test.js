@@ -101,3 +101,18 @@ test('任务进度:顶层步骤完成比(loop子步不计)', () => {
   assert.equal(t.progressLabel, '1/3 步');
   assert.equal(t.progress, 33);
 });
+
+test('任务报告:MD含目标/步骤/员工/成本', () => {
+  const { open } = require('../store');
+  const { taskReport } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('做个登录页', '默认项目', 'admin', {});
+  s.setPlan(id, { steps: [{ id: 'build', role: 'engineering-frontend-developer', prompt: 'p', deps: [] }] });
+  s.setStep(id, 'build', 'claude', 'done', '页面已建好');
+  s.addEvent(id, 'files', { step: 'build', n: 2 });
+  const md = taskReport(s, id);
+  assert.match(md, /# 做个登录页/);
+  assert.match(md, /执行接力/);
+  assert.match(md, /build/);
+  assert.match(md, /页面已建好/);
+});

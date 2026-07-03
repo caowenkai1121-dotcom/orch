@@ -262,4 +262,23 @@ function agentLog(store, agentId, limit) {
   return store.recentLogsForAgent(agentId, limit || 40).map((r) => '[T' + r.task_id + '·' + r.step_id + '] ' + r.line);
 }
 
-module.exports = { buildAll, relay, plan, agentLog, roleMap, planRoleMap, roleView };
+// 任务 Markdown 报告:目标/各步骤(员工·结果·产出文件·摘要)/成本,供归档分享
+function taskReport(store, id) {
+  const t = store.getTask(id);
+  if (!t) return '# 任务不存在\n';
+  const rows = relay(store, id);
+  const u = store.taskUsage(id);
+  const sk = { done: '✅ 完成', failed: '❌ 失败', running: '▶ 进行中', cancelled: '⊘ 取消' };
+  let md = '# ' + (t.text || '任务 ' + id) + '\n\n';
+  md += '- 状态:' + (sk[t.status] || t.status) + '\n- 项目:' + (t.project || '默认项目') + '\n- 负责人:' + (t.owner || '-') + '\n';
+  md += '- 成本:$' + (u.cost || 0) + ' · ' + ((u.input || 0) + (u.output || 0)) + ' tokens\n\n';
+  md += '## 执行接力\n\n';
+  rows.forEach((r, i) => {
+    md += '### ' + (i + 1) + '. ' + r.title + ' — ' + r.who + '\n';
+    md += '结果:' + (r.sk || '') + (r.filesLabel ? ' · ' + r.filesLabel : '') + (r.dur ? ' · 用时 ' + r.dur : '') + '\n\n';
+    if (r.desc) md += '> ' + String(r.desc).replace(/\n/g, '\n> ') + '\n\n';
+  });
+  return md;
+}
+
+module.exports = { buildAll, relay, plan, agentLog, roleMap, planRoleMap, roleView, taskReport };
