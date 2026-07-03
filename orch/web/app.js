@@ -944,7 +944,9 @@ class Maestro extends MaestroBase {
     try {
       if (window.Notification && Notification.permission === 'granted' && document.hidden) {
         const t = (this.TASKS || []).find((x) => x.id === m.taskId);
-        new Notification(title, { body: (t ? t.title : '任务 ' + m.taskId), tag: 'orch-task-' + m.taskId });
+        const base = t ? t.title : '任务 ' + m.taskId;
+        const body = (m.data === 'failed' && t && t.failReason) ? (base + '\n✗ ' + t.failReason) : base;
+        new Notification(title, { body: body, tag: 'orch-task-' + m.taskId });
       }
     } catch (e) {}
   }
@@ -1329,7 +1331,7 @@ class Maestro extends MaestroBase {
   }
 
   fetchAll() {
-    fetch('/api/all').then((r) => { if (r.status === 401) { if (!this.state.needLogin) { this.state.needLogin = true; this.scheduleRender(); } return null; } return r.json(); }).then((d) => {
+    return fetch('/api/all').then((r) => { if (r.status === 401) { if (!this.state.needLogin) { this.state.needLogin = true; this.scheduleRender(); } return null; } return r.json(); }).then((d) => {
       if (!d) return;
       if (this.state.needLogin) this.state.needLogin = false;
       this.state.me = d.me || null;
@@ -1375,8 +1377,7 @@ class Maestro extends MaestroBase {
         } else if (m.type === 'msg') {
           if (m.taskId === this.state.taskId) this.fetchMsgs(m.taskId);
         } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents' || m.type === 'apps') {
-          this.notifyTask(m); // 桌面通知:任务完成/失败/待输入
-          this.fetchAll();
+          this.fetchAll().then(() => this.notifyTask(m)); // 先刷新拿到最新failReason,再桌面通知(含失败原因)
           if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }
           if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
         }
