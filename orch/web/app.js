@@ -621,6 +621,12 @@ class Maestro extends MaestroBase {
     v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.viewOnly = !!(curT && !curT.canModify);
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
+    // 失败任务:置顶错误摘要(取失败步骤输出末段,免翻接力记录)
+    if (curT && curT.sk === 'failed') {
+      const bad = (this.RELAY || []).filter((s) => s.back || s.sk === 'failed');
+      const last = bad.length ? bad[bad.length - 1] : null;
+      v.failBanner = last ? { step: last.title, msg: String(last.desc || '').replace(/\s+/g, ' ').slice(-240) } : { step: '', msg: '任务失败,可点「重试失败步骤」续跑。' };
+    } else v.failBanner = null;
     v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
     v.approveTask = () => this.approveTask();
     // 审批前编辑计划

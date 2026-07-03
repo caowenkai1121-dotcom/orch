@@ -403,6 +403,13 @@
           <sc-if value="{{ canDelTask }}"><button onClick="{{ delTask }}" style="flex:none;height:34px;padding:0 12px;border-radius:9px;background:#fff;border:1px solid #F1CBA6;color:#B4541E;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">🗑 删除</button></sc-if>
         </div>
 
+        <sc-if value="{{ failBanner }}">
+        <div style="background:#FBEDEA;border:1px solid #F1CBA6;border-radius:12px;padding:12px 15px;margin:16px 0 4px;">
+          <div style="font-size:13px;font-weight:650;color:#B4541E;">✗ 失败于步骤「{{ failBanner.step }}」</div>
+          <div style="font-size:12px;color:#8a5a44;margin-top:5px;line-height:1.55;font-family:'JetBrains Mono',monospace;word-break:break-all;">{{ failBanner.msg }}</div>
+        </div>
+        </sc-if>
+
         <div style="display:flex;gap:10px;margin:18px 0 22px;">
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">接力步骤</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskRounds }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">参与 Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskAgentN }}</div></div>
