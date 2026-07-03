@@ -819,6 +819,7 @@ class Maestro extends MaestroBase {
     const src = !!this.state.srcMode;
     if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].indexOf(e) >= 0) return { img: true, url };
     if (['mp4', 'webm', 'mov', 'ogg', 'm4v'].indexOf(e) >= 0) return { video: true, url };
+    if (e === 'pdf') return { iframe: true, url }; // 浏览器原生渲染 PDF
     const TEXT = ['js', 'css', 'json', 'txt', 'yaml', 'yml', 'xml', 'csv', 'log', 'sh', 'py', 'ts', 'tsx', 'jsx', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'vue', 'svelte', 'ini', 'conf', 'sql'];
     if (['html', 'htm'].indexOf(e) >= 0) {
       if (!src) return { iframe: true, url, canSource: true, toggleLabel: '查看源码' };
