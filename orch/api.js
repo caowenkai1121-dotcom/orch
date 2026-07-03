@@ -232,9 +232,12 @@ function relay(store, id) {
   const RV = roleView(store);
   const durs = stepDurations(store, id);
   const files = {}; (store.getEvents ? store.getEvents(id) : []).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); files[d.step] = d.n; } catch (x) {} } });
+  // loop 包装步骤 id:接力里标注为"质量环",避免空署名看着像坏行
+  const loopIds = new Set(); try { (JSON.parse(t.plan).steps || []).forEach((s) => { if (s.type === 'loop') loopIds.add(s.id); }); } catch (e) {}
   return (t.steps || []).map((s) => {
-    const emp = stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
-    const r = ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' };
+    const isLoop = loopIds.has(s.step_id);
+    const emp = !isLoop && stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
+    const r = isLoop ? { label: '🔁 质量环', color: '#7C6FD9', av: '🔁' } : (ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' });
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
     const summary = (s.output && s.output.trim()) ? s.output.trim().slice(-300) : (last || ('状态: ' + s.status));
     const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;

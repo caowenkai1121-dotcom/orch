@@ -198,3 +198,17 @@ test('任务总耗时:终态任务算 created→updated', () => {
   const t = vm.tasks.find((x) => x.id === id);
   assert.equal(t.durLabel, '1m30s');
 });
+
+test('接力:loop包装步骤标注质量环(不空署名)', () => {
+  const { open } = require('../store');
+  const { relay } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('活', '默认项目', 'admin', {});
+  s.setPlan(id, { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 3, deps: [], body: [
+    { id: 'impl', role: 'engineering-rapid-prototyper', prompt: 'p', deps: [] },
+  ] }] });
+  s.setStep(id, 'q', '', 'done', '');
+  const r = relay(s, id);
+  const loopRow = r.find((x) => x.title === 'q');
+  assert.equal(loopRow.who, '🔁 质量环');
+});
