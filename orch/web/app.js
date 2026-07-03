@@ -412,6 +412,8 @@ class Maestro extends MaestroBase {
     v.newPerson = () => this.newPerson();
     v.closeModal = () => this.closeModal();
     v.submitTask = () => this.submitTask();
+    v.quickLaunch = () => this.quickLaunch();
+    v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
     if (this.state.modal === 'task' && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
@@ -1001,6 +1003,14 @@ class Maestro extends MaestroBase {
     };
     const have = new Set((this.AGENTS || []).map((a) => a.id));
     return Object.keys(CAT).filter((id) => have.has(id)).map((id) => ({ agent: id, ...CAT[id] }));
+  }
+  // 快捷下发:一行描述→全默认智能拆分建任务(免弹窗)
+  quickLaunch() {
+    const el = document.getElementById('ql-input'); const text = el ? el.value.trim() : '';
+    if (!text) return;
+    el.value = '';
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, refine: true }) })
+      .then((r) => r.json()).then(() => { this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   // —— 弹窗 ——
   newTask() { this.setState({ modal: 'task', taskDept: null }); }
