@@ -241,7 +241,7 @@ class MaestroBase extends RT.Component {
   decTRow(t) {
     if (!t) return null;
     const sm = this.statusMeta(t.sk);
-    return { ...t, sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, assignees: t.agents.map(id => this.decMini(id)), open: () => this.go('task', { taskId: t.id }) };
+    return { ...t, sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, updatedLine: '更新于 ' + t.updated + (t.durLabel ? ' · ⏱ ' + t.durLabel : ''), assignees: t.agents.map(id => this.decMini(id)), open: () => this.go('task', { taskId: t.id }) };
   }
 
   decTask(t) {
