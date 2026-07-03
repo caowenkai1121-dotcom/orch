@@ -249,3 +249,18 @@ test('编辑角色卡保留 memo 与绩效(updateRole)', () => {
   assert.equal(r.done_count, 1);             // 绩效保留
   assert.equal(r.empty_count, 1);
 });
+
+test('重置员工经验绩效(resetRoleLearning)', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const rid = 'engineering-frontend-developer';
+  s.appendRoleMemo(rid, '经验x'); s.addRoleStat(rid, true); s.addRoleStat(rid, false);
+  s.resetRoleLearning(rid);
+  const r = s.getRole(rid);
+  assert.ok(!r.memo);
+  assert.ok(!r.done_count);
+  assert.ok(!r.empty_count);
+  // 角色卡本身保留
+  assert.equal(r.name, s.getRole(rid).name);
+  assert.ok(r.prompt !== undefined);
+});

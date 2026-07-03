@@ -204,6 +204,8 @@ function open(file) {
       return id;
     },
     deleteRole(id) { db.prepare('DELETE FROM roles WHERE id=?').run(id); },
+    // 重置员工经验与绩效(保留角色卡本身):memo/落盘/空转清零
+    resetRoleLearning(id) { const r = db.prepare('SELECT id FROM roles WHERE id=?').get(id); if (!r) return false; db.prepare('UPDATE roles SET memo=NULL, done_count=NULL, empty_count=NULL WHERE id=?').run(id); return true; },
     // 编辑角色卡:只改名称/描述/提示词/执行器,保留 memo 与绩效(不用 addRole 的 REPLACE 以免擦经验)
     updateRole(id, d) { const r = db.prepare('SELECT id FROM roles WHERE id=?').get(id); if (!r) return false; db.prepare('UPDATE roles SET name=?,description=?,prompt=?,executor=? WHERE id=?').run(d.name || id, d.description || '', d.prompt || '', d.executor || 'claude', id); return true; },
     // 员工经验备忘:追加一条(与已有高度相似则跳过去重),保留最近10条(越用越聪明)

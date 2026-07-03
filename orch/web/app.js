@@ -612,6 +612,7 @@ class Maestro extends MaestroBase {
     v.hireEmp = () => this.setState({ modal: 'hire', editRoleId: null });
     v.hireIsEdit = !!this.state.editRoleId;
     v.notHireEdit = !this.state.editRoleId;
+    v.resetEmpLearning = () => this.resetEmpLearning();
     v.modalHire = this.state.modal === 'hire';
     v.submitHire = () => this.submitHire();
     v.execOpts = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => ({ id: a.id, name: a.name }));
@@ -974,6 +975,11 @@ class Maestro extends MaestroBase {
     const body = JSON.stringify({ dept: this.state.deptId, name: g('he-name').trim(), description: g('he-desc'), prompt: g('he-prompt'), executor: g('he-exec') || 'claude' });
     const req = eid ? fetch('/api/roles/' + eid, { method: 'PUT', headers: { 'content-type': 'application/json' }, body }) : fetch('/api/roles', { method: 'POST', headers: { 'content-type': 'application/json' }, body });
     req.then(() => { this.toast(eid ? '✓ 已更新员工角色卡' : '✓ 已雇佣员工'); this.setState({ modal: null, editRoleId: null }); this.fetchAll(); }).catch(() => {});
+  }
+  resetEmpLearning() {
+    const id = this.state.editRoleId; if (!id) return;
+    if (!window.confirm('清空该员工累积的经验与绩效(落盘/空转计数)?角色卡本身保留。')) return;
+    fetch('/api/roles/' + id + '/reset', { method: 'POST' }).then((r) => r.json()).then(() => { this.toast('✓ 已清空经验与绩效'); this.fetchAll(); }).catch(() => {});
   }
   editEmp(id) { // 拉全量角色卡预填,进编辑模式
     fetch('/api/roles/' + id).then((r) => r.ok ? r.json() : null).then((role) => {

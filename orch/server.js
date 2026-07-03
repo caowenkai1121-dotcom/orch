@@ -103,6 +103,7 @@ app.post('/api/roles', adminOnly, (req, res) => { const id = store.addRole(req.b
 app.delete('/api/roles/:id', adminOnly, (req, res) => { store.deleteRole(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.get('/api/roles/:id', adminOnly, (req, res) => { const r = store.getRole(req.params.id); if (!r) return res.status(404).json({ error: '员工不存在' }); res.json({ id: r.id, dept: r.dept, name: r.name, description: r.description || '', prompt: r.prompt || '', executor: r.executor || 'claude' }); });
 app.put('/api/roles/:id', adminOnly, (req, res) => { const ok = store.updateRole(req.params.id, req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ ok }); });
+app.post('/api/roles/:id/reset', adminOnly, (req, res) => { const ok = store.resetRoleLearning(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok }); });
 
 // #3 部门 CRUD + 为部门设置 agent
 app.post('/api/depts', adminOnly, (req, res) => { const id = store.addDept(req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ id }); });
