@@ -307,3 +307,18 @@ test('内容搜索:匹配任务需求与步骤产出', () => {
   const rb = r.find((x) => x.id === b);
   assert.match(rb.snip, /OAuth/);
 });
+
+test('步骤成本:relay metaLabel 含成本', () => {
+  const { open } = require('../store');
+  const { relay } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('活', '默认项目', 'admin', {});
+  s.setStep(id, 'build', 'claude', 'done', '完成');
+  s.addUsage(id, 'build', 'claude', { input: 1000, output: 500, cost: 0.045 });
+  s.addEvent(id, 'files', { step: 'build', n: 2 });
+  const r = relay(s, id);
+  const row = r.find((x) => x.title === 'build');
+  assert.equal(row.costLabel, '$0.045');
+  assert.match(row.metaLabel, /\$0.045/);
+  assert.match(row.metaLabel, /📄 2/);
+});

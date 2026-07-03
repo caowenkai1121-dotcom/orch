@@ -240,6 +240,7 @@ function relay(store, id) {
   const RV = roleView(store);
   const durs = stepDurations(store, id);
   const files = {}; (store.getEvents ? store.getEvents(id) : []).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); files[d.step] = d.n; } catch (x) {} } });
+  const costs = store.stepCosts ? store.stepCosts(id) : {};
   // loop 包装步骤 id:接力里标注为"质量环",避免空署名看着像坏行
   const loopIds = new Set(); try { (JSON.parse(t.plan).steps || []).forEach((s) => { if (s.type === 'loop') loopIds.add(s.id); }); } catch (e) {}
   return (t.steps || []).map((s) => {
@@ -253,7 +254,10 @@ function relay(store, id) {
     const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;
     const fn = files[s.step_id];
     const filesLabel = s.status === 'done' ? (fn > 0 ? '📄 ' + fn + ' 文件' : '⚠ 无产出') : '';
-    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, full, time: '', dur: durs[s.step_id] || '', filesLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    const sc = costs[s.step_id];
+    const costLabel = sc > 0 ? '$' + (Math.round(sc * 1000) / 1000) : '';
+    const metaLabel = [costLabel, filesLabel, durs[s.step_id] || ''].filter(Boolean).join(' · '); // 成本·文件·耗时 合并
+    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, full, time: '', dur: durs[s.step_id] || '', filesLabel, costLabel, metaLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
   });
 }
 
