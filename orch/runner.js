@@ -144,8 +144,10 @@ async function harvestExperience(taskId, deps) {
   try {
     const { output } = await adapters.claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
     const j = JSON.parse((output.match(/\{[\s\S]*\}/) || ['{}'])[0]);
-    Object.entries(j.employees || {}).forEach(([rid, line]) => store.appendRoleMemo(rid, line));
-    if (j.chief) store.appendRoleMemo('chief-orchestrator', j.chief);
+    const names = [];
+    Object.entries(j.employees || {}).forEach(([rid, line]) => { store.appendRoleMemo(rid, line); const r = store.getRole && store.getRole(rid); names.push(r ? r.name : rid); });
+    if (j.chief) { store.appendRoleMemo('chief-orchestrator', j.chief); names.push('总调度'); }
+    if (names.length && store.addTaskMsg) store.addTaskMsg(taskId, 'system', '🧠 任务复盘完成,已更新经验:' + names.join('、') + '(下次相关任务会复用)。');
   } catch (e) { /* 复盘失败不影响任务 */ }
 }
 

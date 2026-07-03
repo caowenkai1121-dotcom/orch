@@ -245,3 +245,18 @@ test('task_plan.md 标注每步产出文件数', () => {
   assert.match(md, /📄 3 文件/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('复盘后加系统消息告知更新的员工', async () => {
+  const { open } = require('../store');
+  const { harvestExperience } = require('../runner');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('活', '默认项目', 'admin', {});
+  s.setPlan(id, { steps: [{ id: 'a', role: 'engineering-frontend-developer', prompt: 'p', deps: [] }] });
+  s.setStep(id, 'a', 'claude', 'done', '完成');
+  const claude = { async run() { return { output: '{"employees":{"engineering-frontend-developer":"经验x"},"chief":"复盘y"}', success: true }; } };
+  await harvestExperience(id, { store: s, adapters: { claude } });
+  const msgs = s.getTaskMsgs(id);
+  const sys = msgs.find((m) => m.who === 'system' && /任务复盘完成/.test(m.text));
+  assert.ok(sys);
+  assert.match(sys.text, /总调度/);
+});
