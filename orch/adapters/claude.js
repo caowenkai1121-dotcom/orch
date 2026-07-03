@@ -2,10 +2,11 @@ const { spawn } = require('child_process');
 const { parseClaudeStream } = require('./streamparse');
 
 module.exports = {
-  run({ prompt, workdir, model, onLine, onChild, onUsage }) {
+  run({ prompt, workdir, model, effort, onLine, onChild, onUsage }) {
     return new Promise((resolve) => {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
-      if (model) args.push('--model', model); // 用户选的大模型(如 opus/sonnet/haiku 或完整 id)
+      if (model) args.push('--model', model);   // 如 claude-fable-5 / claude-opus-4-8
+      if (effort) args.push('--effort', effort); // low/medium/high/xhigh/max
       args.push(JSON.stringify(prompt));
       const p = spawn('claude', args, { cwd: workdir || process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
       if (onChild) onChild(p);

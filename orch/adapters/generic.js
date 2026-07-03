@@ -6,8 +6,9 @@ function make(def) {
   const args = Array.isArray(def.args) ? def.args : (def.args ? JSON.parse(def.args) : []);
   let pricing = null; try { pricing = def.pricing ? JSON.parse(def.pricing) : null; } catch (e) {}
   return {
-    async run({ prompt, workdir, model, onLine, onChild, onUsage }) {
+    async run({ prompt, workdir, model, effort, onLine, onChild, onUsage }) {
       const modelArgs = model ? ['--model', model] : []; // 用户选的大模型
+      if (effort && def.command === 'codex') modelArgs.push('-c', 'model_reasoning_effort="' + effort + '"'); // codex 思考级别
       let cmd = def.command, callArgs = [...args, ...modelArgs, JSON.stringify(prompt)];
       // 容器隔离(opt-in,仅设了 image 的自定义 agent):Docker 可用则在容器里跑,否则回退本地
       if (def.image) {

@@ -54,10 +54,13 @@ async function runStep(step, ctx, prevOutput) {
   ctx.onStatus(step.id, 'running');
   const s = sem(); await s.acquire();
   let res;
-  const model = (ctx.models && ctx.models[step.agent]) || null; // 用户为该执行器选的大模型
+  // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式)
+  const mm = ctx.models && ctx.models[step.agent];
+  const model = (typeof mm === 'string' ? mm : (mm && mm.model)) || null;
+  const effort = (mm && typeof mm === 'object' && mm.effort) || null;
   try {
     res = await adapter.run({
-      prompt, workdir, model,
+      prompt, workdir, model, effort,
       onLine: (line) => ctx.onLog(step.id, line),
       onChild: (child) => { ctx.onChild && ctx.onChild(child); },
       onUsage: (u) => { ctx.onUsage && ctx.onUsage(step.id, step.agent, u); },

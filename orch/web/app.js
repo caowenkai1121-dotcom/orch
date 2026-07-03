@@ -810,11 +810,12 @@ class Maestro extends MaestroBase {
     }
   }
 
-  // 内置执行器的大模型选项(仅对已存在的 claude/codex 显示)
+  // 内置执行器的大模型+思考级别选项(仅对已存在的 claude/codex 显示)
   modelPickers() {
+    const EFF = [{ v: '', n: '思考:默认' }, { v: 'low', n: '低' }, { v: 'medium', n: '中' }, { v: 'high', n: '高' }, { v: 'xhigh', n: '超高' }];
     const CAT = {
-      claude: { label: 'Claude', selId: 'nt-model-claude', opts: [{ v: '', n: '默认' }, { v: 'opus', n: 'Opus' }, { v: 'sonnet', n: 'Sonnet' }, { v: 'haiku', n: 'Haiku' }] },
-      codex: { label: 'Codex', selId: 'nt-model-codex', opts: [{ v: '', n: '默认' }, { v: 'gpt-5-codex', n: 'GPT-5 Codex' }, { v: 'gpt-5', n: 'GPT-5' }, { v: 'o3', n: 'o3' }] },
+      claude: { label: 'Claude', selId: 'nt-model-claude', effId: 'nt-effort-claude', opts: [{ v: '', n: '默认' }, { v: 'claude-fable-5', n: 'Fable 5' }, { v: 'claude-opus-4-8', n: 'Opus 4.8' }], effOpts: EFF.concat([{ v: 'max', n: '极限' }]) },
+      codex: { label: 'Codex', selId: 'nt-model-codex', effId: 'nt-effort-codex', opts: [{ v: '', n: '默认' }, { v: 'gpt-5.5', n: 'GPT-5.5' }, { v: 'gpt-5.4', n: 'GPT-5.4' }], effOpts: EFF },
     };
     const have = new Set((this.AGENTS || []).map((a) => a.id));
     return Object.keys(CAT).filter((id) => have.has(id)).map((id) => ({ agent: id, ...CAT[id] }));
@@ -870,8 +871,12 @@ class Maestro extends MaestroBase {
     const orchestration = (document.getElementById('nt-orch') || {}).value || '';
     const refine = (document.getElementById('nt-refine') || {}).checked ? 1 : 0;
     const dept = this.state.taskDept || null; // 部门任务:按该部门流程拆分
-    const models = {}; // 用户为 claude/codex 选的大模型
-    (this.modelPickers() || []).forEach((mp) => { const v = (document.getElementById(mp.selId) || {}).value; if (v) models[mp.agent] = v; });
+    const models = {}; // 用户为 claude/codex 选的大模型+思考级别
+    (this.modelPickers() || []).forEach((mp) => {
+      const m = (document.getElementById(mp.selId) || {}).value || '';
+      const e = (document.getElementById(mp.effId) || {}).value || '';
+      if (m || e) models[mp.agent] = { model: m || null, effort: e || null };
+    });
     fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept, models }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }

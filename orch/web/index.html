@@ -817,6 +817,9 @@
               <select id="{{ mp.selId }}" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;">
                 <sc-for list="{{ mp.opts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
               </select>
+              <select id="{{ mp.effId }}" title="思考级别" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;">
+                <sc-for list="{{ mp.effOpts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
+              </select>
             </label>
           </sc-for>
         </div>
