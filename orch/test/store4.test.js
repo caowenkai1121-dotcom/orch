@@ -336,3 +336,14 @@ test('部门级绩效:员工落盘/空转汇总成功率', () => {
   assert.equal(eng.deptDone, 3);            // 2+1 落盘
   assert.equal(eng.successAvg, '75%');      // 3/(3+1)
 });
+
+test('agent累计成本(agentTotals)', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', 'P', 'admin', {});
+  s.addUsage(id, 'a', 'claude', { input: 1, output: 1, cost: 0.05 });
+  s.addUsage(id, 'b', 'claude', { input: 1, output: 1, cost: 0.03 });
+  s.addUsage(id, 'c', 'codex', { input: 1, output: 1, cost: 0.02 });
+  assert.equal(s.agentTotals('claude').cost, 0.08);
+  assert.equal(s.agentTotals('codex').cost, 0.02);
+});
