@@ -714,6 +714,7 @@ class Maestro extends MaestroBase {
     v.downloadZip = () => this.downloadZip();
     v.downloadReport = () => this.downloadReport();
     v.copyPreview = () => this.copyPreview();
+    v.openPreviewTab = () => this.openPreviewTab();
     // #发布/继续
     v.canPublish = !!(curT && curT.sk === 'done' && this.state.me && this.state.me.admin && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path))); // 仅管理员可发布
     v.publishApp = () => this.publishApp();
@@ -804,6 +805,7 @@ class Maestro extends MaestroBase {
   openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
   downloadZip() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/download/' + id, '_blank'); }
   downloadReport() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/report/' + id, '_blank'); }
+  openPreviewTab() { const p = this.previewOf(this.state.taskId); if (p && p.url) window.open(p.url, '_blank'); }
   copyPreview() {
     const p = this.previewOf(this.state.taskId); const txt = p && p.text;
     if (txt == null) return;
@@ -843,12 +845,12 @@ class Maestro extends MaestroBase {
     const url = '/output/' + id + '/' + p.split('/').map(encodeURIComponent).join('/');
     const e = (p.split('.').pop() || '').toLowerCase();
     const src = !!this.state.srcMode;
-    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].indexOf(e) >= 0) return { img: true, url };
-    if (['mp4', 'webm', 'mov', 'ogg', 'm4v'].indexOf(e) >= 0) return { video: true, url };
-    if (e === 'pdf') return { iframe: true, url }; // 浏览器原生渲染 PDF
+    if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico'].indexOf(e) >= 0) return { img: true, url, openable: true };
+    if (['mp4', 'webm', 'mov', 'ogg', 'm4v'].indexOf(e) >= 0) return { video: true, url, openable: true };
+    if (e === 'pdf') return { iframe: true, url, openable: true }; // 浏览器原生渲染 PDF
     const TEXT = ['js', 'css', 'json', 'txt', 'yaml', 'yml', 'xml', 'csv', 'log', 'sh', 'py', 'ts', 'tsx', 'jsx', 'java', 'go', 'rs', 'c', 'cpp', 'h', 'vue', 'svelte', 'ini', 'conf', 'sql'];
     if (['html', 'htm'].indexOf(e) >= 0) {
-      if (!src) return { iframe: true, url, canSource: true, toggleLabel: '查看源码' };
+      if (!src) return { iframe: true, url, openable: true, canSource: true, toggleLabel: '查看源码' };
       const t = this.getText(id, p); return { code: true, text: t == null ? '加载中…' : t, canSource: true, toggleLabel: '预览' };
     }
     if (e === 'md' || e === 'markdown') {
