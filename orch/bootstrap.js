@@ -82,4 +82,20 @@ function recoverZombies(store) {
   if (zombies.length) console.log('恢复中断任务:', zombies.length, '个(已标记失败,可重试续跑)');
 }
 
-module.exports = { listFilesIn, importDataDir, buildAdapters, scanAgents, recoverZombies };
+// 执行器健康:每个 CLI agent 是否可调用 + 版本(启动跑一次,缓存)
+function checkHealth(store) {
+  const { execSync } = require('child_process');
+  const map = {};
+  store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').forEach((a) => {
+    const cmd = a.command || a.id;
+    let ok = false, version = '';
+    try {
+      const out = execSync(cmd + ' --version', { stdio: ['ignore', 'pipe', 'ignore'], timeout: 4000 }).toString().trim();
+      ok = true; version = (out.split('\n')[0] || '').slice(0, 40);
+    } catch (e) { ok = cmdExists(cmd); } // --version 失败但命令存在也算装了
+    map[a.id] = { ok, version };
+  });
+  return map;
+}
+
+module.exports = { listFilesIn, importDataDir, buildAdapters, scanAgents, recoverZombies, checkHealth };

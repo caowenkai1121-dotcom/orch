@@ -665,6 +665,10 @@ class Maestro extends MaestroBase {
     v.isApps = this.state.screen === 'apps';
     if (v.nav) v.nav.apps = this.navFor(this.state.screen === 'apps');
     v.goApps = () => this.goApps();
+    // 执行器健康(Agent 团队页)
+    if (this.state.screen === 'agents' && !this.live.health) { this.live.health = {}; this.fetchHealth(); }
+    v.execHealth = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => { const h = (this.live.health || {})[a.id] || {}; return { name: a.name, bg: h.ok ? '#E4F4EA' : '#FBE9E7', c: h.ok ? '#1F7A46' : '#B4541E', label: h.ok ? ('✓ ' + (h.version || '可用')) : '✗ 未检测到' }; });
+    v.refreshHealth = () => this.fetchHealth(true);
     const openApp = this.state.openApp;
     v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
     v.closeApp = () => this.setState({ openApp: null });
@@ -703,6 +707,7 @@ class Maestro extends MaestroBase {
   }
   openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
   downloadZip() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/download/' + id, '_blank'); }
+  fetchHealth(refresh) { fetch('/api/health' + (refresh ? '?refresh=1' : '')).then((r) => r.json()).then((h) => { this.live.health = h || {}; this.scheduleRender(); }).catch(() => {}); }
   goApps() { this.setState({ screen: 'apps', openApp: null }); }
   publishApp() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
