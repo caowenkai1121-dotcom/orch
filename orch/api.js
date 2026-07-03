@@ -108,7 +108,7 @@ function buildAll(store, user) {
   const deptPools = store.allDeptExecutors();
   const depts = store.listDepts().map((d) => {
     const id = d.id;
-    const employees = allRoles.filter((r) => r.dept === id).map((r) => ({ id: r.id, name: r.name, emoji: r.emoji || '🧑‍💼', description: r.description || '', executor: r.executor || 'claude' }));
+    const employees = allRoles.filter((r) => r.dept === id).map((r) => { const dn = r.done_count || 0, en = r.empty_count || 0; return { id: r.id, name: r.name, emoji: r.emoji || '🧑‍💼', description: r.description || '', executor: r.executor || 'claude', doneN: dn, emptyN: en, perf: (dn + en) >= 2 ? (dn + '落盘' + (en ? ' · ' + en + '空转' : '')) : '' }; });
     let flow = []; try { flow = JSON.parse(d.flow) || []; } catch (e) {}
     const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '', employees, empN: employees.length, flow, executors: deptPools[id] || [] };
     const myAgents = Object.keys(ROLE).filter((aid) => ROLE[aid].dept === id);
