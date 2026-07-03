@@ -414,6 +414,8 @@ class Maestro extends MaestroBase {
     v.submitTask = () => this.submitTask();
     v.quickLaunch = () => this.quickLaunch();
     v.cloneTask = () => this.cloneTask();
+    v.delTask = () => this.delTask();
+    v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
@@ -1019,6 +1021,11 @@ class Maestro extends MaestroBase {
     el.value = '';
     fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, refine: true }) })
       .then((r) => r.json()).then(() => { this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+  }
+  delTask() {
+    const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
+    if (!t || !window.confirm('删除任务「' + t.title + '」及其全部记录?此操作不可恢复。')) return;
+    fetch('/task/' + id, { method: 'DELETE' }).then((r) => r.json()).then((d) => { if (d.ok) { this.go('tasks'); this.fetchAll(); } else window.alert(d.error || '删除失败'); }).catch(() => {});
   }
   cloneTask() {
     const t = (this.TASKS || []).find((x) => x.id === this.state.taskId);

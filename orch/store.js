@@ -89,6 +89,11 @@ function open(file) {
     deleteSchedule(id) { db.prepare('DELETE FROM schedules WHERE id=?').run(id); },
     deleteApp(id) { db.prepare('DELETE FROM apps WHERE id=?').run(id); },
     setTaskDir(id, dir) { db.prepare('UPDATE tasks SET dir=? WHERE id=?').run(dir, id); },
+    deleteTask(id) { // 级联清任务及其全部关联数据
+      db.prepare('DELETE FROM tasks WHERE id=?').run(id);
+      ['steps', 'logs', 'events', 'usage', 'task_messages'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
+      db.prepare('DELETE FROM apps WHERE task_id=?').run(id); // 已发布应用也移除
+    },
     setTaskDecision(id, stepId, question) { db.prepare('UPDATE tasks SET blocked_step=?, question=? WHERE id=?').run(stepId, question, id); },
     clearTaskDecision(id) { db.prepare('UPDATE tasks SET blocked_step=NULL, question=NULL WHERE id=?').run(id); },
     setStepOutput(taskId, stepId, output) { db.prepare('UPDATE steps SET output=? WHERE task_id=? AND step_id=?').run(output, taskId, stepId); },

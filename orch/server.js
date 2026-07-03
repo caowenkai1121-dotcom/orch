@@ -327,6 +327,17 @@ app.post('/task/:id/rerun', (req, res) => {
   runnerMod.rerunStep(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, stepId);
 });
 
+// 删除任务(+全部关联数据);运行中需先停
+app.delete('/task/:id', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能删除,请先停止' });
+  store.deleteTask(id);
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true });
+});
+
 // 重试失败步骤:已完成的不重跑(限额/临时故障恢复后续跑)
 app.post('/task/:id/retry', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);

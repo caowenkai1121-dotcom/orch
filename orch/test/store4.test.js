@@ -57,3 +57,18 @@ test('员工经验去重:高度相似不重复记', () => {
   const memo = s.getRole(rid).memo.split('\n').filter(Boolean);
   assert.equal(memo.length, 2);
 });
+
+test('删除任务:级联清 steps/logs/events/usage/msgs/apps', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('删我', '默认项目', 'admin', {});
+  s.setStep(id, 'a', 'claude', 'done', 'x'); s.addLog(id, 'a', 'log'); s.addEvent(id, 'status', {});
+  s.addUsage(id, 'a', 'claude', { input: 1, output: 1, cost: 0 }); s.addTaskMsg(id, 'user', 'hi');
+  s.setTaskDir(id, '/x'); s.addApp({ name: 'app', taskId: id, dir: '/x', entry: 'i.html' });
+  s.deleteTask(id);
+  assert.equal(s.getTask(id), null);
+  assert.equal(s.getLogs(id).length, 0);
+  assert.equal(s.getEvents(id).length, 0);
+  assert.equal(s.getTaskMsgs(id).length, 0);
+  assert.equal(s.listApps().filter((a) => a.task_id === id).length, 0);
+});
