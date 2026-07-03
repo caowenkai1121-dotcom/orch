@@ -1224,16 +1224,23 @@ class Maestro extends MaestroBase {
   }
   pickWho() { this.setState({ modal: 'who' }); }
   currentName() { const c = (this.PEOPLE || []).find((p) => p.id === this.state.currentPersonId); return c ? c.name : ((this.PEOPLE[0] && this.PEOPLE[0].name) || '操作者'); }
-  onSearchKey(e) { if (e.key === 'Enter') { const q = (e.currentTarget.value || '').trim(); if (q) this.go('search', { q }); } }
+  onSearchKey(e) { if (e.key === 'Enter') { const q = (e.currentTarget.value || '').trim(); if (q) { this.go('search', { q }); this.fetchSearchContent(q); } } }
+  fetchSearchContent(q) { fetch('/api/search?q=' + encodeURIComponent(q)).then((r) => r.ok ? r.json() : []).then((rows) => { this.live.searchContent = Array.isArray(rows) ? rows : []; this.live.searchContentQ = q; this.scheduleRender(); }).catch(() => {}); }
   searchResults(q) {
     const lc = q.toLowerCase();
     const hit = (s) => String(s || '').toLowerCase().includes(lc);
     const groups = [];
+    const titleIds = new Set(this.TASKS.filter((t) => hit(t.title) || hit(t.proj)).map((t) => t.id));
     const tasks = this.TASKS.filter((t) => hit(t.title) || hit(t.proj)).map((t) => ({ title: t.title, sub: t.proj, open: () => this.go('task', { taskId: t.id }) }));
     const agents = this.AGENTS.filter((a) => hit(a.name) || hit(a.id)).map((a) => ({ title: a.name, sub: a.model || '', open: () => this.go('agent', { agentId: a.id }) }));
     const projects = this.PROJECTS.filter((p) => hit(p.name) || hit(p.client)).map((p) => ({ title: p.name, sub: p.client || '', open: () => this.go('project', { projectId: p.id }) }));
     const people = this.PEOPLE.filter((p) => hit(p.name) || hit(p.role)).map((p) => ({ title: p.name, sub: p.role || '', open: () => this.go('people') }));
     if (tasks.length) groups.push({ label: '任务', items: tasks });
+    // 任务内容命中(后端搜产出);排除已在标题命中的,附命中片段
+    const content = (this.live.searchContentQ === q ? (this.live.searchContent || []) : [])
+      .filter((t) => !titleIds.has(t.id))
+      .map((t) => ({ title: t.text, sub: t.snip ? ('…' + t.snip + '…') : (t.project || ''), open: () => this.go('task', { taskId: t.id }) }));
+    if (content.length) groups.push({ label: '任务内容命中', items: content });
     if (agents.length) groups.push({ label: 'Agent', items: agents });
     if (projects.length) groups.push({ label: '项目', items: projects });
     if (people.length) groups.push({ label: '人员', items: people });

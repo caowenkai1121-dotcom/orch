@@ -253,6 +253,14 @@ app.post('/task/:id/continue', (req, res) => {
   }, text);
 });
 
+// 内容搜索:任务需求+产出里搜关键词(仅可见任务)
+app.get('/api/search', (req, res) => {
+  const q = ((req.query.q || '') + '').trim();
+  if (!q) return res.json([]);
+  const rows = store.searchContent(q, 40).filter((t) => canSeeTask(req.user, store.getTask(t.id)));
+  res.json(rows.slice(0, 20));
+});
+
 // 配置备份导出(admin):角色/部门/剧本/自定义Agent → JSON,换库/重置后可留存定制
 app.get('/api/export/config', adminOnly, (req, res) => {
   const cfg = {

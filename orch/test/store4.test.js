@@ -291,3 +291,19 @@ test('配置导入:恢复角色含memo+部门flow', () => {
   assert.ok(d);
   assert.match(d.flow || '', /custom-role/);
 });
+
+test('内容搜索:匹配任务需求与步骤产出', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const a = s.createTask('做个登录页', '默认项目', 'admin', {});
+  const b = s.createTask('别的任务', '默认项目', 'admin', {});
+  s.setStep(b, 'x', 'claude', 'done', '实现了 OAuth 授权登录流程 xyz');
+  // 搜 "登录":a 标题命中,b 产出命中
+  const r = s.searchContent('登录', 30);
+  const ids = r.map((x) => x.id);
+  assert.ok(ids.includes(a));
+  assert.ok(ids.includes(b));
+  // b 是产出命中,应有 snippet
+  const rb = r.find((x) => x.id === b);
+  assert.match(rb.snip, /OAuth/);
+});

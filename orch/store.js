@@ -137,6 +137,19 @@ function open(file) {
     getLogs(taskId) {
       return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);
     },
+    // 内容搜索:任务需求 + 各步产出里匹配关键词,返回匹配任务(带命中片段)
+    searchContent(q, limit) {
+      const like = '%' + q + '%';
+      const rows = db.prepare('SELECT DISTINCT t.id, t.text, t.project, t.owner, t.status FROM tasks t LEFT JOIN steps s ON s.task_id=t.id WHERE t.text LIKE ? OR s.output LIKE ? ORDER BY t.id DESC LIMIT ?').all(like, like, limit || 30);
+      return rows.map((t) => {
+        let snip = '';
+        if (!String(t.text || '').toLowerCase().includes(q.toLowerCase())) {
+          const st = db.prepare('SELECT output FROM steps WHERE task_id=? AND output LIKE ? LIMIT 1').get(t.id, like);
+          if (st && st.output) { const i = st.output.toLowerCase().indexOf(q.toLowerCase()); snip = st.output.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); }
+        }
+        return { id: t.id, text: t.text, project: t.project, owner: t.owner, status: t.status, snip };
+      });
+    },
     allSteps() {
       return db.prepare('SELECT * FROM steps').all();
     },
