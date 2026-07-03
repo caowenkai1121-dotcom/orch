@@ -196,3 +196,17 @@ test('需求细化启发式:长需求跳过refine,短需求细化', async () => 
   await makePlan(longText, { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude: fakeClaude });
   assert.equal(refineCalled, 0);
 });
+
+test('sanitizeDeps 归一化畸形 steps(防execute崩)', () => {
+  const { sanitizeDeps } = require('../planner');
+  // steps 非数组
+  assert.deepEqual(sanitizeDeps({ steps: 'foo' }).steps, []);
+  // steps 缺失
+  assert.deepEqual(sanitizeDeps({}).steps, []);
+  // plan 非对象
+  assert.deepEqual(sanitizeDeps(null).steps, []);
+  // 含非法项(null/无id)被剔除,合法保留
+  const p = sanitizeDeps({ steps: [null, { foo: 1 }, { id: 'a', deps: [] }, 'x'] });
+  assert.equal(p.steps.length, 1);
+  assert.equal(p.steps[0].id, 'a');
+});

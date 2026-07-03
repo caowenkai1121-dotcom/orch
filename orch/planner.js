@@ -158,7 +158,11 @@ function relevantMemo(memo, taskText, keep) {
 
 // 依赖健全化:剔除指向不存在步骤的依赖、自依赖,拓扑排序断环(防 runPlan 静默卡死)
 function sanitizeDeps(plan) {
-  const steps = (plan && plan.steps) || [];
+  if (!plan || typeof plan !== 'object') return { steps: [] };
+  // 用户编辑的计划可能 steps 非数组或含非法项 → 归一化为合法步骤数组(防 execute 崩)
+  if (!Array.isArray(plan.steps)) plan.steps = [];
+  plan.steps = plan.steps.filter((s) => s && typeof s === 'object' && s.id != null);
+  const steps = plan.steps;
   const ids = new Set(steps.map((s) => s.id));
   steps.forEach((s) => { s.deps = (s.deps || []).filter((d) => d !== s.id && ids.has(d)); });
   // 检测环:能拓扑排完则无环;排不动的步骤,清空其依赖(打断环,至少能跑)
