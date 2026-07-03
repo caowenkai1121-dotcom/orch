@@ -243,7 +243,7 @@ app.post('/task/:id/continue', (req, res) => {
   res.json({ id });
   require('./runner').continueTask(id, {
     store, adapters, workspace: { make: () => dir }, runs,
-    makePlan: (txt) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude }),
+    makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
     onEvent: broadcast,
   }, text);
 });
@@ -312,7 +312,7 @@ app.post('/task/:id/message', (req, res) => {
   res.json({ ok: true, mode: 'continue' });
   runnerMod.continueTask(id, {
     store, adapters, workspace: { make: () => (t.dir || ROOT) }, runs,
-    makePlan: (txt) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude }),
+    makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
     onEvent: broadcast,
   }, text);
 });

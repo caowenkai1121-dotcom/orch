@@ -209,13 +209,15 @@ function scheduleAutoRetry(taskId, deps) {
 
 // 继续开发:在原任务上追加新一轮步骤(不新建任务),复用产出目录
 async function continueTask(taskId, deps, text) {
-  const { store } = deps;
+  const { store, runs } = deps;
   const t = store.getTask(taskId);
   store.setTaskStatus(taskId, 'planning');
+  const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(taskId)));
   let cur = {}; try { cur = JSON.parse(t.plan); } catch (e) { cur = { steps: [] }; }
   cur.steps = cur.steps || [];
   const context = '【继续开发】当前工作目录已有之前产出的文件,先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
-  const fresh = await deps.makePlan(context);
+  const fresh = await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined);
+  if (rec && rec.cancelled) return; // 规划期间被取消
   const pfx = 'c' + ((t.steps || []).length + 1) + '_'; // 新一轮步骤 id 前缀,防与旧步骤冲突
   const ids = new Set();
   const collectIds = (arr) => (arr || []).forEach((s) => { ids.add(s.id); if (s.body) collectIds(s.body); });
