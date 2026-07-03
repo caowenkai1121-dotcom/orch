@@ -706,6 +706,7 @@ class Maestro extends MaestroBase {
     v.continueFromDiff = () => this.continueFromDiff();
     v.downloadZip = () => this.downloadZip();
     v.downloadReport = () => this.downloadReport();
+    v.copyPreview = () => this.copyPreview();
     // #发布/继续
     v.canPublish = !!(curT && curT.sk === 'done' && this.state.me && this.state.me.admin && this.live.filesFor === this.state.taskId && (this.live.files || []).some((f) => /\.html$/i.test(f.path))); // 仅管理员可发布
     v.publishApp = () => this.publishApp();
@@ -796,6 +797,11 @@ class Maestro extends MaestroBase {
   openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
   downloadZip() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/download/' + id, '_blank'); }
   downloadReport() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/report/' + id, '_blank'); }
+  copyPreview() {
+    const p = this.previewOf(this.state.taskId); const txt = p && p.text;
+    if (txt == null) return;
+    try { navigator.clipboard.writeText(txt).then(() => this.toast('📋 已复制到剪贴板'), () => this.toast('✗ 复制失败')); } catch (e) { this.toast('✗ 复制失败'); }
+  }
   fetchHealth(refresh) { fetch('/api/health' + (refresh ? '?refresh=1' : '')).then((r) => r.json()).then((h) => { this.live.health = h || {}; this.scheduleRender(); }).catch(() => {}); }
   goApps() { this.setState({ screen: 'apps', openApp: null }); }
   publishApp() {
