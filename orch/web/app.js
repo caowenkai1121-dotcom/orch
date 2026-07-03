@@ -436,6 +436,8 @@ class Maestro extends MaestroBase {
     v.delTask = () => this.delTask();
     v.replanTask = () => this.replanTask();
     v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
+    v.projQuickLaunch = () => this.projQuickLaunch();
+    v.onProjQuickKey = (e) => { if (e.key === 'Enter') this.projQuickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
     if (this.state.modal === 'task' && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
@@ -1062,6 +1064,15 @@ class Maestro extends MaestroBase {
     };
     const have = new Set((this.AGENTS || []).map((a) => a.id));
     return Object.keys(CAT).filter((id) => have.has(id)).map((id) => ({ agent: id, ...CAT[id] }));
+  }
+  // 项目内快捷下发:任务归属当前项目
+  projQuickLaunch() {
+    const el = document.getElementById('pql-input'); const text = el ? el.value.trim() : '';
+    const proj = this.PROJECTS.find((p) => p.id === this.state.projectId);
+    if (!text || !proj) return;
+    el.value = '';
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, project: proj.name, refine: true }) })
+      .then((r) => r.json()).then(() => { this.toast('✓ 已在「' + proj.name + '」下发'); setTimeout(() => this.fetchAll(), 300); }).catch(() => this.toast('✗ 下发失败'));
   }
   // 快捷下发:一行描述→全默认智能拆分建任务(免弹窗)
   quickLaunch() {
