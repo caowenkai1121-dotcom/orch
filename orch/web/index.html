@@ -408,6 +408,7 @@
           <div style="flex:1;min-width:0;">
             <div style="font-size:13px;font-weight:650;color:#B4541E;">✗ 失败于步骤「{{ failBanner.step }}」</div>
             <div style="font-size:12px;color:#8a5a44;margin-top:5px;line-height:1.55;font-family:'JetBrains Mono',monospace;word-break:break-all;">{{ failBanner.msg }}</div>
+            <sc-if value="{{ failBanner.hint }}"><div style="font-size:12px;color:#6B6760;margin-top:8px;line-height:1.5;">{{ failBanner.hint }}</div></sc-if>
           </div>
           <sc-if value="{{ canRetry }}"><button onClick="{{ retryTask }}" style="flex:none;height:32px;padding:0 14px;border-radius:8px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">↻ 重试</button></sc-if>
         </div>

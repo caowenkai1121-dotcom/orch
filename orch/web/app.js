@@ -632,7 +632,8 @@ class Maestro extends MaestroBase {
     if (curT && curT.sk === 'failed') {
       const bad = (this.RELAY || []).filter((s) => s.back || s.sk === 'failed');
       const last = bad.length ? bad[bad.length - 1] : null;
-      v.failBanner = last ? { step: last.title, msg: String(last.desc || '').replace(/\s+/g, ' ').slice(-240) } : { step: '', msg: '任务失败,可点「重试失败步骤」续跑。' };
+      const msg = last ? String(last.desc || '').replace(/\s+/g, ' ').slice(-240) : '';
+      v.failBanner = last ? { step: last.title, msg, hint: this.diagnose(last.desc || '') } : { step: '', msg: '任务失败,可点「重试失败步骤」续跑。', hint: '' };
     } else v.failBanner = null;
     v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
     v.approveTask = () => this.approveTask();
@@ -1077,6 +1078,16 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
     if (!t || !window.confirm('推翻「' + t.title + '」的当前计划,按原需求重新拆分执行?已有产出文件保留,但进度重置。')) return;
     fetch('/task/' + id + '/replan', { method: 'POST' }).then((r) => r.json()).then((d) => { if (d.ok) { this.toast('🔄 正在重新规划'); this.fetchAll(); } else this.toast('✗ ' + (d.error || '失败')); }).catch(() => {});
+  }
+  // 失败错误启发式诊断:给操作者可执行建议(零 LLM)
+  diagnose(err) {
+    const s = String(err || '');
+    if (/rate limit|usage limit|session limit|429/i.test(s)) return '💡 执行器限额,系统通常会自动排定重试(最多2次),也可稍后手动重试。';
+    if (/超时|timeout|timed out/i.test(s)) return '💡 步骤执行超时。可能任务太大,可拆成更小的需求重新下发,或重试。';
+    if (/cannot find module|module not found|no such file|命令未找到|not found|command not found/i.test(s)) return '💡 缺少依赖/文件。产出可能引用了未安装的包,重试时员工会尝试补齐。';
+    if (/permission|denied|EACCES|EPERM/i.test(s)) return '💡 权限问题。检查产出目录写权限或执行器配置。';
+    if (/ENOENT|network|ECONN|fetch failed|getaddrinfo/i.test(s)) return '💡 网络/文件访问失败,通常是临时问题,重试即可。';
+    return '💡 点「重试失败步骤」续跑(已完成步骤不重跑),员工会看到上次失败原因换思路。';
   }
   cleanupTasks(n) {
     if (!n || !window.confirm('清理 ' + n + ' 个失败/取消的任务及其记录?此操作不可恢复(产出文件保留在磁盘)。')) return;
