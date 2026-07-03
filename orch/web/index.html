@@ -500,7 +500,7 @@
         <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">
           <span style="width:46px;height:46px;flex:none;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;font-family:'JetBrains Mono',monospace;background:{{ dept.color }};box-shadow:0 6px 16px {{ dept.soft }};">{{ dept.glyph }}</span>
           <div style="flex:1;"><h1 style="font-size:20px;font-weight:700;margin:0;">{{ dept.name }}</h1><div style="font-size:13px;color:#8A857C;margin-top:3px;">{{ dept.desc }} · 负责人 <b style="color:#3C3933;">{{ dept.lead }}</b></div></div>
-          <button onClick="{{ goOrch }}" style="height:34px;padding:0 13px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">下发部门任务</button>
+          <button onClick="{{ newDeptTask }}" style="height:34px;padding:0 13px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">下发部门任务</button>
         </div>
 
         <div style="display:flex;gap:10px;margin-bottom:20px;">
@@ -529,6 +529,45 @@
             </div>
           </div>
         </sc-if>
+
+        <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:15px 17px;margin-bottom:18px;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px;">
+            <span style="font-size:13.5px;font-weight:650;">标准作业流程</span>
+            <span style="font-size:11.5px;color:#A39E94;">部门任务按此顺序拆分 · 可选环节由总调度按需取舍 · 质量门失败退回重做</span>
+          </div>
+          <sc-if value="{{ hasFlow }}">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <sc-for list="{{ deptFlow }}" as="f">
+              <div style="display:flex;align-items:center;gap:6px;border:1px solid #ECEAE4;background:#FBFAF8;border-radius:9px;padding:6px 9px;">
+                <span style="font-size:11px;color:#B6B1A7;font-family:'JetBrains Mono',monospace;">{{ f.n }}</span>
+                <span style="font-size:13px;">{{ f.emoji }}</span>
+                <span style="font-size:12.5px;font-weight:600;">{{ f.name }}</span>
+                <button onClick="{{ f.tOpt }}" title="切换 必经/可选" style="font-size:10px;font-weight:600;border:none;cursor:pointer;color:{{ f.optC }};background:{{ f.optBg }};padding:2px 7px;border-radius:6px;font-family:inherit;">{{ f.optLabel }}</button>
+                <sc-if value="{{ f.gate }}"><button onClick="{{ f.tGate }}" title="质量门:FAIL 退回重做" style="font-size:10px;font-weight:600;border:none;cursor:pointer;color:#8a6d00;background:#FFF6D6;padding:2px 7px;border-radius:6px;font-family:inherit;">🚦 质量门</button></sc-if>
+                <sc-if value="{{ f.notGate }}"><button onClick="{{ f.tGate }}" title="设为质量门" style="font-size:10px;border:none;cursor:pointer;color:#C9C4BA;background:transparent;padding:2px 3px;font-family:inherit;">🚦</button></sc-if>
+                <sc-if value="{{ isAdmin }}">
+                  <button onClick="{{ f.up }}" style="border:none;background:transparent;cursor:pointer;color:#B6B1A7;font-size:11px;padding:0 2px;">◀</button>
+                  <button onClick="{{ f.down }}" style="border:none;background:transparent;cursor:pointer;color:#B6B1A7;font-size:11px;padding:0 2px;">▶</button>
+                  <button onClick="{{ f.del }}" style="border:none;background:transparent;cursor:pointer;color:#C9C4BA;font-size:11px;padding:0 2px;" style-hover="color:#B4541E">✕</button>
+                </sc-if>
+              </div>
+              <sc-if value="{{ f.notLast }}"><span style="color:#C9C5BB;font-size:13px;">→</span></sc-if>
+            </sc-for>
+          </div>
+          </sc-if>
+          <sc-if value="{{ noFlow }}"><div style="font-size:12.5px;color:#A39E94;">尚未设置流程,任务将由总调度自由指派本部门员工。</div></sc-if>
+          <sc-if value="{{ isAdmin }}">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:11px;">
+            <select id="flow-add" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 8px;font-family:inherit;font-size:12px;">
+              <sc-for list="{{ flowAddOpts }}" as="o"><option value="{{ o.id }}">{{ o.name }}</option></sc-for>
+            </select>
+            <button onClick="{{ addFlowStep }}" style="height:30px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">+ 加入流程</button>
+            <div style="flex:1;"></div>
+            <span style="font-size:11.5px;color:#A39E94;">执行器池({{ deptPoolHint }}):</span>
+            <sc-for list="{{ deptExecs }}" as="x"><button onClick="{{ x.toggle }}" style="height:26px;padding:0 10px;border-radius:7px;border:1px solid {{ x.bd }};background:{{ x.bg }};font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;">{{ x.name }}</button></sc-for>
+          </div>
+          </sc-if>
+        </div>
 
         <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 12px;">
           <span style="font-size:13.5px;font-weight:650;">部门员工</span><span style="font-size:11.5px;color:#A39E94;">任务由编排器拆分给最合适的员工执行 · {{ deptEmpN }} 名</span>
@@ -738,6 +777,7 @@
   <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:50;">
     <div style="background:#fff;border-radius:16px;padding:22px;width:480px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
       <div style="font-size:16px;font-weight:700;margin-bottom:14px;">新建任务</div>
+      <sc-if value="{{ isDeptTask }}"><div style="display:flex;align-items:center;gap:7px;background:#FFF6D6;border:1px solid #F3E2A0;border-radius:9px;padding:7px 11px;margin-bottom:11px;font-size:12.5px;color:#8a6d00;"><b>部门任务 · {{ taskDeptName }}</b><span style="color:#A8925A;">只用本部门员工,按部门标准流程拆分</span></div></sc-if>
       <textarea id="nt-text" placeholder="描述目标,例如:开发一个电商公司官网首页" style="width:100%;height:90px;border:1px solid #E6E3DC;border-radius:9px;padding:10px;font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
       <select id="nt-proj-sel" style="width:100%;margin-top:10px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
         <option value="">默认项目</option>

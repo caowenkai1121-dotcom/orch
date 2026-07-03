@@ -53,3 +53,26 @@ test('显式单执行器+无编排:仍单步直做(不走员工模式)', async (
   assert.equal(plan.steps[0].agent, 'claude');
   assert.equal(plan.steps[0].role, undefined);
 });
+
+test('部门任务:只用该部门员工,流程规范注入调度提示', async () => {
+  const roles = [
+    { id: 'engineering-rapid-prototyper', dept: 'engineering', name: '快速原型', description: '', prompt: 'p1', executor: 'claude' },
+    { id: 'marketing-content-creator', dept: 'marketing', name: '内容创作', description: '', prompt: 'p2', executor: 'claude' },
+  ];
+  const depts = [{ id: 'engineering', name: '工程部', flow: JSON.stringify([{ role: 'engineering-rapid-prototyper', optional: false, gate: false }]) }];
+  const fakeClaude = { async run({ prompt }) {
+    assert.match(prompt, /部门任务/);        // 部门模式指令
+    assert.match(prompt, /标准流程/);        // 流程规范注入
+    assert.ok(!/marketing-content-creator/.test(prompt)); // 其它部门员工不在目录
+    return { output: '{"steps":[{"id":"s1","role":"engineering-rapid-prototyper","prompt":"x","deps":[]}]}', success: true };
+  } };
+  const plan = await makePlan('做原型', { agents: ['claude'], dept: 'engineering', roles, depts, refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(plan.steps[0].role, 'engineering-rapid-prototyper');
+});
+
+test('部门执行器池:员工执行器不在池内则用池内执行器', async () => {
+  const roles = [{ id: 'r1', dept: 'engineering', name: 'x', description: '', prompt: 'p', executor: 'claude' }];
+  const fakeClaude = { async run() { return { output: '{"steps":[{"id":"a","role":"r1","prompt":"x","deps":[]}]}', success: true }; } };
+  const plan = await makePlan('活', { agents: ['claude', 'gemini'], roles, depts: [], deptPools: { engineering: ['gemini'] }, refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(plan.steps[0].agent, 'gemini'); // 池限定 gemini → claude 被替换
+});

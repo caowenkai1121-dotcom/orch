@@ -33,6 +33,8 @@ function open(file) {
     CREATE TABLE IF NOT EXISTS roles(
       id TEXT PRIMARY KEY, dept TEXT, name TEXT, emoji TEXT,
       description TEXT, prompt TEXT, executor TEXT);
+    CREATE TABLE IF NOT EXISTS dept_agents(
+      dept TEXT, agent_id TEXT, PRIMARY KEY(dept, agent_id));
     CREATE TABLE IF NOT EXISTS project_grants(
       project TEXT, user_id TEXT, PRIMARY KEY(project, user_id));
     CREATE TABLE IF NOT EXISTS events(
@@ -47,6 +49,7 @@ function open(file) {
   ensureCol('people', 'admin', 'INTEGER');
   ensureCol('projects', 'owner', 'TEXT');
   ensureCol('agents', 'kind', 'TEXT');
+  ensureCol('departments', 'flow', 'TEXT');
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
@@ -133,7 +136,17 @@ function open(file) {
       db.prepare('INSERT OR REPLACE INTO departments(id,name,glyph,color,created_at) VALUES(?,?,?,?,?)').run(id, d.name || id, d.glyph || '·', d.color || '#7C6FD9', new Date().toISOString());
       return id;
     },
-    deleteDept(id) { db.prepare('DELETE FROM departments WHERE id=?').run(id); },
+    deleteDept(id) { db.prepare('DELETE FROM departments WHERE id=?').run(id); db.prepare('DELETE FROM dept_agents WHERE dept=?').run(id); },
+    setDeptFlow(id, flow) { db.prepare('UPDATE departments SET flow=? WHERE id=?').run(JSON.stringify(flow || []), id); },
+    deptFlow(id) { const r = db.prepare('SELECT flow FROM departments WHERE id=?').get(id); try { return JSON.parse(r && r.flow) || []; } catch (e) { return []; } },
+    // 部门执行器池:该部门任务只能用这些执行器(空=不限)
+    setDeptExecutors(dept, ids) {
+      db.prepare('DELETE FROM dept_agents WHERE dept=?').run(dept);
+      const ins = db.prepare('INSERT OR IGNORE INTO dept_agents(dept,agent_id) VALUES(?,?)');
+      (ids || []).forEach((a) => ins.run(dept, a));
+    },
+    deptExecutors(dept) { return db.prepare('SELECT agent_id FROM dept_agents WHERE dept=?').all(dept).map((r) => r.agent_id); },
+    allDeptExecutors() { const m = {}; db.prepare('SELECT * FROM dept_agents').all().forEach((r) => { (m[r.dept] = m[r.dept] || []).push(r.agent_id); }); return m; },
     // 角色(部门员工)
     listRoles() { return db.prepare('SELECT * FROM roles ORDER BY dept, id').all(); },
     getRole(id) { return db.prepare('SELECT * FROM roles WHERE id=?').get(id); },
@@ -184,11 +197,10 @@ function open(file) {
       if (!db.prepare("SELECT 1 FROM people WHERE name='admin'").get()) {
         this.addPerson({ id: 'admin', name: 'admin', role: '管理员', email: 'admin@local', password: 'admin', admin: 1 });
       }
-      // 部门 seed(agency-agents-zh 分类学;dev/qa 兼容旧执行器归属)
-      if (db.prepare('SELECT COUNT(*) n FROM departments').get().n === 0) {
-        this.addDept({ id: 'dev', name: '开发部', glyph: '</>', color: '#7C6FD9' });
-        this.addDept({ id: 'qa', name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8' });
-      }
+      // 迁移:dev/qa 旧部门并入 工程部/测试部(执行器归属跟随)
+      db.prepare("UPDATE agents SET dept='engineering' WHERE dept='dev'").run();
+      db.prepare("UPDATE agents SET dept='testing' WHERE dept='qa'").run();
+      db.prepare("DELETE FROM departments WHERE id IN ('dev','qa')").run();
       const DEPTS = [
         ['engineering', '工程部', '</>', '#7C6FD9'], ['design', '设计部', '✎', '#2FAE9E'],
         ['product', '产品部', '◧', '#E0922E'], ['testing', '测试部', '✓', '#4F8BE8'],
@@ -205,15 +217,22 @@ function open(file) {
         if (!db.prepare('SELECT 1 FROM departments WHERE id=?').get(id)) this.addDept({ id, name, glyph, color });
       });
       // 员工种子:roles-seed.json(由 agency-agents-zh 原文压缩生成)
-      if (db.prepare('SELECT COUNT(*) n FROM roles').get().n === 0) {
-        try {
-          const seed = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'roles-seed.json'), 'utf8'));
-          seed.forEach((d) => (d.employees || []).forEach((e) => this.addRole({
-            id: e.id, dept: d.dept, name: e.name, emoji: e.emoji, description: e.description, prompt: e.prompt,
-            executor: d.dept === 'testing' ? 'codex' : 'claude',
-          })));
-        } catch (e) { /* 种子文件缺失则跳过 */ }
-      }
+      // seedVersion 升级时覆盖已有员工卡(深度升级);用户自建员工(id 不在种子内)不动
+      try {
+        const seed = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'roles-seed.json'), 'utf8'));
+        const ver = String(seed.version || 1);
+        const cur = (db.prepare("SELECT data FROM events WHERE task_id=0 AND type='seed_roles' ORDER BY id DESC LIMIT 1").get() || {}).data;
+        if (cur !== JSON.stringify(ver)) {
+          (seed.depts || seed).forEach((d) => {
+            (d.employees || []).forEach((e) => this.addRole({
+              id: e.id, dept: d.dept, name: e.name, emoji: e.emoji, description: e.description, prompt: e.prompt,
+              executor: d.dept === 'testing' ? 'codex' : 'claude',
+            }));
+            if (d.flow && d.flow.length && !this.deptFlow(d.dept).length) this.setDeptFlow(d.dept, d.flow);
+          });
+          this.addEvent(0, 'seed_roles', ver);
+        }
+      } catch (e) { /* 种子文件缺失则跳过 */ }
       // 迁移回填:旧库 people 无密码/admin
       db.prepare("UPDATE people SET password=? WHERE password IS NULL").run(hashPw('admin'));
       if (db.prepare('SELECT COUNT(*) n FROM people WHERE admin=1').get().n === 0) {

@@ -19,7 +19,11 @@ const ASK = '[自动编排] 你在编排器中自动执行。优先自行采用�
 async function runStep(step, ctx, prevOutput) {
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
-  const base = step.prompt.replace('{prev}', (prevOutput || '').slice(-4000));
+  // {prev} 占位替换;无占位但有上游产出 → 自动前置交接(员工模式 LLM 生成的步骤走这里)
+  const prevTxt = (prevOutput || '').slice(-4000);
+  const base = step.prompt.indexOf('{prev}') >= 0
+    ? step.prompt.replace('{prev}', prevTxt)
+    : (prevTxt ? '【上游交接】\n' + prevTxt + '\n\n' + step.prompt : step.prompt);
   const answer = ctx.answers && ctx.answers[step.id]; // 续跑时注入用户决策
   const prompt = (ctx.preamble || AUTONOMY) + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
   const workdir = await ctx.workspace.make(step.id);
@@ -71,7 +75,9 @@ async function runPlan(plan, ctx) {
     await Promise.all(wave.map(async (s) => {
       started.add(s.id);
       if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
-      const prev = s.deps.length ? done[s.deps[0]]?.output : '';
+      // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘
+      const prev = s.deps.length === 1 ? (done[s.deps[0]]?.output || '')
+        : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');
       const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
       if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
       done[s.id] = r;

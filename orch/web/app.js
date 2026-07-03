@@ -494,6 +494,28 @@ class Maestro extends MaestroBase {
     v.modalHire = this.state.modal === 'hire';
     v.submitHire = () => this.submitHire();
     v.execOpts = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => ({ id: a.id, name: a.name }));
+    // —— 部门工作流程(可编辑) + 执行器池 + 部门任务 ——
+    v.newDeptTask = () => this.newDeptTask();
+    const empName = {}; (v.deptEmployees || []).forEach((e) => { empName[e.id] = e; });
+    v.deptFlow = ((curD && curD.flow) || []).map((s, i, arr) => ({
+      n: i + 1, name: (empName[s.role] || {}).name || s.role, emoji: (empName[s.role] || {}).emoji || '·',
+      optLabel: s.optional ? '可选' : '必经', optBg: s.optional ? '#F0EEE9' : '#E4F4EA', optC: s.optional ? '#6B6760' : '#1F7A46',
+      gate: !!s.gate, notGate: !s.gate, notLast: i < arr.length - 1,
+      up: () => this.moveFlow(i, -1), down: () => this.moveFlow(i, 1),
+      tOpt: () => this.toggleFlowFlag(i, 'optional'), tGate: () => this.toggleFlowFlag(i, 'gate'), del: () => this.delFlowStep(i),
+    }));
+    v.hasFlow = v.deptFlow.length > 0;
+    v.noFlow = !v.hasFlow;
+    v.addFlowStep = () => this.addFlowStep();
+    v.flowAddOpts = v.deptEmployees.map((e) => ({ id: e.id, name: e.name }));
+    v.deptExecs = ((this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli')).map((a) => {
+      const on = ((curD && curD.executors) || []).indexOf(a.id) >= 0;
+      return { id: a.id, name: a.name, on, bd: on ? '#B9E2C8' : '#E6E3DC', bg: on ? '#E4F4EA' : '#fff', toggle: () => this.toggleDeptExec(a.id) };
+    });
+    v.deptPoolHint = ((curD && curD.executors) || []).length ? '本部门任务只用勾选的执行器' : '未限制(可用全部执行器)';
+    // 新建任务弹窗:部门上下文
+    v.taskDeptName = this.state.taskDept ? ((this.DEPTS.find((d) => d.id === this.state.taskDept) || {}).name || '') : '';
+    v.isDeptTask = !!(this.state.modal === 'task' && this.state.taskDept);
     // —— 项目授权(#4):项目详情 ——
     const curProj = this.state.projectId && (this.PROJECTS || []).find((p) => p.id === this.state.projectId);
     v.projAmOwner = !!(curProj && curProj.amOwner);
@@ -666,6 +688,42 @@ class Maestro extends MaestroBase {
       .then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
   }
   fireEmp(id, name) { if (!window.confirm('移除员工「' + name + '」?')) return; fetch('/api/roles/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
+  // —— 部门任务 + 流程编辑 + 执行器池 ——
+  newDeptTask() { this.setState({ modal: 'task', taskDept: this.state.deptId }); }
+  saveFlow(deptId, flow) {
+    fetch('/api/depts/' + deptId + '/flow', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ flow }) })
+      .then(() => this.fetchAll()).catch(() => {});
+  }
+  moveFlow(i, dir) {
+    const d = (this.DEPTS || []).find((x) => x.id === this.state.deptId); if (!d) return;
+    const f = (d.flow || []).slice(); const j = i + dir;
+    if (j < 0 || j >= f.length) return;
+    const t = f[i]; f[i] = f[j]; f[j] = t;
+    this.saveFlow(d.id, f);
+  }
+  toggleFlowFlag(i, key) {
+    const d = (this.DEPTS || []).find((x) => x.id === this.state.deptId); if (!d) return;
+    const f = (d.flow || []).slice(); f[i] = { ...f[i], [key]: !f[i][key] };
+    this.saveFlow(d.id, f);
+  }
+  delFlowStep(i) {
+    const d = (this.DEPTS || []).find((x) => x.id === this.state.deptId); if (!d) return;
+    const f = (d.flow || []).slice(); f.splice(i, 1);
+    this.saveFlow(d.id, f);
+  }
+  addFlowStep() {
+    const d = (this.DEPTS || []).find((x) => x.id === this.state.deptId); if (!d) return;
+    const sel = document.getElementById('flow-add'); const role = sel && sel.value;
+    if (!role) return;
+    this.saveFlow(d.id, (d.flow || []).concat([{ role, optional: false, gate: false }]));
+  }
+  toggleDeptExec(id) {
+    const d = (this.DEPTS || []).find((x) => x.id === this.state.deptId); if (!d) return;
+    const cur = new Set(d.executors || []);
+    cur.has(id) ? cur.delete(id) : cur.add(id);
+    fetch('/api/depts/' + d.id + '/executors', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: [...cur] }) })
+      .then(() => this.fetchAll()).catch(() => {});
+  }
 
   todayStr() {
     const d = new Date();
@@ -736,7 +794,7 @@ class Maestro extends MaestroBase {
   }
 
   // —— 弹窗 ——
-  newTask() { this.setState({ modal: 'task' }); }
+  newTask() { this.setState({ modal: 'task', taskDept: null }); }
   newAgent() { this.setState({ modal: 'agent', editAgent: null }); }
   editCurAgent() { const a = this.AGENTS.find((x) => x.id === this.state.agentId); if (a) this.setState({ modal: 'agent', editAgent: a }); }
   delCurAgent() { const id = this.state.agentId; if (!id || !window.confirm('删除该 Agent?')) return; fetch('/api/agents/' + id, { method: 'DELETE' }).then(() => { this.setState({ screen: 'agents' }); this.fetchAll(); }).catch(() => {}); }
@@ -768,7 +826,7 @@ class Maestro extends MaestroBase {
   }
   newPerson() { this.setState({ modal: 'person', assignPid: null }); }
   assignPerson(pid) { this.setState({ modal: 'person', assignPid: pid }); }
-  closeModal() { this.setState({ modal: null, assignPid: null }); }
+  closeModal() { this.setState({ modal: null, assignPid: null, taskDept: null }); }
 
   submitTask() {
     const text = (document.getElementById('nt-text') || {}).value || '';
@@ -785,8 +843,9 @@ class Maestro extends MaestroBase {
     const agents = [...document.querySelectorAll('.nt-agent:checked')].map((c) => c.value);
     const orchestration = (document.getElementById('nt-orch') || {}).value || '';
     const refine = (document.getElementById('nt-refine') || {}).checked ? 1 : 0;
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine }) })
-      .then((r) => r.json()).then(() => { this.setState({ modal: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+    const dept = this.state.taskDept || null; // 部门任务:按该部门流程拆分
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept }) })
+      .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {
     const g = (id) => (document.getElementById(id) || {}).value || '';

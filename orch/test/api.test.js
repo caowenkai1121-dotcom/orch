@@ -46,7 +46,7 @@ test('buildAll 从真实任务派生 Maestro 总览数据', () => {
   assert.equal(crm.progress, 50);
   assert.equal(crm.sk, 'working');
   assert.equal(crm.agentCount, 2);
-  assert.deepEqual([...crm.depts].sort(), ['dev', 'qa']);
+  assert.deepEqual([...crm.depts].sort(), ['engineering', 'testing']);
   assert.deepEqual(crm.tasks, [taskId]);
 
   const tasks = Object.fromEntries(all.tasks.map((t) => [t.id, t]));
@@ -54,8 +54,8 @@ test('buildAll 从真实任务派生 Maestro 总览数据', () => {
   assert.deepEqual(tasks[taskId].agents.sort(), ['claude', 'codex']);
   assert.equal(tasks[failedId].sk, 'failed');
 
-  assert.equal(all.boards.dev.done.length, 1);
-  assert.equal(all.boards.qa.doing.length, 1);
+  assert.equal(all.boards.engineering.done.length, 1);
+  assert.equal(all.boards.testing.doing.length, 1);
 });
 
 test('relay 返回步骤最新日志和失败回退状态', () => {

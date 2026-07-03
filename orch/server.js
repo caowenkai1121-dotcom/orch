@@ -139,6 +139,10 @@ app.delete('/api/roles/:id', adminOnly, (req, res) => { store.deleteRole(req.par
 app.post('/api/depts', adminOnly, (req, res) => { const id = store.addDept(req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ id }); });
 app.delete('/api/depts/:id', adminOnly, (req, res) => { store.deleteDept(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.post('/api/depts/:id/agents', adminOnly, (req, res) => { ((req.body || {}).agentIds || []).forEach((a) => store.setAgentDept(a, req.params.id)); adapters = buildAdapters(); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+// 部门执行器池:该部门任务只能用这些执行器
+app.post('/api/depts/:id/executors', adminOnly, (req, res) => { store.setDeptExecutors(req.params.id, (req.body || {}).agentIds || []); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+// 部门标准作业流程(可编辑)
+app.put('/api/depts/:id/flow', adminOnly, (req, res) => { store.setDeptFlow(req.params.id, (req.body || {}).flow || []); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 
 // #4 项目授权:项目 owner(有任务在其中)或管理员可授权
 app.post('/api/grant', (req, res) => {
@@ -164,7 +168,7 @@ app.post('/task', (req, res) => {
   const refine = req.body.refine === undefined ? true : !!req.body.refine;
   runTask(id, {
     store, adapters, workspace: ws, runs,
-    makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), orchestration: req.body.orchestration, refine, templatesDir, claude: adapters.claude }),
+    makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), dept: req.body.dept || null, deptPools: store.allDeptExecutors(), orchestration: req.body.orchestration, refine, templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
 });

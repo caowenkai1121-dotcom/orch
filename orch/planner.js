@@ -83,58 +83,72 @@ function validateRoles(plan, roleIds) {
   return plan.steps.every(check);
 }
 
-async function fromLLMRoles(text, claude, roles, depts, orchestration) {
+// 总调度员:最高权限,可调度所有部门所有员工;注入部门流程规范与质量门方法论(参考 agents-orchestrator)
+async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId) {
   const byDept = {};
   roles.forEach((r) => { (byDept[r.dept] = byDept[r.dept] || []).push(r); });
-  const dName = {}; (depts || []).forEach((d) => { dName[d.id] = d.name; });
-  const catalog = Object.keys(byDept).map((d) =>
-    (dName[d] || d) + ': ' + byDept[d].map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')').join('、')
+  const dName = {}; const dFlow = {};
+  (depts || []).forEach((d) => { dName[d.id] = d.name; try { dFlow[d.id] = JSON.parse(d.flow) || []; } catch (e) { dFlow[d.id] = []; } });
+  const flowLine = (d) => {
+    const f = dFlow[d] || [];
+    if (!f.length) return '';
+    const names = {}; (byDept[d] || []).forEach((r) => { names[r.id] = r.name; });
+    return ' 标准流程: ' + f.map((s) => (names[s.role] || s.role) + (s.optional ? '(可选)' : '') + (s.gate ? '(质量门)' : '')).join('→');
+  };
+  const scope = deptId ? [deptId] : Object.keys(byDept);
+  const catalog = scope.map((d) =>
+    (dName[d] || d) + ': ' + (byDept[d] || []).map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')').join('、') + flowLine(d)
   ).join('\n');
-  const prompt = `你是公司的总编排器。公司部门与员工目录:\n${catalog}\n\n`
-    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取上面员工目录中的员工 id(把任务派给最合适部门的最合适员工)。`
+  const prompt = `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n\n`
+    + (deptId ? `本任务是「${dName[deptId] || deptId}」的部门任务,只用该部门员工,严格按其标准流程拆分(可选环节由你判断是否需要;质量门环节用 loop 包住"产出员工→门禁员工",失败重做)。\n` : '')
+    + `公司部门与员工目录:\n${catalog}\n\n`
+    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
-    + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示"实现→验证,失败重试"。多个无依赖的步骤会并行。`
-    + `要求:只挑真正需要的员工(通常2-5步,不要为拆而拆);每步 prompt 自包含、可直接执行,明确产出物(创建哪些文件),不要假设存在外部文档;`
-    + `非代码类员工(营销/产品/设计等)的产出是 Markdown 文档,写明文件名。只输出 JSON,不要解释。任务: ${text}`;
+    + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行。`
+    + `调度要求:1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
   const plan = extractJson(output);
   plan.task = text;
   return plan;
 }
 
-// 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 内)
-function resolveRoles(steps, roleMap, allowed) {
+// 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 与部门执行器池内)
+function resolveRoles(steps, roleMap, allowed, deptPools) {
   (steps || []).forEach((s) => {
-    if (s.body) { resolveRoles(s.body, roleMap, allowed); return; }
+    if (s.body) { resolveRoles(s.body, roleMap, allowed, deptPools); return; }
     if (!s.role) return;
     const r = roleMap[s.role];
     if (!r) { s.agent = s.agent || allowed[0]; return; }
+    // 该员工所属部门若设了执行器池,只能用池内执行器
+    const pool = deptPools && deptPools[r.dept] && deptPools[r.dept].length ? allowed.filter((a) => deptPools[r.dept].indexOf(a) >= 0) : allowed;
+    const eff = pool.length ? pool : allowed;
     let ex = r.executor || 'claude';
-    if (allowed && allowed.length && allowed.indexOf(ex) < 0) ex = allowed[0];
+    if (eff.length && eff.indexOf(ex) < 0) ex = eff[0];
     s.agent = ex;
     if (r.prompt) s.prompt = '【你的角色】' + r.prompt + '\n\n【任务】' + s.prompt;
   });
 }
 
-// agents=所选执行器;roles/depts=员工目录;orchestration=文字编排;refine=需求细化
+// agents=所选执行器;roles/depts=员工目录;dept=部门任务;deptPools=部门执行器池;orchestration=文字编排;refine=需求细化
 async function makePlan(text, opts) {
-  const { mode, agents, roles, depts, explicit, orchestration, refine, templatesDir, claude } = opts;
+  const { mode, agents, roles, depts, dept, deptPools, explicit, orchestration, refine, templatesDir, claude } = opts;
   const allowed = (agents && agents.length) ? agents : ['claude'];
   let brief = text;
   if (refine && claude) { try { brief = await refineBrief(text, claude); } catch (e) {} }
   const orch = (orchestration || '').trim();
-  const roleMap = {}; (roles || []).forEach((r) => { roleMap[r.id] = r; });
+  const deptRoles = dept ? (roles || []).filter((r) => r.dept === dept) : (roles || []);
+  const roleMap = {}; deptRoles.forEach((r) => { roleMap[r.id] = r; });
   const roleIds = Object.keys(roleMap);
 
-  // 1) 用户显式只选一个执行器 + 无编排 → 该执行器单步直做(保持既有行为)
-  if (explicit && allowed.length === 1 && !orch) {
+  // 1) 用户显式只选一个执行器 + 无编排 + 非部门任务 → 该执行器单步直做(保持既有行为)
+  if (explicit && allowed.length === 1 && !orch && !dept) {
     return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
   }
-  // 2) 员工模式(默认):按部门员工目录拆分指派
+  // 2) 员工模式(默认):总调度按部门员工目录与流程规范拆分;部门任务只用该部门员工
   if (roleIds.length && claude && mode !== 'template') {
     try {
-      const p = await fromLLMRoles(brief, claude, roles, depts, orch);
-      if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed); return p; }
+      const p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept);
+      if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed, deptPools); return p; }
     } catch (e) { /* 落到执行器模式 */ }
   }
   // 3) 有文字编排 → 按编排(执行器模式)

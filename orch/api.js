@@ -97,10 +97,12 @@ function buildAll(store, user) {
   // 部门:来自 departments 表(含空部门);employees=部门员工(角色)
   const boards = {};
   const allRoles = store.listRoles();
+  const deptPools = store.allDeptExecutors();
   const depts = store.listDepts().map((d) => {
     const id = d.id;
     const employees = allRoles.filter((r) => r.dept === id).map((r) => ({ id: r.id, name: r.name, emoji: r.emoji || '🧑‍💼', description: r.description || '', executor: r.executor || 'claude' }));
-    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '', employees, empN: employees.length };
+    let flow = []; try { flow = JSON.parse(d.flow) || []; } catch (e) {}
+    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '', employees, empN: employees.length, flow, executors: deptPools[id] || [] };
     const myAgents = Object.keys(ROLE).filter((aid) => ROLE[aid].dept === id);
     const ds = steps.filter((s) => myAgents.includes(s.agent));
     const card = (s) => ({ t: (taskById[s.task_id] ? taskById[s.task_id].text : ('任务 ' + s.task_id)).slice(0, 36), m: (ROLE[s.agent] ? ROLE[s.agent].label : s.agent) + ' · ' + s.step_id });
