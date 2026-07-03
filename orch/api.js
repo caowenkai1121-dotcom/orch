@@ -110,7 +110,10 @@ function buildAll(store, user) {
     const id = d.id;
     const employees = allRoles.filter((r) => r.dept === id).map((r) => { const dn = r.done_count || 0, en = r.empty_count || 0; const memoLines = (r.memo || '').split('\n').filter(Boolean); return { id: r.id, name: r.name, emoji: r.emoji || '🧑‍💼', description: r.description || '', executor: r.executor || 'claude', doneN: dn, emptyN: en, perf: (dn + en) >= 2 ? (dn + '落盘' + (en ? ' · ' + en + '空转' : '')) : '', memoN: memoLines.length, memo: memoLines.join('\n') }; });
     let flow = []; try { flow = JSON.parse(d.flow) || []; } catch (e) {}
-    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '', employees, empN: employees.length, flow, executors: deptPools[id] || [] };
+    // 部门级绩效:员工落盘/空转汇总 → 真实成功率(替代原 mock 的 doneWeek/successAvg/lead)
+    const deptDone = employees.reduce((a, e) => a + e.doneN, 0), deptEmpty = employees.reduce((a, e) => a + e.emptyN, 0);
+    const successAvg = (deptDone + deptEmpty) > 0 ? Math.round(deptDone / (deptDone + deptEmpty) * 100) + '%' : '—';
+    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '', employees, empN: employees.length, flow, executors: deptPools[id] || [], deptDone, successAvg };
     const myAgents = Object.keys(ROLE).filter((aid) => ROLE[aid].dept === id);
     const ds = steps.filter((s) => myAgents.includes(s.agent));
     const card = (s) => ({ t: (taskById[s.task_id] ? taskById[s.task_id].text : ('任务 ' + s.task_id)).slice(0, 36), m: (ROLE[s.agent] ? ROLE[s.agent].label : s.agent) + ' · ' + s.step_id });
@@ -118,7 +121,7 @@ function buildAll(store, user) {
     const fail = ds.filter((s) => s.status === 'failed');
     boards[id] = { todo: [], doing: ds.filter((s) => s.status === 'running').map(card), done: done.map(card) };
     const tot = done.length + fail.length;
-    return { id, agent: myAgents[0], agentIds: myAgents, ...meta, lead: '—', tasks: ds.filter((s) => s.status === 'running').length, doneWeek: done.length, successAvg: tot ? Math.round(done.length / tot * 100) + '%' : '—' };
+    return { id, agent: myAgents[0], agentIds: myAgents, ...meta, lead: '—', tasks: ds.filter((s) => s.status === 'running').length, doneWeek: done.length };
   });
 
   // 项目:按 task.project 聚合

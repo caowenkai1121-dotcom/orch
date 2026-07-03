@@ -322,3 +322,17 @@ test('步骤成本:relay metaLabel 含成本', () => {
   assert.match(row.metaLabel, /\$0.045/);
   assert.match(row.metaLabel, /📄 2/);
 });
+
+test('部门级绩效:员工落盘/空转汇总成功率', () => {
+  const { open } = require('../store');
+  const { buildAll } = require('../api');
+  const s = open(':memory:'); s.seed();
+  // 给工程部两个员工绩效
+  const engs = s.listRoles().filter((r) => r.dept === 'engineering').slice(0, 2);
+  s.addRoleStat(engs[0].id, true); s.addRoleStat(engs[0].id, true); s.addRoleStat(engs[0].id, false); // 2/1
+  s.addRoleStat(engs[1].id, true); // 1/0
+  const vm = buildAll(s, { name: 'admin', admin: 1 });
+  const eng = vm.depts.find((d) => d.id === 'engineering');
+  assert.equal(eng.deptDone, 3);            // 2+1 落盘
+  assert.equal(eng.successAvg, '75%');      // 3/(3+1)
+});
