@@ -366,6 +366,7 @@ class Maestro extends MaestroBase {
     this.state.clockS = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
     this.fetchAll();
     this.openWS();
+    try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {} // 返回用户(持久会话)也请求通知权限
     this._poll = setInterval(() => { this.state.clockS += 20; this.fetchAll(); }, 20000); // WS 实时推送为主,轮询只兜底
     // 全局快捷键:Cmd/Ctrl+K 或 / 聚焦搜索;Esc 关弹窗
     document.addEventListener('keydown', (e) => {
@@ -422,6 +423,8 @@ class Maestro extends MaestroBase {
     v.attention = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
     v.hasAttention = v.attention.length > 0;
     v.attentionN = v.attention.length;
+    // 后台标签页也能看到待处理数
+    try { const running = (this.live.counts || {}).runningTasks || 0; document.title = (v.attention.length ? '(' + v.attention.length + ') ' : (running ? '● ' : '')) + 'Maestro · 智能体编排工作台'; } catch (e) {}
     v.cv = this.realCv();
     v.graph = this.realGraph();
     v.orchLog = (this.state.activity || []).slice(0, 8).map((e) => ({ time: e.time, c: e.c, a: e.a, txt: e.t }));
