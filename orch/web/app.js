@@ -246,9 +246,14 @@ class MaestroBase extends RT.Component {
 
   decTask(t) {
     const sm = this.statusMeta(t.sk);
+    const exp = this.state.expandedSteps || (this.state.expandedSteps = {});
     const steps = this.RELAY.map(s => {
       const m = this.statusMeta(s.sk);
-      return { ...s, sLabel: m.label, sC: m.c, sBg: m.bg, sDot: m.dot, hasCode: s.art === 'code', hasReport: s.art === 'report', barPct: s.barPct || '0%', barColor: s.barColor || '#2E9E5B' };
+      const isExp = !!exp[s.title];
+      const canExpand = !!s.full;
+      return { ...s, sLabel: m.label, sC: m.c, sBg: m.bg, sDot: m.dot, hasCode: s.art === 'code', hasReport: s.art === 'report', barPct: s.barPct || '0%', barColor: s.barColor || '#2E9E5B',
+        descShown: (isExp && s.full) ? s.full : s.desc, canExpand, expandLabel: isExp ? '收起' : '展开全文',
+        toggleExpand: () => { exp[s.title] = !exp[s.title]; this.setState({}); } };
     });
     return { ...t, sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, steps };
   }

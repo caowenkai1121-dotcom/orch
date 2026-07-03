@@ -239,11 +239,13 @@ function relay(store, id) {
     const emp = !isLoop && stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
     const r = isLoop ? { label: '🔁 质量环', color: '#7C6FD9', av: '🔁' } : (ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' });
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
-    const summary = (s.output && s.output.trim()) ? s.output.trim().slice(-300) : (last || ('状态: ' + s.status));
+    const outFull = (s.output && s.output.trim()) ? s.output.trim() : '';
+    const summary = outFull ? outFull.slice(-300) : (last || ('状态: ' + s.status));
+    const full = (outFull.length > 300) ? outFull.slice(-4000) : ''; // 有更多内容才给全文(供前端展开)
     const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;
     const fn = files[s.step_id];
     const filesLabel = s.status === 'done' ? (fn > 0 ? '📄 ' + fn + ' 文件' : '⚠ 无产出') : '';
-    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, time: '', dur: durs[s.step_id] || '', filesLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, full, time: '', dur: durs[s.step_id] || '', filesLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
   });
 }
 
