@@ -143,3 +143,16 @@ test('loop max 封顶 5,防失控', async () => {
   await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
   assert.equal(gc, 5); // max=99 被封到 5
 });
+
+test('交接:上游失败时下游被告知', async () => {
+  const { runPlan } = require('../engine');
+  let downPrompt = '';
+  const failAgent = { async run() { return { output: '部分产出', success: false }; } };
+  const downAgent = { async run({ prompt }) { downPrompt = prompt; return { output: 'ok', success: true }; } };
+  const plan = { steps: [
+    { id: 'up', agent: 'f', prompt: 'p', deps: [] },
+    { id: 'down', agent: 'd', prompt: 'q', deps: ['up'] },
+  ] };
+  await runPlan(plan, { adapters: { f: failAgent, d: downAgent }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  assert.match(downPrompt, /失败|产出可能不完整/); // 下游收到上游失败告知
+});

@@ -135,9 +135,11 @@ async function runPlan(plan, ctx) {
       started.add(s.id);
       if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
       if (ctx.skip && ctx.skip.has(s.id)) { done[s.id] = { output: '(用户跳过此步)', success: true }; ctx.onStatus(s.id, 'done'); return; } // 用户跳过
-      // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘
-      const prev = s.deps.length === 1 ? (done[s.deps[0]]?.output || '')
-        : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');
+      // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘;上游失败则标注,下游谨慎使用/自行补全
+      const tag = (d) => (done[d] && done[d].success === false) ? '(⚠ 此步失败,产出可能不完整,请核实或自行补全)' : '';
+      const prev = s.deps.length === 1
+        ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + (done[s.deps[0]]?.output || ''))
+        : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');
       const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
       if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
       done[s.id] = r;
