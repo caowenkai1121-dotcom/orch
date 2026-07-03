@@ -152,3 +152,50 @@ test('产出版本化:独立目录init+每步commit;祖先仓未忽略则拒建'
   assert.equal(ensureOutputGit(sub), false);
   assert.ok(!fs.existsSync(path.join(sub, '.git')));
 });
+
+test('会话化:中途指令注入下一步骤,暂停停新步,跳过直接标完成', async () => {
+  const { runPlan } = require('../engine');
+  // 注入
+  let seen = '';
+  const notes = ['改用深色主题'];
+  const a = { async run({ prompt }) { seen = prompt; return { output: 'ok', success: true }; } };
+  await runPlan({ steps: [{ id: 's1', agent: 'x', prompt: 'p', deps: [] }] },
+    { adapters: { x: a }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {},
+      takeNotes: () => notes.splice(0).join('\n') });
+  assert.match(seen, /用户最新指令/);
+  assert.match(seen, /深色主题/);
+  // 暂停:第一波后不起第二波
+  let ran = [];
+  const b = { async run() { ran.push(1); return { output: '', success: true }; } };
+  let paused = false;
+  await runPlan({ steps: [
+    { id: 'w1', agent: 'x', prompt: 'p', deps: [] },
+    { id: 'w2', agent: 'x', prompt: 'p', deps: ['w1'] },
+  ] }, { adapters: { x: { async run() { ran.push(1); paused = true; return { output: '', success: true }; } } }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {}, isPaused: () => paused });
+  assert.equal(ran.length, 1); // w2 没跑
+  // 跳过
+  const done = await runPlan({ steps: [{ id: 'sk', agent: 'x', prompt: 'p', deps: [] }] },
+    { adapters: { x: { async run() { throw new Error('不应执行'); } } }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {}, skip: new Set(['sk']) });
+  assert.equal(done.sk.success, true);
+  assert.match(done.sk.output, /跳过/);
+});
+
+test('会话化:rerunStep 只重跑指定步,其余保留', async () => {
+  const { open } = require('../store');
+  const { rerunStep } = require('../runner');
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [
+    { id: 'a', agent: 'ok', prompt: 'p', deps: [] },
+    { id: 'b', agent: 'ok', prompt: 'p', deps: ['a'] },
+  ] });
+  store.setStep(id, 'a', 'ok', 'done', 'A产出');
+  store.setStep(id, 'b', 'ok', 'done', 'B产出v1');
+  store.setTaskStatus(id, 'done');
+  const ran = [];
+  const ok = { async run({ prompt }) { ran.push(prompt.includes('A产出')); return { output: 'B产出v2', success: true }; } };
+  await rerunStep(id, { store, adapters: { ok }, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} }, 'b');
+  assert.equal(ran.length, 1);                       // 只重跑 b
+  assert.equal(ran[0], true);                        // b 仍收到 a 的交接
+  assert.match(store.getTask(id).steps.find((s) => s.step_id === 'b').output, /v2/);
+});

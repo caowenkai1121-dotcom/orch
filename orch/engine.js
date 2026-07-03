@@ -51,9 +51,12 @@ async function runStep(step, ctx, prevOutput) {
   const files = dirBrief(workdir);
   const briefTxt = (b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
     + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '') + '\n\n') : '';
-  const prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
+  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
   ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)
   const s = sem(); await s.acquire();
+  // 会话化:用户中途发的指令,注入到下一个真正启动的步骤
+  const notes = ctx.takeNotes ? ctx.takeNotes() : '';
+  if (notes) prompt = '【用户最新指令(优先遵守)】\n' + notes + '\n\n' + prompt;
   ctx.onStatus(step.id, 'running');
   let res;
   // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式)
@@ -102,9 +105,11 @@ async function runPlan(plan, ctx) {
     const wave = plan.steps.filter((s) => !started.has(s.id) && ready(s));
     if (wave.length === 0) break; // 依赖无法满足,防死循环
     if (ctx.isCancelled && ctx.isCancelled()) break; // 取消:不再起新波
+    if (ctx.isPaused && ctx.isPaused()) break;       // 暂停:当前波跑完不起新波
     await Promise.all(wave.map(async (s) => {
       started.add(s.id);
       if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
+      if (ctx.skip && ctx.skip.has(s.id)) { done[s.id] = { output: '(用户跳过此步)', success: true }; ctx.onStatus(s.id, 'done'); return; } // 用户跳过
       // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘
       const prev = s.deps.length === 1 ? (done[s.deps[0]]?.output || '')
         : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');

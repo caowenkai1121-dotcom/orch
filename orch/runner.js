@@ -97,7 +97,7 @@ function resumeTask(taskId, deps, stepId, answer) {
 }
 
 // 重试失败步骤:已完成步骤不重跑,只重跑失败/未完成的(限额恢复后一键续跑)
-function retryFailed(taskId, deps) {
+function retryFailed(taskId, deps, initialNote) {
   const { store } = deps;
   const t = store.getTask(taskId);
   let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
@@ -105,7 +105,7 @@ function retryFailed(taskId, deps) {
   const seedDone = {};
   store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
   if (store.addEvent) store.addEvent(taskId, 'retry', { skip: Object.keys(seedDone).length });
-  return execute(taskId, plan, deps, { seedDone });
+  return execute(taskId, plan, deps, { seedDone, initialNote });
 }
 
 // 经验沉淀:任务结束后用 LLM 复盘,给每位参与员工提炼一条经验、给总调度一条调度复盘,存入 roles.memo
@@ -131,6 +131,38 @@ async function harvestExperience(taskId, deps) {
     Object.entries(j.employees || {}).forEach(([rid, line]) => store.appendRoleMemo(rid, line));
     if (j.chief) store.appendRoleMemo('chief-orchestrator', j.chief);
   } catch (e) { /* 复盘失败不影响任务 */ }
+}
+
+// —— 会话化控制面 ——
+function pauseTask(taskId, runs, store) {
+  const rec = runs.get(taskId); if (!rec) return false;
+  rec.paused = true;
+  store.addTaskMsg(taskId, 'system', '⏸ 已请求暂停:当前步骤跑完后不再启动新步骤。');
+  return true;
+}
+function skipStep(taskId, runs, store, stepId) {
+  const rec = runs.get(taskId); if (!rec) return false;
+  rec.skip.add(stepId);
+  store.addTaskMsg(taskId, 'system', '⏭ 步骤 ' + stepId + ' 将被跳过(轮到它时直接标记完成)。');
+  return true;
+}
+function noteToTask(taskId, runs, text) {
+  const rec = runs.get(taskId); if (!rec) return false;
+  rec.notes.push(text);
+  return true;
+}
+// 重跑单步:除该步外已完成的全部 seed,只重跑它(及其下游未完成的)
+function rerunStep(taskId, deps, stepId) {
+  const { store } = deps;
+  const t = store.getTask(taskId);
+  let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  const top = new Set((plan.steps || []).map((s) => s.id));
+  const seedDone = {};
+  store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id) && s.step_id !== stepId) seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  store.setStep(taskId, stepId, '', 'pending', null); // 清该步状态
+  if (store.addEvent) store.addEvent(taskId, 'rerun', { step: stepId });
+  store.addTaskMsg(taskId, 'system', '↻ 重跑步骤 ' + stepId + '(其余已完成步骤保留)。');
+  return execute(taskId, plan, deps, { seedDone });
 }
 
 // 限额自动重试:任务因执行器限额失败时,解析重置时间到点自动续跑(每任务最多2次)
@@ -184,7 +216,10 @@ async function continueTask(taskId, deps, text) {
 
 async function execute(taskId, plan, deps, opts) {
   const { store, adapters, workspace, onEvent, runs } = deps;
-  const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, children: new Set() }), runs.get(taskId))) || { cancelled: false, children: new Set() };
+  const fresh = { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] };
+  const rec = runs && (runs.get(taskId) || (runs.set(taskId, fresh), fresh)) || fresh;
+  rec.paused = false; rec.skip = rec.skip || new Set(); rec.notes = rec.notes || [];
+  if (opts.initialNote) rec.notes.push(opts.initialNote); // 恢复/重试时随带的用户指令
   const task = store.getTask(taskId);
   store.setTaskStatus(taskId, 'running');
 
@@ -213,6 +248,9 @@ async function execute(taskId, plan, deps, opts) {
     seedDone: opts.seedDone || null,
     answers: opts.answers || null,
     isCancelled: () => rec.cancelled,
+    isPaused: () => rec.paused,
+    skip: rec.skip,
+    takeNotes: () => { const t = rec.notes.splice(0).join('\n'); return t; }, // 用户中途指令,注入即消费
     onChild: (child) => rec.children.add(child),
     onUsage: (stepId, agent, u) => { store.addUsage(taskId, stepId, agent, u); emit(onEvent, taskId, stepId, 'usage', u); },
     onResult: (stepId, out) => {
@@ -247,11 +285,12 @@ async function execute(taskId, plan, deps, opts) {
     }
     const seeded = opts.seedDone || {};
     const ok = !rec.cancelled && (plan.steps || []).every((s) => (done[s.id] || seeded[s.id]) && (done[s.id] || seeded[s.id]).success);
-    const final = rec.cancelled ? 'cancelled' : (ok ? 'done' : 'failed');
+    const final = rec.cancelled ? 'cancelled' : (ok ? 'done' : (rec.paused ? 'paused' : 'failed'));
     store.setTaskStatus(taskId, final);
     if (store.addEvent) store.addEvent(taskId, 'task', final);
     emit(onEvent, taskId, null, 'task', final);
     if (final === 'failed') { try { scheduleAutoRetry(taskId, deps); } catch (e) {} }
+    if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');
     if (final === 'done' || final === 'failed') harvestExperience(taskId, deps).catch(() => {}); // 异步复盘,不阻塞
   } catch (e) {
     store.setTaskStatus(taskId, 'failed');
@@ -265,4 +304,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep, pauseTask, skipStep, noteToTask, rerunStep };

@@ -5,7 +5,7 @@ const DEPT_META = {
   dev: { name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能' },
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
-const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input' })[s] || 'queued';
+const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input', paused: 'paused' })[s] || 'queued';
 const stepSk = (s) => ({ running: 'working', waiting: 'queued', done: 'done', failed: 'failed' })[s] || 'queued';
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表

@@ -39,6 +39,8 @@ function open(file) {
       project TEXT, user_id TEXT, PRIMARY KEY(project, user_id));
     CREATE TABLE IF NOT EXISTS events(
       id INTEGER PRIMARY KEY, task_id INTEGER, ts TEXT, type TEXT, data TEXT);
+    CREATE TABLE IF NOT EXISTS task_messages(
+      id INTEGER PRIMARY KEY, task_id INTEGER, who TEXT, text TEXT, ts TEXT);
     CREATE TABLE IF NOT EXISTS playbooks(
       id INTEGER PRIMARY KEY, name TEXT, description TEXT, plan TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS schedules(
@@ -71,6 +73,9 @@ function open(file) {
         .run(d.name || '应用', d.taskId, d.dir || '', d.entry || 'index.html', new Date().toISOString()).lastInsertRowid;
     },
     listApps() { return db.prepare('SELECT * FROM apps ORDER BY id DESC').all(); },
+    // 任务对话:用户与团队的消息流(运行中=指令注入,结束后=继续开发)
+    addTaskMsg(taskId, who, text) { db.prepare('INSERT INTO task_messages(task_id,who,text,ts) VALUES(?,?,?,?)').run(taskId, who, text, new Date().toISOString()); },
+    getTaskMsgs(taskId) { return db.prepare('SELECT * FROM task_messages WHERE task_id=? ORDER BY id').all(taskId); },
     // 剧本:成功任务的计划骨架,可复用
     addPlaybook(d) { return db.prepare('INSERT INTO playbooks(name,description,plan,created_at) VALUES(?,?,?,?)').run(d.name || '剧本', d.description || '', JSON.stringify(d.plan || {}), new Date().toISOString()).lastInsertRowid; },
     listPlaybooks() { return db.prepare('SELECT * FROM playbooks ORDER BY id DESC').all(); },

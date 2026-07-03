@@ -627,7 +627,33 @@ class Maestro extends MaestroBase {
     v.continueTask = () => this.continueTask();
     v.canRetry = !!(curT && canMod && curT.sk === 'failed'); // 失败任务:重试失败步骤(已完成的不重跑)
     v.retryTask = () => this.retryTask();
-    v.canReplay = !!(curT && ['done', 'failed', 'cancelled'].indexOf(curT.sk) >= 0); // 回放
+    v.canReplay = !!(curT && ['done', 'failed', 'cancelled', 'paused'].indexOf(curT.sk) >= 0); // 回放
+    // —— 任务会话化:对话流 + 控制面 + 实时输出 ——
+    if (curT && this.live.msgsFor !== this.state.taskId) this.fetchMsgs(this.state.taskId);
+    v.taskMsgs = ((this.live.msgsFor === this.state.taskId && this.live.msgs) || []).slice(-30).map((m) => ({
+      mine: m.who === 'user', txt: m.text, time: (m.ts || '').slice(11, 16),
+      al: m.who === 'user' ? 'flex-end' : 'flex-start',
+      bg: m.who === 'user' ? '#1A1814' : '#F4F2ED', fg: m.who === 'user' ? '#fff' : '#3C3933',
+    }));
+    v.hasMsgs = v.taskMsgs.length > 0;
+    v.sendTaskMsg = () => this.sendTaskMsg();
+    v.onMsgKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault && e.preventDefault(); this.sendTaskMsg(); } };
+    v.msgHint = !curT ? '' : curT.sk === 'working' ? '发指令 → 注入下一个开始的步骤(实时纠偏)' : curT.sk === 'paused' ? '发消息 → 恢复执行并注入指令' : curT.sk === 'awaiting_input' ? '回答员工的问题 → 续跑' : curT.sk === 'awaiting' ? '任务待审批,先批准' : '发新需求 → 在原任务上继续开发';
+    v.canPause = !!(curT && curT.sk === 'working' && canMod);
+    v.pauseTaskUI = () => this.pauseTaskUI();
+    v.canResume = !!(curT && curT.sk === 'paused' && canMod);
+    v.resumeTaskUI = () => this.resumeTaskUI();
+    // 当前任务实时输出(运行中)
+    const tcl = (this.live.taskConsole && this.live.taskConsole[this.state.taskId]) || [];
+    v.taskLive = tcl.slice(-14).join('\n');
+    v.hasTaskLive = !!(curT && curT.sk === 'working' && tcl.length);
+    // 接力记录步骤操作:排队步可跳过(运行中),失败/完成步可重跑(非运行中)
+    if (v.task && v.task.steps) v.task.steps.forEach((s) => {
+      s.canSkip = !!(curT && curT.sk === 'working' && s.sk === 'queued' && canMod);
+      s.canRerun = !!(curT && ['done', 'failed', 'paused', 'cancelled'].indexOf(curT.sk) >= 0 && (s.sk === 'failed' || s.sk === 'done') && canMod);
+      s.doSkip = () => this.skipStepUI(s.title);
+      s.doRerun = () => this.rerunStepUI(s.title);
+    });
     v.savePlaybook = () => this.saveAsPlaybook();
     v.canSavePb = !!(curT && curT.sk === 'done' && canMod); // 存为剧本
     v.modalContinue = this.state.modal === 'continue';
@@ -648,8 +674,23 @@ class Maestro extends MaestroBase {
     if (s === 'cancelled') return { label: '已取消', c: '#6B6760', bg: '#F1EFEA', dot: '#C9C4BA' };
     if (s === 'awaiting') return { label: '待审批', c: '#8a6d00', bg: '#FFF6D6', dot: '#F0B400' };
     if (s === 'awaiting_input') return { label: '待输入', c: '#B4541E', bg: '#FCEBDD', dot: '#E0922E' };
+    if (s === 'paused') return { label: '已暂停', c: '#6B6760', bg: '#F1EFEA', dot: '#8A857C' };
     return super.statusMeta(s);
   }
+  // —— 任务会话化 ——
+  fetchMsgs(id) { fetch('/api/msgs/' + id).then((r) => r.json()).then((m) => { this.live.msgs = m || []; this.live.msgsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  sendTaskMsg() {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    const el = document.getElementById('tm-input'); const text = el ? el.value.trim() : '';
+    if (!text) return;
+    el.value = '';
+    fetch('/task/' + id + '/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
+      .then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {});
+  }
+  pauseTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/pause', { method: 'POST' }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
+  resumeTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '继续按原计划执行' }) }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
+  skipStepUI(sid) { const id = this.state.taskId; fetch('/task/' + id + '/skip', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: sid }) }).then(() => this.fetchMsgs(id)).catch(() => {}); }
+  rerunStepUI(sid) { if (!window.confirm('重跑步骤「' + sid + '」?其余已完成步骤保留。')) return; const id = this.state.taskId; fetch('/task/' + id + '/rerun', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: sid }) }).then(() => this.fetchAll()).catch(() => {}); }
   answerTask() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     const el = document.getElementById('answer-input'); const answer = el ? el.value : '';
@@ -941,7 +982,7 @@ class Maestro extends MaestroBase {
 
   go(screen, extra) {
     super.go(screen, extra);
-    if (screen === 'task' && extra && typeof extra.taskId === 'number') { this.fetchRelay(extra.taskId); this.state.previewFile = null; this.state.diffSha = null; this.live.patch = ''; this.fetchFiles(extra.taskId); this.fetchDiffs(extra.taskId); }
+    if (screen === 'task' && extra && typeof extra.taskId === 'number') { this.fetchRelay(extra.taskId); this.state.previewFile = null; this.state.diffSha = null; this.live.patch = ''; this.live.msgsFor = null; this.fetchFiles(extra.taskId); this.fetchDiffs(extra.taskId); this.fetchMsgs(extra.taskId); }
     if (screen === 'agent' && extra && extra.agentId) {
       fetch('/api/agentlog/' + extra.agentId).then((r) => r.json()).then((lines) => {
         const c = this.state.console || (this.state.console = {});
@@ -1094,6 +1135,14 @@ class Maestro extends MaestroBase {
             c[m.agent] = c[m.agent].slice(-200);
             this.scheduleRender();
           }
+          if (m.taskId === this.state.taskId) { // 当前任务详情:实时输出流
+            const tc = this.live.taskConsole || (this.live.taskConsole = {});
+            (tc[m.taskId] = tc[m.taskId] || []).push('[' + (m.stepId || '') + '] ' + m.data);
+            tc[m.taskId] = tc[m.taskId].slice(-80);
+            this.scheduleRender();
+          }
+        } else if (m.type === 'msg') {
+          if (m.taskId === this.state.taskId) this.fetchMsgs(m.taskId);
         } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents' || m.type === 'apps') {
           this.notifyTask(m); // 桌面通知:任务完成/失败/待输入
           this.fetchAll();

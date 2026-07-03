@@ -253,6 +253,61 @@ app.get('/output/:id/*splat', (req, res) => {
   res.sendFile(full);
 });
 
+// —— 任务会话化:统一消息入口(按任务状态智能路由) + 实时控制面 ——
+const runnerMod = require('./runner');
+app.get('/api/msgs/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.status(403).json([]);
+  res.json(store.getTaskMsgs(t.id));
+});
+app.post('/task/:id/message', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  const text = ((req.body || {}).text || '').trim();
+  if (!t || !text) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  store.addTaskMsg(id, 'user', text);
+  broadcastRaw({ type: 'msg', taskId: id });
+  const deps = () => ({ store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast });
+  if (t.status === 'running' || t.status === 'planning') {
+    runnerMod.noteToTask(id, runs, text); // 注入下一个启动的步骤
+    store.addTaskMsg(id, 'system', '📨 指令已排队,将注入下一个开始执行的步骤。');
+    broadcastRaw({ type: 'msg', taskId: id });
+    return res.json({ ok: true, mode: 'inject' });
+  }
+  if (t.status === 'paused') { res.json({ ok: true, mode: 'resume' }); return runnerMod.retryFailed(id, deps(), text); }
+  if (t.status === 'awaiting_input') { res.json({ ok: true, mode: 'answer' }); return runnerMod.resumeTask(id, deps(), t.blocked_step, text); }
+  if (t.status === 'awaiting') { store.addTaskMsg(id, 'system', '任务在等审批,请先「批准并运行」(可先编辑计划)。'); broadcastRaw({ type: 'msg', taskId: id }); return res.json({ ok: true, mode: 'info' }); }
+  // done/failed/cancelled → 继续开发
+  res.json({ ok: true, mode: 'continue' });
+  runnerMod.continueTask(id, {
+    store, adapters, workspace: { make: () => (t.dir || ROOT) }, runs,
+    makePlan: (txt) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude }),
+    onEvent: broadcast,
+  }, text);
+});
+app.post('/task/:id/pause', (req, res) => {
+  const id = Number(req.params.id);
+  if (!owns(req.user, store.getTask(id))) return res.status(403).json({ ok: false });
+  const ok = runnerMod.pauseTask(id, runs, store);
+  broadcastRaw({ type: 'msg', taskId: id });
+  res.json({ ok });
+});
+app.post('/task/:id/skip', (req, res) => {
+  const id = Number(req.params.id); const stepId = (req.body || {}).stepId;
+  if (!owns(req.user, store.getTask(id))) return res.status(403).json({ ok: false });
+  const ok = runnerMod.skipStep(id, runs, store, stepId);
+  broadcastRaw({ type: 'msg', taskId: id });
+  res.json({ ok });
+});
+app.post('/task/:id/rerun', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id); const stepId = (req.body || {}).stepId;
+  if (!t || !stepId) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false });
+  if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能重跑单步' });
+  res.json({ ok: true });
+  runnerMod.rerunStep(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, stepId);
+});
+
 // 重试失败步骤:已完成的不重跑(限额/临时故障恢复后续跑)
 app.post('/task/:id/retry', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
