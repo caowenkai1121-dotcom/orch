@@ -41,14 +41,18 @@ app.post('/login', (req, res) => {
 app.post('/logout', (req, res) => { auth.logout(auth.tokenFromReq(req)); res.setHeader('Set-Cookie', 'orch_sess=; HttpOnly; Path=/; Max-Age=0'); res.json({ ok: true }); });
 app.get('/api/me', (req, res) => req.user ? res.json(pubUser(req.user)) : res.status(401).json({ error: 'unauthorized' }));
 app.post('/api/me/password', (req, res) => { if (!req.user) return res.status(401).json({ error: 'unauthorized' }); store.setPassword(req.user.id, (req.body || {}).password || 'admin'); res.json({ ok: true }); });
-// Webhook 触发(鉴权闸前,凭 token):外部系统 POST /hook/<token> {text,project?} 即建任务
+// Webhook 触发(鉴权闸前,凭 token):外部系统 POST /hook/<token> {text,project?,dept?,playbook?} 即建任务
 app.post('/hook/:token', (req, res) => {
   const p = store.personByHookToken(req.params.token);
   if (!p) return res.status(401).json({ error: 'bad token' });
-  const text = ((req.body || {}).text || '').trim();
+  const b = req.body || {};
+  const text = (b.text || '').trim();
   if (!text) return res.status(400).json({ error: '缺 text' });
-  const id = createAndRunTask(p.name, { text, project: (req.body || {}).project, refine: false });
-  store.addEvent(id, 'webhook', { by: p.id });
+  // dept 支持传名称或 id;playbook 传名称或 id
+  let dept = null; if (b.dept) { const d = store.listDepts().find((x) => x.id === b.dept || x.name === b.dept); dept = d ? d.id : null; }
+  let playbook = null; if (b.playbook) { const pb = store.listPlaybooks().find((x) => String(x.id) === String(b.playbook) || x.name === b.playbook); playbook = pb ? pb.id : null; }
+  const id = createAndRunTask(p.name, { text, project: b.project, dept, playbook, refine: false });
+  store.addEvent(id, 'webhook', { by: p.id, dept, playbook });
   res.json({ id });
 });
 
