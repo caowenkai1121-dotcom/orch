@@ -354,6 +354,7 @@ app.post('/task/:id/approve', (req, res) => {
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   let plan = req.body && req.body.plan;
   if (!plan) { try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; } }
+  require('./planner').sanitizeDeps(plan); // 用户可能编辑坏依赖(循环/悬空)→ 健全化防卡死
   res.json({ ok: true });
   require('./runner').runApproved(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, plan);
 });
