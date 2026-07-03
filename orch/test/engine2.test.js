@@ -81,3 +81,16 @@ test('质量门:一直FAIL则到max停,不无限循环', async () => {
   await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
   assert.equal(gc, 2);  // max=2 轮后停
 });
+
+test('质量门:门禁步注入PASS/FAIL格式要求', async () => {
+  const { runPlan } = require('../engine');
+  let gatePrompt = '';
+  const impl = { async run() { return { output: 'done', success: true }; } };
+  const gate = { async run({ prompt }) { gatePrompt = prompt; return { output: 'PASS 通过', success: true }; } };
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 2, deps: [], body: [
+    { id: 'impl', agent: 'i', prompt: 'p', deps: [] }, { id: 'gate', agent: 'g', prompt: '审查', deps: [] },
+  ] }] };
+  await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  assert.match(gatePrompt, /质量门·必读/);
+  assert.match(gatePrompt, /PASS.*FAIL|FAIL/);
+});

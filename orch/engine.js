@@ -55,7 +55,8 @@ async function runStep(step, ctx, prevOutput) {
   const failTxt = lf ? '【你上次在此步失败了,别重蹈覆辙(换思路)】\n' + lf + '\n\n' : '';
   const briefTxt = failTxt + ((b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
     + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '') + '\n\n') : '');
-  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base;
+  const gateTxt = step.isGate ? '\n\n【质量门·必读】你是本环节质量门,负责审查上游产出是否达标。输出必须以「PASS」或「FAIL」开头,后接一句理由;不达标必须判 FAIL 并列出具体问题(下游会据此退回重做)。不要含糊,不要因为怕麻烦就放行。' : '';
+  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
   ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)
   const s = sem(); await s.acquire();
   // 会话化:用户中途发的指令,注入到下一个真正启动的步骤
@@ -94,6 +95,7 @@ async function runLoop(step, ctx, prevOutput) {
   let last = { output: prevOutput || '', success: false };
   const max = step.max || 3; // LLM plan 可能没给 max,兜底 3
   const gateId = step.body.length ? step.body[step.body.length - 1].id : null; // 约定:body 末步为质量门
+  if (gateId && step.body.length > 1) step.body[step.body.length - 1].isGate = true; // 标记门禁步,让员工按 PASS/FAIL 格式输出
   for (let i = 0; i < max; i++) {
     let gateOk = true;
     for (const body of step.body) {
