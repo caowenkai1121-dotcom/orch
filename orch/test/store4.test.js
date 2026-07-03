@@ -86,3 +86,18 @@ test('步骤产出核验:commitStep返回改动文件数,relay标注', () => {
   assert.equal(r.find((x) => x.title === 'a').filesLabel, '📄 3 文件');
   assert.equal(r.find((x) => x.title === 'b').filesLabel, '⚠ 无产出');
 });
+
+test('任务进度:顶层步骤完成比(loop子步不计)', () => {
+  const { open } = require('../store');
+  const { buildAll } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('活', '默认项目', 'admin', {});
+  s.setStep(id, 'a', 'claude', 'done', 'x');
+  s.setStep(id, 'b', 'claude', 'running', '');
+  s.setStep(id, 'c', 'claude', 'pending', '');
+  s.setStep(id, 'b.0', 'claude', 'done', 'x'); // loop 子步不计
+  const vm = buildAll(s, { name: 'admin', admin: 1 });
+  const t = vm.tasks.find((x) => x.id === id);
+  assert.equal(t.progressLabel, '1/3 步');
+  assert.equal(t.progress, 33);
+});

@@ -151,6 +151,11 @@ function buildAll(store, user) {
   const RV = roleView(store);
   const tasksVm = tasks.map((t) => {
     const u = store.taskUsage(t.id);
+    // 进度:顶层步骤完成数/总数(loop 子步骤不计)
+    const tops = (byTask[t.id] || []).filter((s) => (s.step_id || '').indexOf('.') < 0);
+    const total = tops.length, doneN = tops.filter((s) => s.status === 'done').length;
+    const progress = total ? Math.round(doneN / total * 100) : 0;
+    const progressLabel = total ? (doneN + '/' + total + ' 步') : '';
     // 运行中:哪个部门的哪个员工正在做哪一步
     let nowDoing = '';
     if (t.status === 'running') {
@@ -160,7 +165,7 @@ function buildAll(store, user) {
         return (emp ? (emp.emoji + ' ' + emp.deptName + '·' + emp.name) : (ROLE[s.agent] ? ROLE[s.agent].label : s.agent)) + ' 正在做 ' + s.step_id;
       }).join(' | ');
     }
-    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing };
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel };
   });
 
   // 人员:来自 DB(含分配的 agent)
