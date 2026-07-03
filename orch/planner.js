@@ -84,7 +84,7 @@ function validateRoles(plan, roleIds) {
 }
 
 // 总调度员:最高权限,可调度所有部门所有员工;注入部门流程规范与质量门方法论(参考 agents-orchestrator)
-async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, chiefMemo) {
+async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, chiefMemo, feedback) {
   const byDept = {};
   roles.forEach((r) => { (byDept[r.dept] = byDept[r.dept] || []).push(r); });
   const dName = {}; const dFlow = {};
@@ -106,11 +106,42 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行。`
-    + `调度要求:1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。\n任务: ${text}`;
+    + `调度要求:1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
+    + (feedback ? `\n\n⚠ 上次拆分的这些 role 不在员工目录里,请只用目录中真实存在的员工 id 重新拆分:${feedback}` : '')
+    + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
   const plan = extractJson(output);
   plan.task = text;
   return plan;
+}
+
+// 收集 plan 里用到的所有 role id(含 loop body)
+function collectRoles(steps, acc) {
+  (steps || []).forEach((s) => { if (s.role) acc.push(s.role); if (s.body) collectRoles(s.body, acc); });
+  return acc;
+}
+// 计划里非法(不在员工目录)的 role id 列表
+function badRoles(plan, roleIds) {
+  const set = new Set(roleIds);
+  return [...new Set(collectRoles(plan && plan.steps, []).filter((r) => !set.has(r)))];
+}
+// 自愈:把非法 role 就近纠正到最接近的合法 id(忽略大小写/子串/去部门前缀/词集重叠)
+function coerceRoles(steps, roleIds) {
+  const lower = roleIds.map((id) => ({ id, l: id.toLowerCase() }));
+  const nearest = (bad) => {
+    const b = bad.toLowerCase();
+    let hit = lower.find((x) => x.l === b); if (hit) return hit.id;
+    hit = lower.find((x) => x.l.includes(b) || b.includes(x.l)); if (hit) return hit.id;
+    const bw = new Set(b.split(/[-_\s]+/).filter(Boolean));
+    let best = null, bestN = 0;
+    lower.forEach((x) => { const n = x.l.split(/[-_\s]+/).filter((w) => bw.has(w)).length; if (n > bestN) { bestN = n; best = x.id; } });
+    return bestN >= 1 ? best : null;
+  };
+  const walk = (arr) => (arr || []).forEach((s) => {
+    if (s.body) walk(s.body);
+    if (s.role && roleIds.indexOf(s.role) < 0) { const fix = nearest(s.role); if (fix) s.role = fix; }
+  });
+  walk(steps);
 }
 
 // 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 与部门执行器池内)
@@ -148,9 +179,15 @@ async function makePlan(text, opts) {
     return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
   }
   // 2) 员工模式(默认):总调度按部门员工目录与流程规范拆分;部门任务只用该部门员工
+  //    自愈:非法 role → 就近纠正;仍非法 → 带错误反馈让 LLM 重拆一次(避免默默丢角色回退到裸执行器)
   if (roleIds.length && claude && mode !== 'template') {
     try {
-      const p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo);
+      let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo);
+      if (!validateRoles(p, roleIds)) coerceRoles(p.steps, roleIds);
+      if (!validateRoles(p, roleIds)) {
+        const bad = badRoles(p, roleIds);
+        if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
+      }
       if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed, deptPools); return p; }
     } catch (e) { /* 落到执行器模式 */ }
   }
@@ -171,4 +208,4 @@ async function makePlan(text, opts) {
   return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles };

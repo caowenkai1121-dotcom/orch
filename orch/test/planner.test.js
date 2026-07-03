@@ -92,3 +92,39 @@ test('经验注入:员工memo进角色卡,调度复盘进总调度提示', async
   assert.match(plan.steps[0].prompt, /过往经验/);       // B1 员工经验注入
   assert.match(plan.steps[0].prompt, /file:\/\/被封/);
 });
+
+test('计划自愈:非法role就近纠正,仍非法带反馈重拆', async () => {
+  const { coerceRoles, badRoles } = require('../planner');
+  const ids = ['engineering-frontend-developer', 'testing-api-tester'];
+  // 就近纠正:大小写/子串/词集
+  const steps = [
+    { id: 's1', role: 'Frontend-Developer', deps: [] },     // 词集重叠→前端
+    { id: 's2', role: 'engineering-frontend-developer', deps: [] }, // 已合法
+    { id: 's3', role: 'api-tester', deps: [] },              // 子串→测试
+  ];
+  coerceRoles(steps, ids);
+  assert.equal(steps[0].role, 'engineering-frontend-developer');
+  assert.equal(steps[2].role, 'testing-api-tester');
+  assert.deepEqual(badRoles({ steps }, ids), []);
+  // 完全无关→留原样,badRoles 报出
+  const s2 = [{ id: 'x', role: 'marketing-seo-specialist', deps: [] }];
+  coerceRoles(s2, ids);
+  assert.deepEqual(badRoles({ steps: s2 }, ids), ['marketing-seo-specialist']);
+});
+
+test('计划自愈:makePlan LLM拼错role→重拆一次成功', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端', description: '', prompt: 'p', executor: 'claude' },
+    { id: 'testing-api-tester', dept: 'testing', name: '测试', description: '', prompt: 'p', executor: 'codex' },
+  ];
+  let call = 0;
+  const fakeClaude = { async run({ prompt }) {
+    call++;
+    if (call === 1) return { output: '{"steps":[{"id":"a","role":"完全瞎编的id","prompt":"x","deps":[]}]}', success: true };
+    assert.match(prompt, /不在员工目录/); // 第二次带了反馈
+    return { output: '{"steps":[{"id":"a","role":"engineering-frontend-developer","prompt":"x","deps":[]}]}', success: true };
+  } };
+  const plan = await makePlan('活', { agents: ['claude', 'codex'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(plan.steps[0].role, 'engineering-frontend-developer');
+  assert.equal(call, 2);
+});
