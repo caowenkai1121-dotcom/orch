@@ -598,6 +598,8 @@ class Maestro extends MaestroBase {
     v.modalHelp = this.state.modal === 'help';
     v.changePw = () => this.changePw();
     v.exportConfig = () => this.exportConfig();
+    v.importConfig = () => this.importConfig();
+    v.onConfigFile = (e) => this.onConfigFile(e);
     // —— 部门管理(#3) ——
     v.newDept = () => this.newDept();
     v.modalDept = this.state.modal === 'dept';
@@ -910,6 +912,19 @@ class Maestro extends MaestroBase {
   // —— Webhook ——
   fetchHook() { fetch('/api/me/hook').then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
   exportConfig() { window.open('/api/export/config', '_blank'); }
+  importConfig() { const el = document.getElementById('cfg-file'); if (el) el.click(); }
+  onConfigFile(e) {
+    const f = e.currentTarget.files && e.currentTarget.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      let cfg; try { cfg = JSON.parse(r.result); } catch (x) { this.toast('✗ 文件不是合法 JSON'); return; }
+      if (!window.confirm('导入配置?现有同名角色/部门会被覆盖(合并,不删其它)。')) return;
+      fetch('/api/import/config', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cfg) })
+        .then((rr) => rr.json()).then((d) => { if (d.ok) { const n = d.imported || {}; this.toast('✓ 已导入 ' + (n.roles || 0) + '角色/' + (n.depts || 0) + '部门/' + (n.playbooks || 0) + '剧本'); this.fetchAll(); } else this.toast('✗ ' + (d.error || '导入失败')); }).catch(() => this.toast('✗ 导入失败'));
+    };
+    r.readAsText(f);
+    e.currentTarget.value = ''; // 允许重复选同一文件
+  }
   resetHook() { fetch('/api/me/hook/reset', { method: 'POST' }).then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
   notifyTask(m) { // 桌面通知:任务结束/需要人
     if (m.type !== 'task') return;

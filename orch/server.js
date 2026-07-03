@@ -26,7 +26,7 @@ const templatesDir = path.join(__dirname, 'templates');
 
 const app = express();
 const auth = require('./auth');
-app.use(express.json());
+app.use(express.json({ limit: '8mb' })); // 配置导入/编辑计划等可能较大,放宽默认 100kb
 app.use(express.static(path.join(__dirname, 'web')));
 
 // 会话:每请求解析当前用户
@@ -265,6 +265,23 @@ app.get('/api/export/config', adminOnly, (req, res) => {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="orch-config-backup.json"');
   res.send(JSON.stringify(cfg, null, 2));
+});
+
+// 配置导入/恢复(admin):从备份 JSON 恢复角色/部门/剧本/自定义Agent(upsert 合并,不删现有)
+app.post('/api/import/config', adminOnly, (req, res) => {
+  const c = req.body || {};
+  let n = { depts: 0, roles: 0, playbooks: 0, agents: 0 };
+  try {
+    (c.depts || []).forEach((d) => {
+      if (!store.listDepts().some((x) => x.id === d.id)) { store.addDept({ id: d.id, name: d.name, glyph: d.glyph, color: d.color }); n.depts++; }
+      let flow = []; try { flow = JSON.parse(d.flow || '[]'); } catch (e) {} if (flow.length) store.setDeptFlow(d.id, flow);
+    });
+    (c.roles || []).forEach((r) => { store.addRole({ id: r.id, dept: r.dept, name: r.name, emoji: r.emoji, description: r.description, prompt: r.prompt, executor: r.executor }); if (r.memo) store.setRoleMemo(r.id, r.memo); n.roles++; });
+    (c.playbooks || []).forEach((p) => { let plan = p.plan; try { plan = typeof p.plan === 'string' ? JSON.parse(p.plan) : p.plan; } catch (e) {} store.addPlaybook({ name: p.name, description: p.description, plan }); n.playbooks++; });
+    (c.agents || []).forEach((a) => { if (!store.listAgents().some((x) => x.id === a.id)) { store.addAgent({ id: a.id, name: a.name, command: a.command, model: a.model, kind: a.kind || 'cli' }); n.agents++; } });
+  } catch (e) { return res.status(400).json({ ok: false, error: '配置格式错误' }); }
+  broadcastRaw({ type: 'agents' });
+  res.json({ ok: true, imported: n });
 });
 
 // 任务 Markdown 报告下载(人读归档)

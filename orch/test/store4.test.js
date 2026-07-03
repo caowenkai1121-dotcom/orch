@@ -277,3 +277,17 @@ test('员工绩效榜:按落盘排序含成功率', () => {
   assert.equal(vm.topEmployees[0].rate, 75);
   assert.equal(vm.topEmployees[1].rate, 100);
 });
+
+test('配置导入:恢复角色含memo+部门flow', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  // 模拟导入一个新角色(带memo)+新部门
+  s.addDept({ id: 'custom-dept', name: '自定义部', glyph: '★', color: '#123456' });
+  s.addRole({ id: 'custom-role', dept: 'custom-dept', name: '自定义员工', description: 'd', prompt: 'p', executor: 'claude' });
+  s.setRoleMemo('custom-role', '导入的经验x');
+  s.setDeptFlow('custom-dept', [{ role: 'custom-role', optional: false, gate: false }]);
+  assert.equal(s.getRole('custom-role').memo, '导入的经验x');
+  const d = s.listDepts().find((x) => x.id === 'custom-dept');
+  assert.ok(d);
+  assert.match(d.flow || '', /custom-role/);
+});
