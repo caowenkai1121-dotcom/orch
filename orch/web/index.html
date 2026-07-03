@@ -192,6 +192,7 @@
               <span style="font-size:12px;color:#B6B1A7;">Agent 之间的任务流转</span>
             </div>
             <div style="flex:1;overflow-y:auto;padding:6px 8px 10px;">
+              <sc-if value="{{ noActivity }}"><div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#C9C4BA;gap:8px;padding:30px;"><span style="font-size:26px;">💤</span><span style="font-size:12.5px;">暂无编排活动 · 下发任务后这里实时流转</span></div></sc-if>
               <sc-for list="{{ activity }}" as="e" hint-placeholder-count="7">
                 <div style="display:flex;gap:11px;padding:9px 10px;border-radius:10px;animation:enter .42s ease;" style-hover="background:#FAF9F6">
                   <div style="position:relative;flex:none;display:flex;flex-direction:column;align-items:center;">
@@ -1173,7 +1174,8 @@
       <div style="font-size:16px;font-weight:700;margin-bottom:4px;">账号</div>
       <div style="font-size:12.5px;color:#8A857C;margin-bottom:14px;">当前登录: <b style="color:#1A1814;">{{ opName }}</b></div>
       <input id="ac-pw" type="password" placeholder="设置新密码" style="width:100%;height:36px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
-      <div style="margin-top:12px;font-size:12px;color:#8A857C;">Webhook 触发地址(外部系统 POST {"text":"任务内容"} 即建任务):</div>
+      <div style="margin-top:12px;font-size:12px;color:#8A857C;">Webhook 触发地址(外部系统 POST 即建任务;可选字段 project/dept/playbook):</div>
+      <div style="font-size:11px;color:#A39E94;margin-top:4px;font-family:'JetBrains Mono',monospace;">{"text":"任务内容", "dept":"design", "playbook":"落地页"}</div>
       <div style="display:flex;gap:7px;margin-top:6px;align-items:center;">
         <code style="flex:1;min-width:0;font-size:11px;background:#F6F5F2;border:1px solid #ECEAE4;border-radius:7px;padding:6px 8px;font-family:'JetBrains Mono',monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ hookUrl }}</code>
         <button onClick="{{ resetHook }}" style="height:28px;padding:0 10px;border:1px solid #E6E3DC;background:#fff;border-radius:7px;font-size:11.5px;cursor:pointer;font-family:inherit;">重置</button>

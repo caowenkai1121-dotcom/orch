@@ -435,6 +435,7 @@ class Maestro extends MaestroBase {
     // 运行中Agent面板空态:显示最近完成任务(idle 时仪表盘仍有用)
     v.noActiveAgents = ((this.live.counts || {}).runningAgents || 0) === 0;
     v.hasActive = !v.noActiveAgents;
+    v.noActivity = !(this.state.activity && this.state.activity.length);
     v.recentDone = (this.TASKS || []).filter((t) => t.sk === 'done').slice(0, 5).map((t) => ({ title: t.title, updated: t.updated, durLabel: t.durLabel || '', open: () => this.go('task', { taskId: t.id }) }));
     // 后台标签页也能看到待处理数
     try { const running = (this.live.counts || {}).runningTasks || 0; document.title = (v.attention.length ? '(' + v.attention.length + ') ' : (running ? '● ' : '')) + 'Maestro · 智能体编排工作台'; } catch (e) {}
