@@ -123,6 +123,7 @@ function open(file) {
     addUsage(taskId, stepId, agent, u) { db.prepare('INSERT INTO usage(task_id,step_id,agent,input_tokens,output_tokens,cost,ts) VALUES(?,?,?,?,?,?,?)').run(taskId, stepId, agent, (u && u.input) || 0, (u && u.output) || 0, (u && u.cost) || 0, new Date().toISOString()); },
     taskUsage(taskId) { const r = db.prepare('SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c FROM usage WHERE task_id=?').get(taskId); return { input: r.i, output: r.o, cost: r.c }; },
     usageToday() { const day = new Date().toISOString().slice(0, 10); const r = db.prepare("SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c FROM usage WHERE substr(ts,1,10)=?").get(day); return { input: r.i, output: r.o, cost: r.c }; },
+    usageTodayByAgent() { const day = new Date().toISOString().slice(0, 10); return db.prepare("SELECT agent, COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage WHERE substr(ts,1,10)=? GROUP BY agent ORDER BY c DESC").all(day); },
     getTask(id) {
       const t = db.prepare('SELECT * FROM tasks WHERE id=?').get(id);
       if (!t) return null;

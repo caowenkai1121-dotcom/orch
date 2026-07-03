@@ -212,3 +212,15 @@ test('接力:loop包装步骤标注质量环(不空署名)', () => {
   const loopRow = r.find((x) => x.title === 'q');
   assert.equal(loopRow.who, '🔁 质量环');
 });
+
+test('今日成本按执行器分组', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', 'P', 'admin', {});
+  s.addUsage(id, 'a', 'claude', { input: 100, output: 50, cost: 0.02 });
+  s.addUsage(id, 'b', 'claude', { input: 200, output: 100, cost: 0.03 });
+  s.addUsage(id, 'c', 'codex', { input: 50, output: 20, cost: 0.01 });
+  const by = s.usageTodayByAgent();
+  const cl = by.find((x) => x.agent === 'claude');
+  assert.equal(cl.c, 0.05); assert.equal(cl.n, 2);
+});
