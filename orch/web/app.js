@@ -423,6 +423,7 @@ class Maestro extends MaestroBase {
     const v = super.renderVals();
     v.toast = this.live.toastMsg || '';
     v.metrics = this.realMetrics();
+    v.wsOffline = this.live.wsConnected === false; // 仅显式断开后显示(初始 undefined 不显示)
     // 需关注:失败/待审批/待输入的任务(无人值守操作者优先处理)
     const attMeta = { failed: { label: '失败', bg: '#FBE9E7', c: '#B4541E', hint: '可重试' }, awaiting: { label: '待审批', bg: '#FEF3D6', c: '#8a6d00', hint: '批准/编辑计划' }, awaiting_input: { label: '待输入', bg: '#FBE9E7', c: '#B4541E', hint: '员工在等你回答' } };
     v.attention = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
@@ -1337,6 +1338,7 @@ class Maestro extends MaestroBase {
   openWS() {
     try {
       const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+      ws.onopen = () => { this.live.wsConnected = true; this.scheduleRender(); };
       ws.onmessage = (ev) => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (m.type === 'activity') {
@@ -1364,7 +1366,7 @@ class Maestro extends MaestroBase {
           if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
         }
       };
-      ws.onclose = () => { setTimeout(() => this.openWS(), 2000); };
+      ws.onclose = () => { this.live.wsConnected = false; this.scheduleRender(); setTimeout(() => this.openWS(), 2000); };
     } catch (e) {}
   }
 }
