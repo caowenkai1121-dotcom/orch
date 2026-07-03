@@ -104,6 +104,7 @@ function open(file) {
     setTaskStatus(id, status) {
       db.prepare('UPDATE tasks SET status=?, updated_at=? WHERE id=?').run(status, new Date().toISOString(), id);
     },
+    clearSteps(taskId) { db.prepare('DELETE FROM steps WHERE task_id=?').run(taskId); },
     setStep(taskId, stepId, agent, status, output) {
       db.prepare(`INSERT INTO steps(task_id,step_id,agent,status,output)
         VALUES(?,?,?,?,?)

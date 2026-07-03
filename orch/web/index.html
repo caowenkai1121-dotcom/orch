@@ -399,6 +399,7 @@
           <sc-if value="{{ canSavePb }}"><button onClick="{{ savePlaybook }}" style="flex:none;height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">📋 存为剧本</button></sc-if>
           <sc-if value="{{ canReplay }}"><button onClick="{{ openReplay }}" style="flex:none;height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">▶ 回放</button></sc-if>
           <button onClick="{{ cloneTask }}" style="flex:none;height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">⧉ 再来一个</button>
+          <sc-if value="{{ canDelTask }}"><button onClick="{{ replanTask }}" style="flex:none;height:34px;padding:0 13px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">🔄 重新规划</button></sc-if>
           <sc-if value="{{ canDelTask }}"><button onClick="{{ delTask }}" style="flex:none;height:34px;padding:0 12px;border-radius:9px;background:#fff;border:1px solid #F1CBA6;color:#B4541E;font-weight:600;font-size:12.5px;cursor:pointer;font-family:inherit;">🗑 删除</button></sc-if>
         </div>
 

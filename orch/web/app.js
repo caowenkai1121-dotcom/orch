@@ -431,6 +431,7 @@ class Maestro extends MaestroBase {
     v.quickLaunch = () => this.quickLaunch();
     v.cloneTask = () => this.cloneTask();
     v.delTask = () => this.delTask();
+    v.replanTask = () => this.replanTask();
     v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
@@ -1058,6 +1059,11 @@ class Maestro extends MaestroBase {
     el.value = '';
     fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, dept, refine: true }) })
       .then((r) => r.json()).then(() => { this.toast(dept ? ('✓ 已下发给部门,正在拆分') : '✓ 已下发,正在拆分任务'); this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => this.toast('✗ 下发失败'));
+  }
+  replanTask() {
+    const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
+    if (!t || !window.confirm('推翻「' + t.title + '」的当前计划,按原需求重新拆分执行?已有产出文件保留,但进度重置。')) return;
+    fetch('/task/' + id + '/replan', { method: 'POST' }).then((r) => r.json()).then((d) => { if (d.ok) { this.toast('🔄 正在重新规划'); this.fetchAll(); } else this.toast('✗ ' + (d.error || '失败')); }).catch(() => {});
   }
   delTask() {
     const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);

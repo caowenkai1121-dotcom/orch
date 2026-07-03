@@ -337,6 +337,23 @@ app.post('/task/:id/rerun', (req, res) => {
   runnerMod.rerunStep(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, stepId);
 });
 
+// 重新规划:推翻当前计划,从原需求重新拆分并执行(方向错了时用;清旧步骤,运行中需先停)
+app.post('/task/:id/replan', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能重规划,请先停止' });
+  store.clearSteps(id); // 清旧步骤,避免残留误判进度
+  if (store.addEvent) store.addEvent(id, 'replan', {});
+  store.addTaskMsg(id, 'system', '🔄 已推翻原计划,正在按原需求重新拆分。');
+  res.json({ ok: true });
+  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id);
+  runTask(id, {
+    store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast,
+    makePlan: (text) => makePlan(text, { agents: allAgents, roles: store.listRoles(), depts: store.listDepts(), deptPools: store.allDeptExecutors(), refine: true, templatesDir, claude: adapters.claude }),
+  });
+});
+
 // 删除任务(+全部关联数据);运行中需先停
 app.delete('/task/:id', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);

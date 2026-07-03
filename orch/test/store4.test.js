@@ -130,3 +130,13 @@ test('项目聚合:成本/完成数/失败数', () => {
   assert.equal(p.failN, 1);
   assert.equal(p.cost, 0.02);
 });
+
+test('clearSteps 清空任务步骤', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', '默认项目', 'admin', {});
+  s.setStep(id, 'a', 'claude', 'done', 'o'); s.setStep(id, 'b', 'claude', 'done', 'o');
+  assert.equal(s.getTask(id).steps.length, 2);
+  s.clearSteps(id);
+  assert.equal(s.getTask(id).steps.length, 0);
+});
