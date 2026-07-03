@@ -143,14 +143,14 @@
 
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;">
           <sc-for list="{{ metrics }}" as="m" hint-placeholder-count="4">
-            <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:16px 17px;box-shadow:0 1px 2px rgba(20,18,14,.04);">
+            <button onClick="{{ m.go }}" style-hover="border-color:#D9D5CC;transform:translateY(-1px)" style="text-align:left;background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:16px 17px;box-shadow:0 1px 2px rgba(20,18,14,.04);cursor:pointer;font-family:inherit;transition:transform .15s ease,border-color .15s ease;">
               <div style="display:flex;align-items:center;justify-content:space-between;">
                 <span style="font-size:12.5px;color:#8A857C;font-weight:500;">{{ m.k }}</span>
                 <span style="width:8px;height:8px;border-radius:50%;background:{{ m.dot }};"></span>
               </div>
               <div style="font-size:30px;font-weight:700;letter-spacing:-.02em;margin-top:10px;font-family:'JetBrains Mono',monospace;">{{ m.v }}</div>
               <div style="font-size:12px;color:#A39E94;margin-top:3px;">{{ m.s }}</div>
-            </div>
+            </button>
           </sc-for>
         </div>
 

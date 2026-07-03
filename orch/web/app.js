@@ -966,11 +966,12 @@ class Maestro extends MaestroBase {
   }
   realMetrics() {
     const c = this.live.counts || {};
+    const goT = (f) => () => this.setState({ screen: 'tasks', taskFilter: f, taskView: 'list' });
     return [
-      { k: '运行中 Agent', v: '' + (c.runningAgents || 0), s: '共 ' + (c.totalAgents || 0) + ' 个', dot: this.acc() },
-      { k: '进行中任务', v: '' + (c.runningTasks || 0), s: '真实任务 ' + (c.totalTasks || 0) + ' 个', dot: '#4F8BE8' },
-      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '今日成本 $' + ((c.costToday) || 0).toFixed(3), dot: '#2E9E5B' },
-      { k: '失败 / 待处理', v: '' + (c.failed || 0), s: (c.failed || 0) + ' 个失败', dot: '#E0922E' },
+      { k: '运行中 Agent', v: '' + (c.runningAgents || 0), s: '共 ' + (c.totalAgents || 0) + ' 个', dot: this.acc(), go: () => this.go('agents') },
+      { k: '进行中任务', v: '' + (c.runningTasks || 0), s: '真实任务 ' + (c.totalTasks || 0) + ' 个', dot: '#4F8BE8', go: goT('working') },
+      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '今日成本 $' + ((c.costToday) || 0).toFixed(3), dot: '#2E9E5B', go: goT('done') },
+      { k: '失败 / 待处理', v: '' + (c.failed || 0), s: (c.failed || 0) + ' 个失败', dot: '#E0922E', go: goT('failed') },
     ];
   }
   // #2 画布:把当前活动任务的真实 plan 排成节点图(层级=依赖深度)
