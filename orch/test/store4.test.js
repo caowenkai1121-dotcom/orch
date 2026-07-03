@@ -359,3 +359,15 @@ test('agent平均步骤耗时(agentAvgSeconds)', () => {
   assert.equal(s.agentAvgSeconds('claude'), 60);
   assert.equal(s.agentAvgSeconds('codex'), 0); // 无步骤
 });
+
+test('失败任务failReason:末段错误摘要入tasksVm', () => {
+  const { open } = require('../store');
+  const { buildAll } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', 'P', 'admin', {});
+  s.setStep(id, 'a', 'claude', 'failed', 'Error: 缺少模块 xyz npm install 失败');
+  s.setTaskStatus(id, 'failed');
+  const vm = buildAll(s, { name: 'admin', admin: 1 });
+  const t = vm.tasks.find((x) => x.id === id);
+  assert.match(t.failReason, /缺少模块 xyz/);
+});

@@ -164,6 +164,9 @@ function buildAll(store, user) {
     const total = tops.length, doneN = tops.filter((s) => s.status === 'done').length;
     const progress = total ? Math.round(doneN / total * 100) : 0;
     const progressLabel = total ? (doneN + '/' + total + ' 步') : '';
+    // 失败任务:末段失败步的错误摘要(供需处理面板/列表直接显示,不必进详情)
+    let failReason = '';
+    if (t.status === 'failed') { const fs = (byTask[t.id] || []).filter((s) => s.status === 'failed' && s.output); const last = fs[fs.length - 1]; if (last) failReason = String(last.output).replace(/\s+/g, ' ').slice(-120); }
     // 总耗时:创建→最后更新(仅终态任务)
     let durLabel = '';
     if ((t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') && t.created_at && t.updated_at) {
@@ -179,7 +182,7 @@ function buildAll(store, user) {
         return (emp ? (emp.emoji + ' ' + emp.deptName + '·' + emp.name) : (ROLE[s.agent] ? ROLE[s.agent].label : s.agent)) + ' 正在做 ' + s.step_id;
       }).join(' | ');
     }
-    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel };
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason };
   });
 
   // 人员:来自 DB(含分配的 agent)
