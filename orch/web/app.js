@@ -758,7 +758,7 @@ class Maestro extends MaestroBase {
     return super.statusMeta(s);
   }
   // —— 任务会话化 ——
-  fetchMsgs(id) { fetch('/api/msgs/' + id).then((r) => r.json()).then((m) => { this.live.msgs = m || []; this.live.msgsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchMsgs(id) { fetch('/api/msgs/' + id).then((r) => r.ok ? r.json() : []).then((m) => { this.live.msgs = Array.isArray(m) ? m : []; this.live.msgsFor = id; this.scheduleRender(); }).catch(() => {}); }
   sendTaskMsg() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     const el = document.getElementById('tm-input'); const text = el ? el.value.trim() : '';
@@ -797,7 +797,7 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/continue', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
       .then((r) => r.json()).then((d) => { this.setState({ modal: null }); if (d && d.id) this.go('task', { taskId: d.id }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
-  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.json()).then((fs) => { this.live.files = fs || []; this.live.filesFor = id; this.scheduleRender(); if ((fs || []).some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
+  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.ok ? r.json() : []).then((fs) => { fs = Array.isArray(fs) ? fs : []; this.live.files = fs; this.live.filesFor = id; this.scheduleRender(); if (fs.some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
   fetchFindings(id) { fetch('/output/' + id + '/findings.md').then((r) => r.ok ? r.text() : '').then((txt) => { this.live.findings = txt || ''; this.live.findingsFor = id; this.scheduleRender(); }).catch(() => {}); }
   previewOf(id) {
     const p = this.state.previewFile;
@@ -856,11 +856,11 @@ class Maestro extends MaestroBase {
       .then(() => { this.fetchPlaybooks(); }).catch(() => {});
   }
   // —— 定时任务 ——
-  fetchSchedules() { fetch('/api/schedules').then((r) => r.json()).then((s) => { this.live.schedules = s || []; this.scheduleRender(); }).catch(() => {}); }
+  fetchSchedules() { fetch('/api/schedules').then((r) => r.ok ? r.json() : []).then((s) => { this.live.schedules = Array.isArray(s) ? s : []; this.scheduleRender(); }).catch(() => {}); }
   toggleSchedule(id) { fetch('/api/schedules/' + id + '/toggle', { method: 'POST' }).then(() => this.fetchSchedules()).catch(() => {}); }
   delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
   // —— 产出改动(diff) ——
-  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.json()).then((d) => { this.live.diffs = d || []; this.live.diffsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { this.live.diffs = Array.isArray(d) ? d : []; this.live.diffsFor = id; this.scheduleRender(); }).catch(() => {}); }
   openDiff(sha) {
     const id = this.state.taskId;
     fetch('/api/diff/' + id + '/' + sha).then((r) => r.json()).then((d) => { this.live.patch = d.patch || ''; this.setState({ diffSha: sha }); }).catch(() => {});
@@ -1073,9 +1073,9 @@ class Maestro extends MaestroBase {
     super.go(screen, extra);
     if (screen === 'task' && extra && typeof extra.taskId === 'number') { this.fetchRelay(extra.taskId); this.state.previewFile = null; this.state.diffSha = null; this.live.patch = ''; this.live.msgsFor = null; this.fetchFiles(extra.taskId); this.fetchDiffs(extra.taskId); this.fetchMsgs(extra.taskId); }
     if (screen === 'agent' && extra && extra.agentId) {
-      fetch('/api/agentlog/' + extra.agentId).then((r) => r.json()).then((lines) => {
+      fetch('/api/agentlog/' + extra.agentId).then((r) => r.ok ? r.json() : []).then((lines) => {
         const c = this.state.console || (this.state.console = {});
-        c[extra.agentId] = lines || [];
+        c[extra.agentId] = Array.isArray(lines) ? lines : [];
         this.scheduleRender();
       }).catch(() => {});
     }
@@ -1255,9 +1255,9 @@ class Maestro extends MaestroBase {
       this.scheduleRender();
     }).catch(() => {});
   }
-  fetchRelay(id) { fetch('/api/relay/' + id).then((r) => r.json()).then((s) => { this.live.relay[id] = s || []; this.scheduleRender(); }).catch(() => {}); }
-  fetchPlan(id) { fetch('/api/plan/' + id).then((r) => r.json()).then((s) => { this.live.plan[id] = s || []; this.scheduleRender(); }).catch(() => {}); }
-  fetchAgentLog(id) { fetch('/api/agentlog/' + id).then((r) => r.json()).then((lines) => { this.state.log[id] = lines || []; this.scheduleRender(); }).catch(() => {}); }
+  fetchRelay(id) { fetch('/api/relay/' + id).then((r) => r.ok ? r.json() : []).then((s) => { this.live.relay[id] = Array.isArray(s) ? s : []; this.scheduleRender(); }).catch(() => {}); }
+  fetchPlan(id) { fetch('/api/plan/' + id).then((r) => r.ok ? r.json() : []).then((s) => { this.live.plan[id] = Array.isArray(s) ? s : []; this.scheduleRender(); }).catch(() => {}); }
+  fetchAgentLog(id) { fetch('/api/agentlog/' + id).then((r) => r.ok ? r.json() : []).then((lines) => { this.state.log[id] = Array.isArray(lines) ? lines : []; this.scheduleRender(); }).catch(() => {}); }
 
   openWS() {
     try {
