@@ -745,6 +745,7 @@ class Maestro extends MaestroBase {
     const tcl = (this.live.taskConsole && this.live.taskConsole[this.state.taskId]) || [];
     v.taskLive = tcl.slice(-14).join('\n');
     v.hasTaskLive = !!(curT && curT.sk === 'working' && tcl.length);
+    v.taskLiveWho = (curT && curT.nowDoing) || ''; // 当前运行步骤的部门·员工署名
     // 接力记录步骤操作:排队步可跳过(运行中),失败/完成步可重跑(非运行中)
     if (v.task && v.task.steps) v.task.steps.forEach((s) => {
       s.canSkip = !!(curT && curT.sk === 'working' && s.sk === 'queued' && canMod);
