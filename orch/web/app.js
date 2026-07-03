@@ -413,6 +413,7 @@ class Maestro extends MaestroBase {
     v.closeModal = () => this.closeModal();
     v.submitTask = () => this.submitTask();
     v.quickLaunch = () => this.quickLaunch();
+    v.cloneTask = () => this.cloneTask();
     v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
@@ -1018,6 +1019,11 @@ class Maestro extends MaestroBase {
     el.value = '';
     fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, refine: true }) })
       .then((r) => r.json()).then(() => { this.setState({ screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
+  }
+  cloneTask() {
+    const t = (this.TASKS || []).find((x) => x.id === this.state.taskId);
+    this.setState({ modal: 'task', taskDept: null });
+    setTimeout(() => { const el = document.getElementById('nt-text'); if (el && t) el.value = t.title; }, 60); // 填 DOM,避免 render 覆盖
   }
   // —— 弹窗 ——
   newTask() { this.setState({ modal: 'task', taskDept: null }); }
