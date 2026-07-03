@@ -172,3 +172,16 @@ test('员工绩效:落盘/空转累计,catalog达阈值展示', async () => {
   await makePlan('活', { agents: ['claude'], roles: s.listRoles(), depts: s.listDepts(), refine: false, templatesDir: __dirname, claude: fake });
   assert.match(seen, /记录:2落盘\/1空转/);
 });
+
+test('批量清理:删除失败/取消任务(deleteTask 逐个)', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const a = s.createTask('t1', 'P', 'admin', {}); s.setTaskStatus(a, 'failed');
+  const b = s.createTask('t2', 'P', 'admin', {}); s.setTaskStatus(b, 'cancelled');
+  const c = s.createTask('t3', 'P', 'admin', {}); s.setTaskStatus(c, 'done');
+  const del = s.listTasks().filter((t) => ['failed', 'cancelled'].includes(t.status)).map((t) => t.id);
+  del.forEach((id) => s.deleteTask(id));
+  assert.equal(s.getTask(a), null);
+  assert.equal(s.getTask(b), null);
+  assert.ok(s.getTask(c)); // done 保留
+});

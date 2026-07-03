@@ -446,6 +446,9 @@ class Maestro extends MaestroBase {
     const fq = (this.state.taskQ || '').trim().toLowerCase();
     v.taskFilters = TF.map((f) => ({ n: f.n, on: f.k === curF, bg: f.k === curF ? '#1A1814' : '#F4F2ED', c: f.k === curF ? '#fff' : '#57534E', pick: () => this.setState({ taskFilter: f.k }) }));
     v.onTaskQ = (e) => this.setState({ taskQ: e.currentTarget.value });
+    const cleanable = (this.TASKS || []).filter((t) => (t.sk === 'failed' || t.sk === 'cancelled') && t.canModify);
+    v.cleanableN = cleanable.length; v.hasCleanable = cleanable.length > 0;
+    v.cleanupTasks = () => this.cleanupTasks(cleanable.length);
     // 筛选后的列表(注入到 tasksList 由模板用),同时看板也过滤
     this._taskFilterFn = (t) => (!curF || t.sk === curF) && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0);
     // 任务看板(参考 vibe-kanban):按状态分列
@@ -1070,6 +1073,11 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
     if (!t || !window.confirm('推翻「' + t.title + '」的当前计划,按原需求重新拆分执行?已有产出文件保留,但进度重置。')) return;
     fetch('/task/' + id + '/replan', { method: 'POST' }).then((r) => r.json()).then((d) => { if (d.ok) { this.toast('🔄 正在重新规划'); this.fetchAll(); } else this.toast('✗ ' + (d.error || '失败')); }).catch(() => {});
+  }
+  cleanupTasks(n) {
+    if (!n || !window.confirm('清理 ' + n + ' 个失败/取消的任务及其记录?此操作不可恢复(产出文件保留在磁盘)。')) return;
+    fetch('/api/tasks/cleanup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ statuses: ['failed', 'cancelled'] }) })
+      .then((r) => r.json()).then((d) => { this.toast('🧹 已清理 ' + (d.n || 0) + ' 个任务'); this.fetchAll(); }).catch(() => {});
   }
   delTask() {
     const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);

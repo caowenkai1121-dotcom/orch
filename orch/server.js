@@ -354,6 +354,16 @@ app.post('/task/:id/replan', (req, res) => {
   });
 });
 
+// 批量清理:删除本人指定状态的任务(默认失败/取消的废弃任务);运行中的不动
+app.post('/api/tasks/cleanup', (req, res) => {
+  const statuses = Array.isArray(req.body && req.body.statuses) && req.body.statuses.length ? req.body.statuses : ['failed', 'cancelled'];
+  const safe = statuses.filter((s) => ['failed', 'cancelled', 'done'].includes(s)); // 只允许清终态,不清运行中
+  const del = store.listTasks().filter((t) => safe.includes(t.status) && owns(req.user, t)).map((t) => t.id);
+  del.forEach((id) => store.deleteTask(id));
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true, n: del.length });
+});
+
 // 删除任务(+全部关联数据);运行中需先停
 app.delete('/task/:id', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);

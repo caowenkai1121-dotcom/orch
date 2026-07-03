@@ -809,8 +809,9 @@
             <button onClick="{{ setViewBoard }}" style="height:28px;padding:0 12px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;background:{{ viewBoardBg }};">▦ 看板</button>
           </div>
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:14px;">
           <sc-for list="{{ taskFilters }}" as="tf"><button onClick="{{ tf.pick }}" style="height:26px;padding:0 12px;border:none;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:600;font-family:inherit;background:{{ tf.bg }};color:{{ tf.c }};">{{ tf.n }}</button></sc-for>
+          <sc-if value="{{ hasCleanable }}"><button onClick="{{ cleanupTasks }}" style="margin-left:auto;height:26px;padding:0 12px;border:1px solid #F1CBA6;color:#B4541E;background:#fff;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:600;font-family:inherit;">🧹 清理失败/取消（{{ cleanableN }}）</button></sc-if>
         </div>
         <sc-if value="{{ hasSchedules }}">
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:13px 16px;margin-bottom:16px;">
