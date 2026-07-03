@@ -754,6 +754,9 @@ class Maestro extends MaestroBase {
     if (this.state.screen === 'agents' && !this.live.health) { this.live.health = {}; this.fetchHealth(); }
     v.execHealth = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => { const h = (this.live.health || {})[a.id] || {}; return { name: a.name, bg: h.ok ? '#E4F4EA' : '#FBE9E7', c: h.ok ? '#1F7A46' : '#B4541E', label: h.ok ? ('✓ ' + (h.version || '可用')) : '✗ 未检测到' }; });
     v.refreshHealth = () => this.fetchHealth(true);
+    // 员工绩效榜(Agent团队页)
+    v.topEmployees = (this.live.topEmployees || []).map((e, i) => ({ rank: i + 1, name: e.name, dept: e.dept, emoji: e.emoji, done: e.done, empty: e.empty, rate: e.rate + '%', rateColor: e.rate >= 80 ? '#2E9E5B' : (e.rate >= 50 ? '#8a6d00' : '#B4541E') }));
+    v.hasTopEmp = v.topEmployees.length > 0;
     const openApp = this.state.openApp;
     v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
     v.closeApp = () => this.setState({ openApp: null });
@@ -1279,6 +1282,7 @@ class Maestro extends MaestroBase {
       this.live.counts = d.counts || {};
       this.live.usage = d.usage || {};
       this.live.apps = d.apps || [];
+      this.live.topEmployees = d.topEmployees || [];
       this.state.activity = d.activity || [];
       const active = this.TASKS[0] && this.TASKS[0].id;
       if (active != null) { this.live.activeId = active; if (!this.live.plan[active]) this.fetchPlan(active); }

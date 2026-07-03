@@ -264,3 +264,16 @@ test('重置员工经验绩效(resetRoleLearning)', () => {
   assert.equal(r.name, s.getRole(rid).name);
   assert.ok(r.prompt !== undefined);
 });
+
+test('员工绩效榜:按落盘排序含成功率', () => {
+  const { open } = require('../store');
+  const { buildAll } = require('../api');
+  const s = open(':memory:'); s.seed();
+  const a = 'engineering-frontend-developer', b = 'testing-api-tester';
+  s.addRoleStat(a, true); s.addRoleStat(a, true); s.addRoleStat(a, true); s.addRoleStat(a, false); // 3落盘1空转=75%
+  s.addRoleStat(b, true);  // 1落盘=100%
+  const vm = buildAll(s, { name: 'admin', admin: 1 });
+  assert.equal(vm.topEmployees[0].done, 3);   // a 排第一
+  assert.equal(vm.topEmployees[0].rate, 75);
+  assert.equal(vm.topEmployees[1].rate, 100);
+});

@@ -910,6 +910,14 @@
           <div style="flex:1;"></div>
           <button onClick="{{ refreshHealth }}" style="height:26px;padding:0 10px;border-radius:7px;background:#fff;border:1px solid #E6E3DC;font-size:11.5px;cursor:pointer;font-family:inherit;">↻ 重测</button>
         </div>
+        <sc-if value="{{ hasTopEmp }}">
+        <div style="background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 16px;margin-bottom:16px;">
+          <div style="font-size:12.5px;font-weight:650;margin-bottom:10px;">🏆 员工绩效榜（按落盘产出）</div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <sc-for list="{{ topEmployees }}" as="te"><div style="display:flex;align-items:center;gap:10px;padding:5px 4px;font-size:12.5px;"><span style="width:20px;color:#A39E94;font-family:'JetBrains Mono',monospace;text-align:right;">{{ te.rank }}</span><span>{{ te.emoji }}</span><span style="flex:1;min-width:0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ te.name }}</span><span style="font-size:11px;color:#A39E94;">{{ te.dept }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#3C3933;">📄{{ te.done }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;color:{{ te.rateColor }};width:42px;text-align:right;">{{ te.rate }}</span></div></sc-for>
+          </div>
+        </div>
+        </sc-if>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px;">
           <sc-for list="{{ agents }}" as="a" hint-placeholder-count="9">
             <button onClick="{{ a.open }}" style-hover="border-color:#D9D5CC;transform:translateY(-1px)" style="text-align:left;cursor:pointer;background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:15px;font-family:inherit;box-shadow:0 1px 2px rgba(20,18,14,.04);transition:transform .15s ease,border-color .15s ease;">

@@ -191,9 +191,14 @@ function buildAll(store, user) {
   today.byAgent = (store.usageTodayByAgent ? store.usageTodayByAgent() : []).map((r) => ({ agent: (ROLE0[r.agent] && ROLE0[r.agent].label) || r.agent, cost: Math.round(r.c * 1000) / 1000, tokens: r.i + r.o, calls: r.n }));
   today.allTime = store.usageAllTime ? Math.round(store.usageAllTime().cost * 1000) / 1000 : 0;
   const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/output/' + a.task_id + '/' + a.entry, updated: rel(a.created_at) }));
+  // 员工绩效榜:有记录的员工按落盘数排,含成功率(落盘/(落盘+空转))
+  const dmetaN = {}; store.listDepts().forEach((d) => { dmetaN[d.id] = d.name; });
+  const topEmployees = allRoles.filter((r) => r.dept !== '__system' && ((r.done_count || 0) + (r.empty_count || 0)) > 0)
+    .map((r) => { const dn = r.done_count || 0, en = r.empty_count || 0; return { name: r.name, dept: dmetaN[r.dept] || r.dept, emoji: r.emoji || '🧑‍💼', done: dn, empty: en, total: dn + en, rate: Math.round(dn / (dn + en) * 100) }; })
+    .sort((a, b) => b.done - a.done || a.empty - b.empty).slice(0, 10);
   return {
     me: user ? { id: user.id, name: user.name, admin: !!user.admin } : null,
-    agents, depts, boards, projects, tasks: tasksVm, people, usage: today, apps,
+    agents, depts, boards, projects, tasks: tasksVm, people, usage: today, apps, topEmployees,
     counts: {
       runningAgents: agents.filter((a) => a.status === 'working').length,
       runningTasks: tasks.filter((t) => t.status === 'running').length,
