@@ -372,8 +372,11 @@ class Maestro extends MaestroBase {
       const tag = (e.target && e.target.tagName) || '';
       const typing = tag === 'INPUT' || tag === 'TEXTAREA';
       if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey)) { e.preventDefault(); const s = document.getElementById('search'); if (s) s.focus(); }
-      else if (e.key === '/' && !typing) { e.preventDefault(); const s = document.getElementById('search'); if (s) s.focus(); }
-      else if (e.key === 'Escape' && this.state.modal) { this.setState({ modal: null }); }
+      else if (e.key === 'Escape') { if (this.state.modal) this.setState({ modal: null }); return; }
+      else if (typing) return; // 输入框内不触发单键快捷键
+      else if (e.key === '/') { e.preventDefault(); const s = document.getElementById('search'); if (s) s.focus(); }
+      else if (e.key === 'n') { e.preventDefault(); this.newTask(); }
+      else if (e.key === '?') { e.preventDefault(); this.setState({ modal: this.state.modal === 'help' ? null : 'help' }); }
     });
   }
   startTimer() {} // 关闭原型的 mock 动画 tick
@@ -567,6 +570,7 @@ class Maestro extends MaestroBase {
     v.onLoginKey = (e) => { if (e.key === 'Enter') this.submitLogin(); };
     v.logout = () => this.logout();
     v.modalAccount = this.state.modal === 'account';
+    v.modalHelp = this.state.modal === 'help';
     v.changePw = () => this.changePw();
     // —— 部门管理(#3) ——
     v.newDept = () => this.newDept();

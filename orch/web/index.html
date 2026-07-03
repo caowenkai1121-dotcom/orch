@@ -1115,6 +1115,22 @@
   </div>
   </sc-if>
 
+  <sc-if value="{{ modalHelp }}">
+  <div onClick="{{ closeModal }}" style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:60;">
+    <div style="background:#fff;border-radius:16px;padding:22px 24px;width:360px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:14px;">键盘快捷键</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13px;">
+        <div style="display:flex;justify-content:space-between;"><span style="color:#57534E;">聚焦搜索</span><kbd style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#F4F2ED;border:1px solid #E6E3DC;border-radius:6px;padding:2px 8px;">⌘/Ctrl + K</kbd></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:#57534E;">聚焦搜索</span><kbd style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#F4F2ED;border:1px solid #E6E3DC;border-radius:6px;padding:2px 8px;">/</kbd></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:#57534E;">新建任务</span><kbd style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#F4F2ED;border:1px solid #E6E3DC;border-radius:6px;padding:2px 8px;">N</kbd></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:#57534E;">关闭弹窗</span><kbd style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#F4F2ED;border:1px solid #E6E3DC;border-radius:6px;padding:2px 8px;">Esc</kbd></div>
+        <div style="display:flex;justify-content:space-between;"><span style="color:#57534E;">本帮助</span><kbd style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:#F4F2ED;border:1px solid #E6E3DC;border-radius:6px;padding:2px 8px;">?</kbd></div>
+      </div>
+      <button onClick="{{ closeModal }}" style="margin-top:18px;width:100%;height:36px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">知道了</button>
+    </div>
+  </div>
+  </sc-if>
+
   <sc-if value="{{ modalAccount }}">
   <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:60;">
     <div style="background:#fff;border-radius:16px;padding:22px;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
