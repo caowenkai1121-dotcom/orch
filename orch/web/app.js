@@ -421,6 +421,17 @@ class Maestro extends MaestroBase {
     // 剧本选项(新建任务)
     if (this.state.modal === 'task' && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
     v.playbookOpts = (this.live.playbooks || []).map((p) => ({ id: p.id, name: p.name }));
+    // 任务列表筛选:状态 + 关键词
+    const TF = [
+      { k: '', n: '全部' }, { k: 'working', n: '进行中' }, { k: 'awaiting', n: '待审批' },
+      { k: 'awaiting_input', n: '待输入' }, { k: 'paused', n: '已暂停' }, { k: 'done', n: '已完成' }, { k: 'failed', n: '失败' },
+    ];
+    const curF = this.state.taskFilter || '';
+    const fq = (this.state.taskQ || '').trim().toLowerCase();
+    v.taskFilters = TF.map((f) => ({ n: f.n, on: f.k === curF, bg: f.k === curF ? '#1A1814' : '#F4F2ED', c: f.k === curF ? '#fff' : '#57534E', pick: () => this.setState({ taskFilter: f.k }) }));
+    v.onTaskQ = (e) => this.setState({ taskQ: e.currentTarget.value });
+    // 筛选后的列表(注入到 tasksList 由模板用),同时看板也过滤
+    this._taskFilterFn = (t) => (!curF || t.sk === curF) && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0);
     // 任务看板(参考 vibe-kanban):按状态分列
     v.taskViewBoard = this.state.taskView === 'board';
     v.taskViewList = !v.taskViewBoard;
@@ -437,7 +448,7 @@ class Maestro extends MaestroBase {
       { key: ['failed', 'cancelled'], name: '失败/取消', color: '#DC5B52' },
     ];
     v.board = COLS.map((c) => {
-      const items = (this.TASKS || []).filter((t) => c.key.indexOf(t.sk) >= 0).map((t) => ({
+      const items = (this.TASKS || []).filter((t) => c.key.indexOf(t.sk) >= 0 && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0)).map((t) => ({
         id: t.id, title: t.title, proj: t.proj, nowDoing: t.nowDoing || '',
         cost: t.cost ? ('$' + t.cost.toFixed(2)) : '', open: () => this.go('task', { taskId: t.id }),
       }));
@@ -451,6 +462,9 @@ class Maestro extends MaestroBase {
     });
     v.hasSchedules = v.schedules.length > 0;
     if (this.state.screen === 'tasks' && !this.live.schedules) { this.live.schedules = []; this.fetchSchedules(); }
+    // 列表按筛选过滤(按 id 集,兼容 decTRow 字段)
+    const allowIds = new Set((this.TASKS || []).filter(this._taskFilterFn).map((t) => t.id));
+    v.tasksList = (v.tasksList || []).filter((t) => allowIds.has(t.id));
     // 回放(canReplay 依赖 curT,在后面补)
     v.openReplay = () => this.openReplay();
     v.modalReplay = this.state.modal === 'replay';

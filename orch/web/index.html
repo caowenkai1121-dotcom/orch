@@ -766,10 +766,14 @@
       <div style="padding:26px 30px 40px;max-width:1080px;">
         <div style="display:flex;align-items:flex-end;gap:14px;margin-bottom:18px;">
           <div style="flex:1;"><h1 style="font-size:21px;font-weight:700;margin:0;">任务</h1><div style="font-size:13px;color:#8A857C;margin-top:4px;">编排器统筹下的全部任务 · 点击查看接力过程</div></div>
+          <input onkeyup="{{ onTaskQ }}" placeholder="🔍 筛选任务…" style="height:30px;width:150px;border:1px solid #E6E3DC;border-radius:8px;padding:0 10px;font-family:inherit;font-size:12.5px;box-sizing:border-box;">
           <div style="display:flex;align-items:center;padding:3px;background:#F0EEE9;border-radius:9px;gap:2px;">
             <button onClick="{{ setViewList }}" style="height:28px;padding:0 12px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;background:{{ viewListBg }};">☰ 列表</button>
             <button onClick="{{ setViewBoard }}" style="height:28px;padding:0 12px;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;background:{{ viewBoardBg }};">▦ 看板</button>
           </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+          <sc-for list="{{ taskFilters }}" as="tf"><button onClick="{{ tf.pick }}" style="height:26px;padding:0 12px;border:none;border-radius:8px;cursor:pointer;font-size:11.5px;font-weight:600;font-family:inherit;background:{{ tf.bg }};color:{{ tf.c }};">{{ tf.n }}</button></sc-for>
         </div>
         <sc-if value="{{ hasSchedules }}">
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:13px 16px;margin-bottom:16px;">
