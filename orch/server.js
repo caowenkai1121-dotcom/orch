@@ -366,6 +366,13 @@ app.post('/api/tasks/cleanup', (req, res) => {
   res.json({ ok: true, n: del.length });
 });
 
+// 批量重试:重跑本人所有失败任务(限额恢复/临时故障后一键恢复);已完成步骤不重跑
+app.post('/api/tasks/retry-all', (req, res) => {
+  const list = store.listTasks().filter((t) => t.status === 'failed' && owns(req.user, t));
+  list.forEach((t) => { try { require('./runner').retryFailed(t.id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }); } catch (e) {} });
+  res.json({ ok: true, n: list.length });
+});
+
 // 删除任务(+全部关联数据);运行中需先停
 app.delete('/task/:id', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);

@@ -473,6 +473,9 @@ class Maestro extends MaestroBase {
     const cleanable = (this.TASKS || []).filter((t) => (t.sk === 'failed' || t.sk === 'cancelled') && t.canModify);
     v.cleanableN = cleanable.length; v.hasCleanable = cleanable.length > 0;
     v.cleanupTasks = () => this.cleanupTasks(cleanable.length);
+    const failedTs = (this.TASKS || []).filter((t) => t.sk === 'failed' && t.canModify);
+    v.failedN = failedTs.length; v.hasFailed = failedTs.length > 0;
+    v.retryAll = () => this.retryAll(failedTs.length);
     // 筛选后的列表(注入到 tasksList 由模板用),同时看板也过滤
     this._taskFilterFn = (t) => (!curF || t.sk === curF) && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0);
     // 任务看板(参考 vibe-kanban):按状态分列
@@ -1140,6 +1143,10 @@ class Maestro extends MaestroBase {
     if (/permission|denied|EACCES|EPERM/i.test(s)) return '💡 权限问题。检查产出目录写权限或执行器配置。';
     if (/ENOENT|network|ECONN|fetch failed|getaddrinfo/i.test(s)) return '💡 网络/文件访问失败,通常是临时问题,重试即可。';
     return '💡 点「重试失败步骤」续跑(已完成步骤不重跑),员工会看到上次失败原因换思路。';
+  }
+  retryAll(n) {
+    if (!n || !window.confirm('重试 ' + n + ' 个失败任务?已完成步骤不重跑。')) return;
+    fetch('/api/tasks/retry-all', { method: 'POST' }).then((r) => r.json()).then((d) => { this.toast('↻ 已重试 ' + (d.n || 0) + ' 个任务'); this.fetchAll(); }).catch(() => {});
   }
   cleanupTasks(n) {
     if (!n || !window.confirm('清理 ' + n + ' 个失败/取消的任务及其记录?此操作不可恢复(产出文件保留在磁盘)。')) return;
