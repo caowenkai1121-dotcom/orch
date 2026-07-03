@@ -83,11 +83,13 @@ async function runStep(step, ctx, prevOutput) {
   return res;
 }
 
-// 质量门判定:门禁员工输出明确 FAIL(且无 PASS)= 不通过。执行器退出码 0 不代表质量过关。
+// 质量门判定:门禁员工输出明确 FAIL = 不通过。执行器退出码 0 不代表质量过关。
 function gateFailed(out) {
   const s = String(out || '');
   if (/(判定|结论|verdict|结果)[^\n]{0,6}FAIL/i.test(s) || /❌\s*FAIL/.test(s)) return true;
-  if (/\bFAIL\b/.test(s) && !/\bPASS\b/.test(s)) return true; // 评审卡要求明确输出 PASS/FAIL
+  // 按首个出现的判定词决定(轮17 强制门禁以 PASS/FAIL 开头):FAIL 先出现或只有 FAIL → 不通过
+  const fi = s.search(/\bFAIL\b/), pi = s.search(/\bPASS\b/);
+  if (fi >= 0 && (pi < 0 || fi < pi)) return true;
   return false;
 }
 

@@ -109,3 +109,25 @@ test('质量门打回:实现员工收到返工框架', async () => {
   assert.match(implPrompts[1], /质量门.*打回/);
   assert.match(implPrompts[1], /缺少错误处理/);
 });
+
+test('质量门检测:按首个判定词,FAIL在前判失败', async () => {
+  // 直接测 gateFailed(经 runLoop 行为覆盖)
+  const { runPlan } = require('../engine');
+  const outs = [
+    ['FAIL: 缺错误处理,但部分用例 PASS', true],   // FAIL 在前 → 失败
+    ['PASS: 全部通过,无 FAIL 项', false],          // PASS 在前 → 通过
+    ['FAIL 不合格', true],
+    ['PASS 合格', false],
+    ['一切正常', false],                            // 无判定词 → 通过
+  ];
+  for (const [gateOut, shouldRework] of outs) {
+    let gc = 0, implRuns = 0;
+    const impl = { async run() { implRuns++; return { output: 'v', success: true }; } };
+    const gate = { async run() { gc++; return { output: gc === 1 ? gateOut : 'PASS 通过', success: true }; } };
+    const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 3, deps: [], body: [
+      { id: 'impl', agent: 'i', prompt: 'p', deps: [] }, { id: 'gate', agent: 'g', prompt: 'p', deps: [] },
+    ] }] };
+    await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+    assert.equal(implRuns > 1, shouldRework, '门禁输出: ' + gateOut);
+  }
+});
