@@ -95,7 +95,7 @@ function gateFailed(out) {
 
 async function runLoop(step, ctx, prevOutput) {
   let last = { output: prevOutput || '', success: false };
-  const max = step.max || 3; // LLM plan 可能没给 max,兜底 3
+  const max = Math.min(Math.max(1, step.max || 3), 5); // LLM 没给兜底 3;封顶 5 防失控重试烧钱
   const gateId = step.body.length ? step.body[step.body.length - 1].id : null; // 约定:body 末步为质量门
   if (gateId && step.body.length > 1) step.body[step.body.length - 1].isGate = true; // 标记门禁步,让员工按 PASS/FAIL 格式输出
   for (let i = 0; i < max; i++) {

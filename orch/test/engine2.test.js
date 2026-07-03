@@ -131,3 +131,15 @@ test('质量门检测:按首个判定词,FAIL在前判失败', async () => {
     assert.equal(implRuns > 1, shouldRework, '门禁输出: ' + gateOut);
   }
 });
+
+test('loop max 封顶 5,防失控', async () => {
+  const { runPlan } = require('../engine');
+  let gc = 0;
+  const impl = { async run() { return { output: 'v', success: true }; } };
+  const gate = { async run() { gc++; return { output: 'FAIL 永不通过', success: true }; } };
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 99, deps: [], body: [
+    { id: 'impl', agent: 'i', prompt: 'p', deps: [] }, { id: 'gate', agent: 'g', prompt: 'p', deps: [] },
+  ] }] };
+  await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  assert.equal(gc, 5); // max=99 被封到 5
+});
