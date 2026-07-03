@@ -418,7 +418,6 @@ class Maestro extends MaestroBase {
     v.quickLaunch = () => this.quickLaunch();
     v.cloneTask = () => this.cloneTask();
     v.delTask = () => this.delTask();
-    v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
@@ -604,6 +603,7 @@ class Maestro extends MaestroBase {
     v.costToday = '$' + ((this.live.usage && this.live.usage.cost) || 0).toFixed(3);
     const curT = typeof this.state.taskId === 'number' && this.TASKS.find((t) => t.id === this.state.taskId);
     const canMod = !!(curT && curT.canModify); // #4 非本人任务只读
+    v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.viewOnly = !!(curT && !curT.canModify);
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
     v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
