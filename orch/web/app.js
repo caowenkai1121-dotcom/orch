@@ -460,6 +460,7 @@ class Maestro extends MaestroBase {
     v.board = COLS.map((c) => {
       const items = (this.TASKS || []).filter((t) => c.key.indexOf(t.sk) >= 0 && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0)).map((t) => ({
         id: t.id, title: t.title, proj: t.proj, nowDoing: t.nowDoing || '',
+        progressLabel: t.progressLabel || '', progress: t.progress || 0,
         cost: t.cost ? ('$' + t.cost.toFixed(2)) : '', open: () => this.go('task', { taskId: t.id }),
       }));
       return { name: c.name, color: c.color, n: items.length, items };

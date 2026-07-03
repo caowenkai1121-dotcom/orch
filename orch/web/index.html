@@ -804,6 +804,7 @@
                 <button onClick="{{ tc.open }}" style-hover="border-color:#D9D5CC" style="width:100%;text-align:left;background:#fff;border:1px solid #E9E7E1;border-radius:10px;padding:10px 11px;margin-bottom:8px;cursor:pointer;font-family:inherit;box-shadow:0 1px 2px rgba(20,18,14,.04);">
                   <div style="font-size:12.5px;font-weight:600;line-height:1.4;">{{ tc.title }}</div>
                   <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10.5px;color:#A39E94;"><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ tc.proj }}</span><span style="font-family:'JetBrains Mono',monospace;">{{ tc.cost }}</span></div>
+                  <sc-if value="{{ tc.progressLabel }}"><div style="display:flex;align-items:center;gap:6px;margin-top:6px;"><div style="flex:1;height:4px;border-radius:3px;background:#EDEBE5;overflow:hidden;"><div style="height:100%;width:{{ tc.progress }}%;background:#2E9E5B;"></div></div><span style="font-size:10px;color:#A39E94;">{{ tc.progressLabel }}</span></div></sc-if>
                   <sc-if value="{{ tc.nowDoing }}"><div style="font-size:10.5px;color:#8a6d00;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">▸ {{ tc.nowDoing }}</div></sc-if>
                 </button>
               </sc-for>
