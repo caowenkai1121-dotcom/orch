@@ -36,6 +36,7 @@ function writePlanFile(taskId, store, dir) {
     const t = store.getTask(taskId);
     let plan = {}; try { plan = JSON.parse(t.plan) || {}; } catch (e) { return; }
     const st = {}; (t.steps || []).forEach((s) => { st[s.step_id] = s; });
+    const fileN = {}; store.getEvents(taskId).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); fileN[d.step] = d.n; } catch (x) {} } });
     const mark = { done: '✓ 完成', running: '▶ 进行中', failed: '✗ 失败' };
     const flat = [];
     const walk = (arr, loopTag) => (arr || []).forEach((s) => { if (s.body) walk(s.body, '(质量环)'); else flat.push({ id: s.id, role: s.role || s.agent, tag: loopTag || '' }); });
@@ -44,8 +45,9 @@ function writePlanFile(taskId, store, dir) {
     flat.forEach((s, i) => {
       const row = st[s.id] || {};
       const summary = (row.output || '').replace(/\s+/g, ' ').slice(-160);
+      const fn = fileN[s.id];
       lines.push('### ' + (i + 1) + '. ' + s.id + ' — ' + (s.role || '') + ' ' + s.tag);
-      lines.push('- 状态: ' + (mark[row.status] || '待执行'));
+      lines.push('- 状态: ' + (mark[row.status] || '待执行') + (row.status === 'done' ? (fn > 0 ? ' · 📄 ' + fn + ' 文件' : ' · ⚠ 无文件产出') : ''));
       if (summary) lines.push('- 产出摘要: ' + summary);
     });
     const errs = (t.steps || []).filter((s) => s.status === 'failed' && s.output);

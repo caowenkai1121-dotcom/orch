@@ -229,3 +229,19 @@ test('复盘:喂入每步产出文件数,0文件提示别空转', async () => {
   assert.match(seen, /产出文件 0/);
   assert.match(seen, /别只描述不落盘|没落盘/);
 });
+
+test('task_plan.md 标注每步产出文件数', () => {
+  const { open } = require('../store');
+  const { writePlanFile } = require('../runner');
+  const fs = require('fs'), path = require('path'), os = require('os');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('活', '默认项目', 'admin', {});
+  s.setPlan(id, { steps: [{ id: 'build', role: 'engineering-frontend-developer', prompt: 'p', deps: [] }] });
+  s.setStep(id, 'build', 'claude', 'done', '做完了');
+  s.addEvent(id, 'files', { step: 'build', n: 3 });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'orchplan-'));
+  writePlanFile(id, s, dir);
+  const md = fs.readFileSync(path.join(dir, 'task_plan.md'), 'utf8');
+  assert.match(md, /📄 3 文件/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
