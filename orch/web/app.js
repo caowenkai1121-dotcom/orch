@@ -451,8 +451,11 @@ class Maestro extends MaestroBase {
     v.onProjQuickKey = (e) => { if (e.key === 'Enter') this.projQuickLaunch(); };
     v.modelPick = this.modelPickers();
     // 剧本选项(新建任务)
-    if (this.state.modal === 'task' && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
+    if ((this.state.modal === 'task' || this.state.screen === 'dashboard') && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
     v.playbookOpts = (this.live.playbooks || []).map((p) => ({ id: p.id, name: p.name }));
+    // 总控台剧本快捷入口:一键复用已存工作流
+    v.dashPlaybooks = (this.live.playbooks || []).slice(0, 8).map((p) => ({ name: p.name, run: () => this.runPlaybook(p.id, p.name) }));
+    v.hasPlaybooks = v.dashPlaybooks.length > 0;
     // 任务列表筛选:状态 + 关键词
     const TF = [
       { k: '', n: '全部' }, { k: 'working', n: '进行中' }, { k: 'awaiting', n: '待审批' },
@@ -841,6 +844,10 @@ class Maestro extends MaestroBase {
   }
   // —— 剧本 ——
   fetchPlaybooks() { fetch('/api/playbooks').then((r) => r.json()).then((p) => { this.live.playbooks = p || []; this.scheduleRender(); }).catch(() => {}); }
+  runPlaybook(id, name) { // 打开新建弹窗并预选该剧本
+    this.setState({ modal: 'task', taskDept: null });
+    setTimeout(() => { const el = document.getElementById('nt-playbook'); if (el) el.value = String(id); const ti = document.getElementById('nt-text'); if (ti) ti.focus(); }, 80);
+  }
   saveAsPlaybook() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     const name = window.prompt('剧本名称(存下这套步骤,以后一键复用):'); if (!name) return;
