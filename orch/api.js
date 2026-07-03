@@ -19,6 +19,25 @@ function roleMap(store) {
   return m;
 }
 
+// 步骤id → 员工id(从 plan JSON 提取,含 loop body)
+function planRoleMap(t) {
+  const m = {};
+  let p = null; try { p = JSON.parse(t.plan); } catch (e) { return m; }
+  const walk = (steps) => (steps || []).forEach((s) => { if (s.body) walk(s.body); else if (s.role) m[s.id] = s.role; });
+  walk(p && p.steps);
+  return m;
+}
+// 员工显示信息:{id → {name,emoji,color(部门色),dept,deptName}}
+function roleView(store) {
+  const dmeta = {}; store.listDepts().forEach((d) => { dmeta[d.id] = d; });
+  const m = {};
+  store.listRoles().forEach((r) => {
+    const d = dmeta[r.dept] || {};
+    m[r.id] = { name: r.name, emoji: r.emoji || '🧑‍💼', color: d.color || '#7C6FD9', dept: r.dept, deptName: d.name || r.dept, executor: r.executor };
+  });
+  return m;
+}
+
 function rel(iso) {
   if (!iso) return '—';
   const ms = Date.now() - new Date(iso).getTime();
@@ -75,11 +94,13 @@ function buildAll(store, user) {
     };
   });
 
-  // 部门:来自 departments 表(含空部门)
+  // 部门:来自 departments 表(含空部门);employees=部门员工(角色)
   const boards = {};
+  const allRoles = store.listRoles();
   const depts = store.listDepts().map((d) => {
     const id = d.id;
-    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '' };
+    const employees = allRoles.filter((r) => r.dept === id).map((r) => ({ id: r.id, name: r.name, emoji: r.emoji || '🧑‍💼', description: r.description || '', executor: r.executor || 'claude' }));
+    const meta = { name: d.name, glyph: d.glyph, color: d.color, soft: (d.color || '#7C6FD9') + '33', desc: '', employees, empN: employees.length };
     const myAgents = Object.keys(ROLE).filter((aid) => ROLE[aid].dept === id);
     const ds = steps.filter((s) => myAgents.includes(s.agent));
     const card = (s) => ({ t: (taskById[s.task_id] ? taskById[s.task_id].text : ('任务 ' + s.task_id)).slice(0, 36), m: (ROLE[s.agent] ? ROLE[s.agent].label : s.agent) + ' · ' + s.step_id });
@@ -149,25 +170,31 @@ function relay(store, id) {
   const t = store.getTask(id);
   if (!t) return [];
   const logs = store.getLogs(id);
+  const stepRole = planRoleMap(t);
+  const RV = roleView(store);
   return (t.steps || []).map((s) => {
+    const emp = stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
     const r = ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' };
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
     const summary = (s.output && s.output.trim()) ? s.output.trim().slice(-300) : (last || ('状态: ' + s.status));
-    return { who: r.label, avatar: r.av, color: r.color, title: s.step_id, desc: summary, time: '', dur: '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;
+    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, time: '', dur: '', sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
   });
 }
 
 // 编排计划(PLAN 形状)
 function plan(store, id) {
   const ROLE = roleMap(store);
+  const RV = roleView(store);
   const t = store.getTask(id);
   if (!t) return [];
   let p = null; try { p = JSON.parse(t.plan); } catch (e) {}
   if (!p || !p.steps) return [];
   let n = 0; const out = [];
   const push = (s, dep) => {
+    const emp = s.role && RV[s.role];
     const r = ROLE[s.agent] || { label: s.agent || '编排器', color: '#1A1814', av: '◆' };
-    out.push({ n: ++n, title: s.id, agent: r.label, avatar: r.av, color: r.color, sk: 'queued', eta: '', dep: dep || (s.deps && s.deps.length ? '依赖 ' + s.deps.join(',') : ''), deps: s.deps || [] });
+    out.push({ n: ++n, title: s.id, agent: emp ? (emp.deptName + '·' + emp.name) : r.label, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (s.deps && s.deps.length ? '依赖 ' + s.deps.join(',') : ''), deps: s.deps || [] });
   };
   p.steps.forEach((s) => { if (s.type === 'loop') { (s.body || []).forEach((b) => push(b, '回退环')); } else push(s); });
   (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) e.sk = stepSk(st.status); });

@@ -70,33 +70,88 @@ async function refineBrief(text, claude) {
   return b ? (text + '\n\n【需求细化】\n' + b).slice(0, 3500) : text;
 }
 
-// agents=所选 agent(约束);orchestration=文字编排;refine=是否先细化需求
+// —— 员工模式:按「部门→员工」目录拆分任务 ——
+function validateRoles(plan, roleIds) {
+  if (!plan || !Array.isArray(plan.steps) || !plan.steps.length) return false;
+  const ids = collectIds(plan.steps, []);
+  const check = (s) => {
+    if (s.type === 'loop') return Array.isArray(s.body) && s.body.length && s.body.every(check);
+    if (!roleIds.includes(s.role)) return false;
+    if (s.deps && s.deps.some((d) => !ids.includes(d))) return false;
+    return true;
+  };
+  return plan.steps.every(check);
+}
+
+async function fromLLMRoles(text, claude, roles, depts, orchestration) {
+  const byDept = {};
+  roles.forEach((r) => { (byDept[r.dept] = byDept[r.dept] || []).push(r); });
+  const dName = {}; (depts || []).forEach((d) => { dName[d.id] = d.name; });
+  const catalog = Object.keys(byDept).map((d) =>
+    (dName[d] || d) + ': ' + byDept[d].map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')').join('、')
+  ).join('\n');
+  const prompt = `你是公司的总编排器。公司部门与员工目录:\n${catalog}\n\n`
+    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取上面员工目录中的员工 id(把任务派给最合适部门的最合适员工)。`
+    + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
+    + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示"实现→验证,失败重试"。多个无依赖的步骤会并行。`
+    + `要求:只挑真正需要的员工(通常2-5步,不要为拆而拆);每步 prompt 自包含、可直接执行,明确产出物(创建哪些文件),不要假设存在外部文档;`
+    + `非代码类员工(营销/产品/设计等)的产出是 Markdown 文档,写明文件名。只输出 JSON,不要解释。任务: ${text}`;
+  const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
+  const plan = extractJson(output);
+  plan.task = text;
+  return plan;
+}
+
+// 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 内)
+function resolveRoles(steps, roleMap, allowed) {
+  (steps || []).forEach((s) => {
+    if (s.body) { resolveRoles(s.body, roleMap, allowed); return; }
+    if (!s.role) return;
+    const r = roleMap[s.role];
+    if (!r) { s.agent = s.agent || allowed[0]; return; }
+    let ex = r.executor || 'claude';
+    if (allowed && allowed.length && allowed.indexOf(ex) < 0) ex = allowed[0];
+    s.agent = ex;
+    if (r.prompt) s.prompt = '【你的角色】' + r.prompt + '\n\n【任务】' + s.prompt;
+  });
+}
+
+// agents=所选执行器;roles/depts=员工目录;orchestration=文字编排;refine=需求细化
 async function makePlan(text, opts) {
-  const { mode, agents, orchestration, refine, templatesDir, claude } = opts;
+  const { mode, agents, roles, depts, explicit, orchestration, refine, templatesDir, claude } = opts;
   const allowed = (agents && agents.length) ? agents : ['claude'];
   let brief = text;
   if (refine && claude) { try { brief = await refineBrief(text, claude); } catch (e) {} }
   const orch = (orchestration || '').trim();
+  const roleMap = {}; (roles || []).forEach((r) => { roleMap[r.id] = r; });
+  const roleIds = Object.keys(roleMap);
 
-  // 1) 有文字编排 → 按编排(约束到所选 agent)
+  // 1) 用户显式只选一个执行器 + 无编排 → 该执行器单步直做(保持既有行为)
+  if (explicit && allowed.length === 1 && !orch) {
+    return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
+  }
+  // 2) 员工模式(默认):按部门员工目录拆分指派
+  if (roleIds.length && claude && mode !== 'template') {
+    try {
+      const p = await fromLLMRoles(brief, claude, roles, depts, orch);
+      if (validateRoles(p, roleIds)) { resolveRoles(p.steps, roleMap, allowed); return p; }
+    } catch (e) { /* 落到执行器模式 */ }
+  }
+  // 3) 有文字编排 → 按编排(执行器模式)
   if (orch && claude) {
     try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return p; } catch (e) {}
   }
-  // 2) 只选了一个 agent + 无编排 → 该 agent 单步直做
-  if (allowed.length === 1) {
-    return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
-  }
-  // 3) 显式模板模式且含 claude+codex → 走模板
+  // 4) 显式模板模式且含 claude+codex → 走模板
   if (mode === 'template' && allowed.includes('claude') && allowed.includes('codex')) {
     const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl;
   }
-  // 4) 多 agent → LLM 用这些 agent 拆
-  if (claude) {
+  // 5) 多执行器 → LLM 拆
+  if (claude && allowed.length > 1) {
     try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return p; } catch (e) {}
   }
-  // 5) 兜底
+  // 6) 兜底
   if (allowed.includes('claude') && allowed.includes('codex')) { const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl; }
   return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
 }
 
-module.exports = { fromTemplate, fromLLM, makePlan, validate, refineBrief };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief };

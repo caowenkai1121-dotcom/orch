@@ -530,6 +530,25 @@
           </div>
         </sc-if>
 
+        <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 12px;">
+          <span style="font-size:13.5px;font-weight:650;">部门员工</span><span style="font-size:11.5px;color:#A39E94;">任务由编排器拆分给最合适的员工执行 · {{ deptEmpN }} 名</span>
+          <div style="flex:1;"></div>
+          <sc-if value="{{ isAdmin }}"><button onClick="{{ hireEmp }}" style="height:28px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">+ 新增员工</button></sc-if>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
+          <sc-for list="{{ deptEmployees }}" as="e" hint-placeholder-count="6">
+            <div style="background:#fff;border:1px solid #E9E7E1;border-radius:13px;padding:14px;box-shadow:0 1px 2px rgba(20,18,14,.04);">
+              <div style="display:flex;align-items:center;gap:9px;">
+                <span style="width:32px;height:32px;flex:none;border-radius:9px;background:{{ dept.color }}22;font-size:16px;display:flex;align-items:center;justify-content:center;">{{ e.emoji }}</span>
+                <div style="flex:1;min-width:0;font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ e.name }}</div>
+                <span style="font-size:10px;font-weight:600;color:#8A857C;background:#F4F2ED;border:1px solid #ECEAE4;padding:2px 7px;border-radius:6px;font-family:'JetBrains Mono',monospace;">{{ e.executor }}</span>
+                <sc-if value="{{ isAdmin }}"><button onClick="{{ e.del }}" style="width:24px;height:24px;border:none;background:transparent;cursor:pointer;color:#C9C4BA;font-size:13px;" style-hover="color:#B4541E">✕</button></sc-if>
+              </div>
+              <div style="font-size:11.5px;color:#8A857C;margin-top:9px;line-height:1.55;min-height:34px;">{{ e.description }}</div>
+            </div>
+          </sc-for>
+        </div>
+
         <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 12px;"><span style="font-size:13.5px;font-weight:650;">本部门 Agent</span></div>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
           <sc-for list="{{ dept.agents }}" as="a" hint-placeholder-count="3">
@@ -877,6 +896,24 @@
       <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;">
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
         <button onClick="{{ submitDept }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">创建</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ modalHire }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:60;">
+    <div style="background:#fff;border-radius:16px;padding:22px;width:520px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:700;margin-bottom:12px;">新增员工 · {{ dept.name }}</div>
+      <input id="he-name" placeholder="角色名,如 视频剪辑师" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
+      <input id="he-desc" placeholder="一句话职责(编排器据此选人)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
+      <textarea id="he-prompt" placeholder="角色提示词:你是…(身份/关键规则/交付物标准)" style="width:100%;height:110px;border:1px solid #E6E3DC;border-radius:9px;padding:10px;font-family:inherit;font-size:12.5px;resize:vertical;box-sizing:border-box;margin-bottom:9px;"></textarea>
+      <select id="he-exec" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
+        <sc-for list="{{ execOpts }}" as="x"><option value="{{ x.id }}">执行器: {{ x.name }}</option></sc-for>
+      </select>
+      <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:16px;">
+        <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
+        <button onClick="{{ submitHire }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">入职</button>
       </div>
     </div>
   </div>

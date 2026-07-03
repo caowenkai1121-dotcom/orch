@@ -131,6 +131,10 @@ app.post('/api/projects', (req, res) => {
 app.post('/api/people', adminOnly, (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
 app.post('/api/people/:id/agents', adminOnly, (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
 
+// 员工(角色) CRUD:管理员
+app.post('/api/roles', adminOnly, (req, res) => { const id = store.addRole(req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ id }); });
+app.delete('/api/roles/:id', adminOnly, (req, res) => { store.deleteRole(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+
 // #3 部门 CRUD + 为部门设置 agent
 app.post('/api/depts', adminOnly, (req, res) => { const id = store.addDept(req.body || {}); broadcastRaw({ type: 'agents' }); res.json({ id }); });
 app.delete('/api/depts/:id', adminOnly, (req, res) => { store.deleteDept(req.params.id); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
@@ -154,12 +158,13 @@ app.post('/task', (req, res) => {
   const ws = taskWorkspace(store.getTask(id));
   store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
   res.json({ id });
-  const allAgents = store.listAgents().map((a) => a.id);
-  const sel = (Array.isArray(req.body.agents) && req.body.agents.length) ? req.body.agents.filter((a) => allAgents.includes(a)) : allAgents;
+  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id);
+  const explicit = Array.isArray(req.body.agents) && req.body.agents.length > 0;
+  const sel = explicit ? req.body.agents.filter((a) => allAgents.includes(a)) : allAgents;
   const refine = req.body.refine === undefined ? true : !!req.body.refine;
   runTask(id, {
     store, adapters, workspace: ws, runs,
-    makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: sel.length ? sel : allAgents, orchestration: req.body.orchestration, refine, templatesDir, claude: adapters.claude }),
+    makePlan: (text) => makePlan(text, { mode: req.body.mode, agents: sel.length ? sel : allAgents, explicit, roles: store.listRoles(), depts: store.listDepts(), orchestration: req.body.orchestration, refine, templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   });
 });
@@ -254,7 +259,7 @@ app.post('/task/:id/continue', (req, res) => {
   res.json({ id });
   require('./runner').continueTask(id, {
     store, adapters, workspace: { make: () => dir }, runs,
-    makePlan: (txt) => makePlan(txt, { mode: 'llm', agents: store.listAgents().map((a) => a.id), refine: false, templatesDir, claude: adapters.claude }),
+    makePlan: (txt) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude }),
     onEvent: broadcast,
   }, text);
 });

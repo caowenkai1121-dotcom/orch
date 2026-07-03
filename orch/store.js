@@ -30,6 +30,9 @@ function open(file) {
       person_id TEXT, agent_id TEXT, PRIMARY KEY(person_id, agent_id));
     CREATE TABLE IF NOT EXISTS departments(
       id TEXT PRIMARY KEY, name TEXT, glyph TEXT, color TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS roles(
+      id TEXT PRIMARY KEY, dept TEXT, name TEXT, emoji TEXT,
+      description TEXT, prompt TEXT, executor TEXT);
     CREATE TABLE IF NOT EXISTS project_grants(
       project TEXT, user_id TEXT, PRIMARY KEY(project, user_id));
     CREATE TABLE IF NOT EXISTS events(
@@ -131,6 +134,16 @@ function open(file) {
       return id;
     },
     deleteDept(id) { db.prepare('DELETE FROM departments WHERE id=?').run(id); },
+    // 角色(部门员工)
+    listRoles() { return db.prepare('SELECT * FROM roles ORDER BY dept, id').all(); },
+    getRole(id) { return db.prepare('SELECT * FROM roles WHERE id=?').get(id); },
+    addRole(d) {
+      const id = d.id || (String(d.name || 'role').toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-') || 'role') + '-' + (db.prepare('SELECT COUNT(*) n FROM roles').get().n + 1);
+      db.prepare('INSERT OR REPLACE INTO roles(id,dept,name,emoji,description,prompt,executor) VALUES(?,?,?,?,?,?,?)')
+        .run(id, d.dept || 'engineering', d.name || id, d.emoji || '🧑‍💼', d.description || '', d.prompt || '', d.executor || 'claude');
+      return id;
+    },
+    deleteRole(id) { db.prepare('DELETE FROM roles WHERE id=?').run(id); },
     // 项目授权
     grantProject(project, userId) { db.prepare('INSERT OR IGNORE INTO project_grants(project,user_id) VALUES(?,?)').run(project, userId); },
     revokeProject(project, userId) { db.prepare('DELETE FROM project_grants WHERE project=? AND user_id=?').run(project, userId); },
@@ -171,10 +184,35 @@ function open(file) {
       if (!db.prepare("SELECT 1 FROM people WHERE name='admin'").get()) {
         this.addPerson({ id: 'admin', name: 'admin', role: '管理员', email: 'admin@local', password: 'admin', admin: 1 });
       }
-      // 部门 seed
+      // 部门 seed(agency-agents-zh 分类学;dev/qa 兼容旧执行器归属)
       if (db.prepare('SELECT COUNT(*) n FROM departments').get().n === 0) {
         this.addDept({ id: 'dev', name: '开发部', glyph: '</>', color: '#7C6FD9' });
         this.addDept({ id: 'qa', name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8' });
+      }
+      const DEPTS = [
+        ['engineering', '工程部', '</>', '#7C6FD9'], ['design', '设计部', '✎', '#2FAE9E'],
+        ['product', '产品部', '◧', '#E0922E'], ['testing', '测试部', '✓', '#4F8BE8'],
+        ['project-management', '项目管理部', '▤', '#8A6FD0'], ['marketing', '营销部', '📣', '#E06A63'],
+        ['sales', '销售部', '¥', '#2E9E5B'], ['security', '安全部', '🛡', '#B4541E'],
+        ['finance', '金融部', '𝟙', '#1F7A46'], ['legal', '法务部', '§', '#6B6760'],
+        ['hr', '人力资源部', '👥', '#D96FA8'], ['support', '支持部', '☎', '#4F8BE8'],
+        ['strategy', '战略部', '♟', '#1A1814'], ['supply-chain', '供应链部', '⛓', '#8A857C'],
+        ['game-development', '游戏开发部', '🎮', '#9B59B6'], ['specialized', '专项部', '★', '#F0B400'],
+        ['paid-media', '付费媒体部', '◎', '#E0922E'], ['academic', '学术部', '🎓', '#7C6FD9'],
+        ['gis', 'GIS部', '🌍', '#2E9E5B'], ['spatial-computing', '空间计算部', '🥽', '#4F8BE8'],
+      ];
+      DEPTS.forEach(([id, name, glyph, color]) => {
+        if (!db.prepare('SELECT 1 FROM departments WHERE id=?').get(id)) this.addDept({ id, name, glyph, color });
+      });
+      // 员工种子:roles-seed.json(由 agency-agents-zh 原文压缩生成)
+      if (db.prepare('SELECT COUNT(*) n FROM roles').get().n === 0) {
+        try {
+          const seed = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'roles-seed.json'), 'utf8'));
+          seed.forEach((d) => (d.employees || []).forEach((e) => this.addRole({
+            id: e.id, dept: d.dept, name: e.name, emoji: e.emoji, description: e.description, prompt: e.prompt,
+            executor: d.dept === 'testing' ? 'codex' : 'claude',
+          })));
+        } catch (e) { /* 种子文件缺失则跳过 */ }
       }
       // 迁移回填:旧库 people 无密码/admin
       db.prepare("UPDATE people SET password=? WHERE password IS NULL").run(hashPw('admin'));

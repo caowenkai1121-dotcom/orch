@@ -21,3 +21,35 @@ test('无模板时调 LLM 出 plan', async () => {
   const plan = await makePlan('任意', { mode: 'llm', agents: ['claude', 'codex'], templatesDir: __dirname, claude: fakeClaude });
   assert.equal(plan.steps[0].id, 'x');
 });
+
+test('员工模式:按部门员工拆分,角色提示词注入,执行器解析', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '建前端', prompt: '你是前端开发工程师,规则…', executor: 'claude' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '测接口', prompt: '你是API测试员,规则…', executor: 'codex' },
+  ];
+  const depts = [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }];
+  const fakeClaude = { async run({ prompt }) {
+    assert.match(prompt, /工程部/); // 目录注入
+    return { output: '{"steps":[{"id":"build","role":"engineering-frontend-developer","prompt":"做页面","deps":[]},{"id":"verify","role":"testing-api-tester","prompt":"验证","deps":["build"]}]}', success: true };
+  } };
+  const plan = await makePlan('做个页面', { mode: 'llm', agents: ['claude', 'codex'], roles, depts, refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(plan.steps[0].role, 'engineering-frontend-developer');
+  assert.equal(plan.steps[0].agent, 'claude');            // 执行器解析
+  assert.match(plan.steps[0].prompt, /你是前端开发工程师/); // 角色提示词注入
+  assert.equal(plan.steps[1].agent, 'codex');
+});
+
+test('员工模式:执行器不在所选范围时回退到首个所选', async () => {
+  const roles = [{ id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '测', prompt: 'p', executor: 'codex' }];
+  const fakeClaude = { async run() { return { output: '{"steps":[{"id":"t","role":"testing-api-tester","prompt":"x","deps":[]}]}', success: true }; } };
+  const plan = await makePlan('测试', { agents: ['claude', 'gemini'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(plan.steps[0].agent, 'claude'); // codex 不可用 → 回退
+});
+
+test('显式单执行器+无编排:仍单步直做(不走员工模式)', async () => {
+  const roles = [{ id: 'r1', dept: 'engineering', name: 'x', description: '', prompt: '', executor: 'claude' }];
+  const plan = await makePlan('写页面', { agents: ['claude'], explicit: true, roles, depts: [], refine: false, templatesDir: __dirname, claude: { async run() { throw new Error('不应调用'); } } });
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0].agent, 'claude');
+  assert.equal(plan.steps[0].role, undefined);
+});

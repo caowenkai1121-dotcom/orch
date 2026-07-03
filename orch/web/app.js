@@ -486,6 +486,14 @@ class Maestro extends MaestroBase {
     v.kindOpts = [{ id: 'cli', name: 'CLI 智能体(claude/codex 类)' }, { id: 'llm', name: '大模型(DeepSeek 等)' }, { id: 'video', name: '视频模型(Seedance 等)' }, { id: 'voice', name: '语音模型' }].sort((a, b) => (a.id === v.naKind ? 0 : 1) - (b.id === v.naKind ? 0 : 1));
     v.naDept = ea && ea.dept ? ea.dept : ((this.DEPTS[0] && this.DEPTS[0].id) || 'dev');
     v.deptOpts = (this.DEPTS || []).map((d) => ({ id: d.id, name: d.name })).sort((a, b) => (a.id === v.naDept ? 0 : 1) - (b.id === v.naDept ? 0 : 1)); // 当前部门置顶=默认选中
+    // —— 部门员工(角色) ——
+    const curD = (this.DEPTS || []).find((d) => d.id === this.state.deptId);
+    v.deptEmployees = ((curD && curD.employees) || []).map((e) => ({ ...e, del: () => this.fireEmp(e.id, e.name) }));
+    v.deptEmpN = v.deptEmployees.length;
+    v.hireEmp = () => this.setState({ modal: 'hire' });
+    v.modalHire = this.state.modal === 'hire';
+    v.submitHire = () => this.submitHire();
+    v.execOpts = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => ({ id: a.id, name: a.name }));
     // —— 项目授权(#4):项目详情 ——
     const curProj = this.state.projectId && (this.PROJECTS || []).find((p) => p.id === this.state.projectId);
     v.projAmOwner = !!(curProj && curProj.amOwner);
@@ -650,6 +658,14 @@ class Maestro extends MaestroBase {
   }
   // —— 项目授权 ——
   grantProj(project, userId, on) { fetch('/api/grant', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, userId, on }) }).then(() => this.fetchAll()).catch(() => {}); }
+  // —— 部门员工 ——
+  submitHire() {
+    const g = (id) => (document.getElementById(id) || {}).value || '';
+    if (!g('he-name').trim()) return;
+    fetch('/api/roles', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ dept: this.state.deptId, name: g('he-name').trim(), description: g('he-desc'), prompt: g('he-prompt'), executor: g('he-exec') || 'claude' }) })
+      .then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
+  }
+  fireEmp(id, name) { if (!window.confirm('移除员工「' + name + '」?')) return; fetch('/api/roles/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
 
   todayStr() {
     const d = new Date();
