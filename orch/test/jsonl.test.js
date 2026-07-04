@@ -17,6 +17,13 @@ test('#10 runJsonl 骨架:逐行 parse 累计 output、tools 进 onLine 不入 o
   assert.deepEqual(usages, [{ input: 5, output: 1, cost: 0 }]);   // usage 透传
 });
 
+test('审查修复:runJsonl 中文多字节输出正确解码(StringDecoder 跨 chunk)', async () => {
+  // 用 charCode 生成「你好」避免命令行编码干扰,只验解码路径
+  const parse = (l) => ({ text: l });
+  const r = await runJsonl({ cmd: 'node', args: ['-e', 'process.stdout.write(String.fromCharCode(20320,22909)+String.fromCharCode(10))'], workdir: process.cwd(), parse, onLine: () => {} });
+  assert.match(r.output, /你好/); // 你好,无 U+FFFD 乱码
+});
+
 test('#10 runJsonl:命令不存在 → 优雅失败(不抛)', async () => {
   const r = await runJsonl({ cmd: 'definitely-no-such-cmd-xyz', args: [], workdir: process.cwd(), parse: () => ({}), onLine: () => {} });
   assert.equal(r.success, false); // spawn error 转为失败结果,不上抛

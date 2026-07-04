@@ -558,10 +558,12 @@ app.post('/task/:id/edit-plan', (req, res) => {
   let cur = {}; try { cur = JSON.parse(t.plan) || {}; } catch (e) {}
   cur.task = t.text;
   const doneIds = store.doneSteps(t.id).map((s) => s.step_id); // 已完成步:合并时强制保留,不受客户端编辑影响
-  const merged = require('./planner').mergeEditedPlan(cur, incoming, doneIds);
-  // 审查LOW-3:拒绝保存缺指派的畸形步(官方UI不会产出,防原始API写坏结构致恢复时 runStep 抛「未知agent」中断)
-  const bad = (merged.steps || []).filter((s) => !s.body && !s.agent && !s.role);
-  if (bad.length) return res.json({ ok: false, error: '步骤缺执行器/员工指派,拒绝保存: ' + bad.map((s) => s.id).join(', ') });
+  const planner = require('./planner');
+  const merged = planner.mergeEditedPlan(cur, incoming, doneIds);
+  // 审查LOW-3:拒绝保存结构不合法的计划(官方UI不会产出,防原始API写坏致恢复时 runStep 抛「未知agent」中断)。
+  // 用 lintPlan 递归校验(含 loop body):存库计划已过 resolveRoles,叶子步必须带 agent(role-only 会抛错),故 hasRole=false。
+  const probs = planner.lintPlan(merged, false);
+  if (probs.length) return res.json({ ok: false, error: '计划结构不合法,拒绝保存: ' + probs.join('; ') });
   store.setPlan(t.id, merged);
   store.addTaskMsg(t.id, 'system', '✎ 计划已编辑保存;恢复任务时对尚未开始的步骤生效(已完成步不受影响)。');
   broadcast({ taskId: t.id, type: 'task', data: t.status });

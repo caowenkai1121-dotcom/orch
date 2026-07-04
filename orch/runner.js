@@ -442,7 +442,7 @@ async function execute(taskId, plan, deps, opts) {
     // 残留纠偏指令(无任何步骤消费)不静默丢弃:仅终态 done/failed 诚实告知(awaiting_input 仍有后续步骤,不误导)
     if (rec && rec.notes && rec.notes.length) {
       const cur = store.getTask(taskId);
-      if (cur && (cur.status === 'done' || cur.status === 'failed')) store.addTaskMsg(taskId, 'system', '⚠ 你发的指令未生效——任务已无后续步骤可注入。点「继续开发」把它作为新一轮需求重述执行。');
+      if (cur && (cur.status === 'done' || cur.status === 'failed')) { store.addTaskMsg(taskId, 'system', '⚠ 你发的指令未生效——任务已无后续步骤可注入。点「继续开发」把它作为新一轮需求重述执行。'); rec.notes.length = 0; } // 清空:replan 续跑时内外层 execute 复用同一 rec,防外层 finally 再告警一条重复消息
     }
     if (runs) runs.delete(taskId);
   }
