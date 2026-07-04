@@ -62,6 +62,7 @@ function visibleSet(store, user) {
 
 function buildAll(store, user) {
   const ROLE = roleMap(store);
+  const RV = roleView(store);                  // 员工视图:整个 buildAll 只算一次(87角色),各处复用
   const vis = visibleSet(store, user);         // null=全部
   const tasks = store.listTasks().filter((t) => !vis || vis.has(t.project || '默认项目') || t.owner === (user && user.name));
   const visIds = new Set(tasks.map((t) => t.id));
@@ -85,8 +86,7 @@ function buildAll(store, user) {
     let empNow = '';
     if (running) {
       const sr = planRoleMap(store.getTask(running.task_id) || {});
-      const RVx = roleView(store);
-      const emp = sr[running.step_id] && RVx[sr[running.step_id]];
+      const emp = sr[running.step_id] && RV[sr[running.step_id]];
       if (emp) empNow = emp.emoji + ' ' + emp.deptName + '·' + emp.name;
     }
     return {
@@ -156,7 +156,6 @@ function buildAll(store, user) {
     projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
   });
 
-  const RV = roleView(store);
   const tasksVm = tasks.map((t) => {
     const u = store.taskUsage(t.id);
     // 进度:顶层步骤完成数/总数(loop 子步骤不计)
@@ -194,8 +193,7 @@ function buildAll(store, user) {
   });
 
   const today = store.usageToday();
-  const ROLE0 = roleMap(store);
-  today.byAgent = (store.usageTodayByAgent ? store.usageTodayByAgent() : []).map((r) => ({ agent: (ROLE0[r.agent] && ROLE0[r.agent].label) || r.agent, cost: Math.round(r.c * 1000) / 1000, tokens: r.i + r.o, calls: r.n }));
+  today.byAgent = (store.usageTodayByAgent ? store.usageTodayByAgent() : []).map((r) => ({ agent: (ROLE[r.agent] && ROLE[r.agent].label) || r.agent, cost: Math.round(r.c * 1000) / 1000, tokens: r.i + r.o, calls: r.n }));
   today.allTime = store.usageAllTime ? Math.round(store.usageAllTime().cost * 1000) / 1000 : 0;
   const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/output/' + a.task_id + '/' + a.entry, updated: rel(a.created_at) }));
   // 员工绩效榜:有记录的员工按落盘数排,含成功率(落盘/(落盘+空转))
