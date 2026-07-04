@@ -1,0 +1,4 @@
+# 浏览器验证工具产出(playwright-mcp),非项目源码
+.playwright-mcp/
+dash.png
+*.png
