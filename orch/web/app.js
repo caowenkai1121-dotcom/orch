@@ -1195,6 +1195,7 @@ class Maestro extends MaestroBase {
   // 失败错误启发式诊断:给操作者可执行建议(零 LLM)
   diagnose(err) {
     const s = String(err || '');
+    if (/成本上限|日成本|ORCH_DAILY_BUDGET/i.test(s)) return '💡 已达成本上限,任务未执行/暂停(非报错)。提高上限(全局 ORCH_DAILY_BUDGET,或新建任务时的「成本上限」)后重新下发本任务,或次日 UTC 重置后再试。';
     if (/rate limit|usage limit|session limit|429/i.test(s)) return '💡 执行器限额,系统通常会自动排定重试(最多2次),也可稍后手动重试。';
     if (/超时|timeout|timed out/i.test(s)) return '💡 步骤执行超时。可能任务太大,可拆成更小的需求重新下发,或重试。';
     if (/cannot find module|module not found|no such file|命令未找到|not found|command not found/i.test(s)) return '💡 缺少依赖/文件。产出可能引用了未安装的包,重试时员工会尝试补齐。';
