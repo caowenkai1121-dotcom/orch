@@ -5,7 +5,9 @@ function killTree(c) {
   try {
     if (!c || !c.pid || c.exitCode !== null || c.killed) return; // 已退出/已杀:跳过,防 PID 回收误伤
     if (process.platform === 'win32') execSync('taskkill /T /F /PID ' + c.pid);
-    else c.kill('SIGKILL');
+    // POSIX:spawn 用 shell:true → c.pid 是 shell,真 agent 是其子进程。c.kill 只杀 shell 会漏杀 agent(孤儿+继续烧token)。
+    // 先按 PID 定向杀该 shell 的子进程(真 agent),再杀 shell。仍是按 PID 不按镜像名(pkill -P 只匹配 PPID=c.pid 的进程)。
+    else { try { execSync('pkill -9 -P ' + c.pid); } catch (e) {} c.kill('SIGKILL'); }
   } catch (e) {}
 }
 
@@ -18,4 +20,4 @@ function arm(child) {
   return { clear() { clearTimeout(t); }, timedOut: () => to };
 }
 
-module.exports = { arm };
+module.exports = { arm, killTree };

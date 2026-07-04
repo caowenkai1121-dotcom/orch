@@ -9,6 +9,7 @@ const { runTask } = require('./runner');
 const api = require('./api');
 const boot = require('./bootstrap');
 const perm = require('./perm');
+const { killTree } = require('./adapters/steptimeout'); // 按 PID 杀子进程树(POSIX 杀 shell 的子=真 agent,防孤儿),与超时守卫同一实现
 
 const ROOT = process.cwd();
 const store = open(path.join(__dirname, 'orch.db'));
@@ -520,13 +521,7 @@ app.post('/task/:id/cancel', (req, res) => {
   if (rec) {
     rec.cancelled = true;
     // 只杀仍存活的子进程,且按 PID 定向(绝不按镜像名):避免 PID 被回收后误杀无关进程(极端下可能是别的 claude 会话)
-    rec.children.forEach((c) => {
-      try {
-        if (!c || !c.pid || c.exitCode !== null || c.killed) return; // 已退出/已杀:跳过,防 PID 回收误伤
-        if (process.platform === 'win32') execSync('taskkill /T /F /PID ' + c.pid);
-        else c.kill('SIGKILL');
-      } catch (e) {}
-    });
+    rec.children.forEach((c) => killTree(c));
   }
   store.setTaskStatus(id, 'cancelled'); store.addEvent(id, 'task', 'cancelled'); broadcast({ taskId: id, type: 'task', data: 'cancelled' });
   res.json({ ok: true });
