@@ -10,6 +10,12 @@ test('按 command+args 跑,退出码0=成功', async () => {
   assert.ok(lines.join('').includes('2'));
 });
 
+test('审查修复:generic/cli 中文多字节输出正确解码(StringDecoder)', async () => {
+  const a = generic.make({ command: 'node', args: ['-e', 'process.stdout.write(String.fromCharCode(20320,22909))'] }); // 你好,charCode 避免命令行编码干扰
+  const r = await a.run({ prompt: 'x', workdir: process.cwd(), onLine: () => {} });
+  assert.match(r.output, /你好/); // 无 U+FFFD 乱码
+});
+
 test('#18 codexReadArgs:只读沙箱替代 bypass,保留其余参数', () => {
   assert.deepEqual(
     generic.codexReadArgs(['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check']),
