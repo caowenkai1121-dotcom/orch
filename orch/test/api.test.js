@@ -39,6 +39,11 @@ test('buildAll 从真实任务派生 Maestro 总览数据', () => {
   store.addEvent(limitId, 'auto_retry', { inMin: 30 });
   assert.equal(api.buildAll(store).counts.pendingRetry, 1);
 
+  // 成本上限透传到任务 VM(供详情显示"上限 $X")
+  const budId = Number(store.createTask('带预算任务', 'BI', 'admin', { budget: 0.5 }));
+  const bt = api.buildAll(store).tasks.find((x) => x.id === budId);
+  assert.equal(bt.budget, 0.5);
+
   const codex = all.agents.find((a) => a.id === 'codex');
   assert.equal(codex.status, 'working');
   assert.equal(codex.taskId, taskId);

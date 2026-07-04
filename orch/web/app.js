@@ -683,7 +683,7 @@ class Maestro extends MaestroBase {
       prompt: s.body ? '' : (s.prompt || ''),
       del: () => { const c = { ...(this.state.epCut || {}) }; c[s.id] = 1; this.setState({ epCut: c }); },
     }));
-    v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok') : '—';
+    v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok' + (curT.budget > 0 ? ' · 上限 $' + curT.budget : '')) : '—';
     // #1 决策回答
     v.canAnswer = !!(curT && curT.sk === 'awaiting_input' && canMod);
     v.question = curT ? (curT.question || '') : '';
