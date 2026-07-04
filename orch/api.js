@@ -186,7 +186,7 @@ function buildAll(store, user) {
       }).join(' | ');
     }
     let modelsObj = null; try { modelsObj = t.models ? JSON.parse(t.models) : null; } catch (e) {} // 供「再来一个」克隆配置
-    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, budget: t.budget || 0, approve: !!t.approve, ask: !!t.ask, isolate: t.isolate || 'none', models: modelsObj, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason };
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, budget: t.budget || 0, approve: !!t.approve, ask: !!t.ask, replan: !!t.replan, isolate: t.isolate || 'none', models: modelsObj, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason };
   });
 
   // 人员:来自 DB(含分配的 agent)

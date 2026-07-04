@@ -526,6 +526,33 @@ app.get('/api/diff/:id/:sha', (req, res) => {
   } catch (e) { res.json({ patch: '(读取失败)' }); }
 });
 
+// #12 计划版本(动态重规划快照):列出 + 恢复(回滚坏的重规划)
+app.get('/api/plan-versions/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!t || !owns(req.user, t)) return res.json([]); // 仅归属者/管理员可见(含可恢复权)
+  const vs = store.listPlanVersions(t.id).map((v) => {
+    let n = 0; try { const pv = store.getPlanVersion(t.id, v.version); n = (JSON.parse((pv && pv.plan) || '{}').steps || []).length; } catch (e) {}
+    return { version: v.version, reason: v.reason || '', created_at: v.created_at, steps: n };
+  });
+  res.json(vs);
+});
+app.post('/task/:id/plan-restore', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '任务运行中,先停止再恢复计划' });
+  const version = Number((req.body || {}).version);
+  const v = store.getPlanVersion(t.id, version);
+  if (!v) return res.json({ ok: false, error: '版本不存在' });
+  let plan = {}; try { plan = JSON.parse(v.plan) || {}; } catch (e) { return res.json({ ok: false, error: '版本数据损坏' }); }
+  let cur = {}; try { cur = JSON.parse(t.plan) || {}; } catch (e) {}
+  store.savePlanVersion(t.id, cur, '恢复到 v' + version + ' 前的快照'); // 恢复也可再回滚
+  store.setPlan(t.id, plan);
+  store.addTaskMsg(t.id, 'system', '↩ 已恢复到计划 v' + version + '(' + (v.reason || '') + ')。用「重试失败步骤」或「继续开发」按此计划推进。');
+  broadcast({ taskId: t.id, type: 'task', data: t.status });
+  res.json({ ok: true });
+});
+
 // 任务回放:事件时间线 + 每步日志(参考 Manus 会话回放)
 app.get('/api/replay/:id', (req, res) => {
   const t = store.getTask(Number(req.params.id));

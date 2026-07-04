@@ -725,6 +725,11 @@ class Maestro extends MaestroBase {
     v.hasPatch = v.patchLines.length > 0;
     v.noPatch = !v.hasPatch;
     v.continueFromDiff = () => this.continueFromDiff();
+    // #12 计划版本(动态重规划快照,可回滚)
+    if (curT && this.live.versionsFor !== this.state.taskId) this.fetchVersions(this.state.taskId);
+    const versions = (curT && this.live.versionsFor === this.state.taskId && this.live.versions) || [];
+    v.hasVersions = versions.length > 0;
+    v.planVersions = versions.map((pv) => ({ version: pv.version, reason: pv.reason || '(初始计划)', when: (pv.created_at || '').slice(0, 16).replace('T', ' '), steps: pv.steps, restore: () => this.restoreVersion(pv.version) }));
     v.downloadZip = () => this.downloadZip();
     v.downloadReport = () => this.downloadReport();
     v.copyPreview = () => this.copyPreview();
@@ -920,6 +925,14 @@ class Maestro extends MaestroBase {
   delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
   // —— 产出改动(diff) ——
   fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { d = Array.isArray(d) ? d : []; this.live.diffs = d; this.live.diffsFor = id; if (!this.state.diffSha && d.length && this.state.taskId === id) this.openDiff(d[0].sha); else this.scheduleRender(); }).catch(() => {}); }
+  // —— #12 计划版本 ——
+  fetchVersions(id) { fetch('/api/plan-versions/' + id).then((r) => r.ok ? r.json() : []).then((d) => { this.live.versions = Array.isArray(d) ? d : []; this.live.versionsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  restoreVersion(version) {
+    const id = this.state.taskId;
+    if (!window.confirm('恢复到计划 v' + version + '?当前计划会先存为新版本(可再回滚),之后用「重试失败步骤/继续开发」推进。')) return;
+    fetch('/task/' + id + '/plan-restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version }) })
+      .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('↩ 已恢复计划 v' + version); this.live.versionsFor = null; this.fetchAll(); } else this.toast('✗ ' + (d.error || '恢复失败')); }).catch(() => this.toast('✗ 恢复失败'));
+  }
   openDiff(sha) {
     const id = this.state.taskId;
     fetch('/api/diff/' + id + '/' + sha).then((r) => r.json()).then((d) => { this.live.patch = d.patch || ''; this.setState({ diffSha: sha }); }).catch(() => {});
@@ -1261,7 +1274,7 @@ class Maestro extends MaestroBase {
       set('nt-text', t.title);
       if (t.budget) set('nt-budget', t.budget);
       set('nt-isolate', t.isolate || 'none');
-      chk('nt-approve', t.approve); chk('nt-ask', t.ask);
+      chk('nt-approve', t.approve); chk('nt-ask', t.ask); chk('nt-replan', t.replan);
       (this.modelPickers() || []).forEach((mp) => { const m = t.models && t.models[mp.agent]; if (m) { set(mp.selId, m.model || ''); set(mp.effId, m.effort || ''); } });
       (t.agents || []).forEach((a) => { const cb = [...document.querySelectorAll('.nt-agent')].find((c) => c.value === a); if (cb) cb.checked = true; });
     }, 80);
@@ -1324,6 +1337,7 @@ class Maestro extends MaestroBase {
     const user = this.currentName();
     const approve = (document.getElementById('nt-approve') || {}).checked ? 1 : 0;
     const ask = (document.getElementById('nt-ask') || {}).checked ? 1 : 0;
+    const replan = (document.getElementById('nt-replan') || {}).checked ? 1 : 0; // #12 遇偏离自动重规划
     const isolate = (document.getElementById('nt-isolate') || {}).value || 'none';
     const budget = Number((document.getElementById('nt-budget') || {}).value) || 0; // 成本上限,0=不限
     const agents = [...document.querySelectorAll('.nt-agent:checked')].map((c) => c.value);
@@ -1347,7 +1361,7 @@ class Maestro extends MaestroBase {
         .then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); this.fetchSchedules(); }).catch(() => {});
       return;
     }
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, budget, agents, orchestration, refine, dept, models, playbook }) })
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, replan, isolate, budget, agents, orchestration, refine, dept, models, playbook }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {
