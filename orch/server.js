@@ -546,6 +546,12 @@ setInterval(() => {
 const server = app.listen(3000, () => console.log('orch http://localhost:3000'));
 const wss = new WebSocketServer({ server });
 
+// 重启恢复:上次因执行器限额失败、已排定自动重试的任务,重启后 setTimeout 定时器已丢失 → 重新排定。
+// scheduleAutoRetry 自带命中判断(仅限额类失败)与 ≤2 次上限,对无关失败任务自动跳过。
+store.listTasks().filter((t) => t.status === 'failed').forEach((t) => {
+  try { require('./runner').scheduleAutoRetry(t.id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }); } catch (e) {}
+});
+
 const activity = []; // 真实活动流环形缓冲(最新在前)
 function broadcastRaw(ev) {
   const msg = JSON.stringify(ev);
