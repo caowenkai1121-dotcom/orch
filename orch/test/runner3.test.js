@@ -38,6 +38,23 @@ test('全局日成本上限也覆盖执行路径(retry),消息为全局', async 
   assert.ok(store.getTaskMsgs(id).some((m) => /全局日成本上限/.test(m.text)));
 });
 
+test('复盘:失败复盘过后升级到done允许补一次(学修复经验)', async () => {
+  const store = open(':memory:'); store.seed();
+  const rid = store.listRoles().find((r) => r.dept !== '__system').id;
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [{ id: 's1', role: rid, agent: 'claude', prompt: 'p', deps: [] }] });
+  store.setStep(id, 's1', 'claude', 'done', 'ok');
+  let calls = 0;
+  const claude = { async run() { calls++; return { output: '{"employees":{}}' }; } };
+  const deps = { store, adapters: { claude } };
+  store.setTaskStatus(id, 'failed');
+  await require('../runner').harvestExperience(id, deps); assert.equal(calls, 1); // 失败态复盘
+  await require('../runner').harvestExperience(id, deps); assert.equal(calls, 1); // 失败已复盘,不重复
+  store.setTaskStatus(id, 'done');
+  await require('../runner').harvestExperience(id, deps); assert.equal(calls, 2); // 升级done补一次
+  await require('../runner').harvestExperience(id, deps); assert.equal(calls, 2); // done已复盘,不重复
+});
+
 test('复盘注入员工已有经验(避免生成重复)', async () => {
   const store = open(':memory:'); store.seed();
   const rid = store.listRoles().find((r) => r.dept !== '__system').id;

@@ -134,7 +134,10 @@ async function harvestExperience(taskId, deps) {
   const stepRole = {}; const walk = (arr) => (arr || []).forEach((s) => { if (s.body) walk(s.body); else if (s.role) stepRole[s.id] = s.role; });
   walk(plan.steps);
   if (!Object.keys(stepRole).length) return; // 非员工模式不复盘
-  if (store.getEvents(taskId).some((e) => e.type === 'harvest')) return; // 每任务只复盘一次
+  // 复盘时机:同一结局只复盘一次,但"失败过→重试成功升级到 done"允许补一次(学到修复经验,契合越用越聪明)
+  const hv = store.getEvents(taskId).filter((e) => e.type === 'harvest').map((e) => { try { return JSON.parse(e.data).at; } catch (x) { return ''; } });
+  if (hv.includes('done')) return;              // 成功态已复盘:成功经验已学,不再复盘
+  if (t.status !== 'done' && hv.length) return; // 失败态且已复盘过:不反复复盘同一失败
   store.addEvent(taskId, 'harvest', { at: t.status });
   const fileN = {}; store.getEvents(taskId).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); fileN[d.step] = d.n; } catch (x) {} } });
   const lines = (t.steps || []).filter((s) => stepRole[s.step_id]).map((s) =>
