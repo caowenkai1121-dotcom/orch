@@ -1089,7 +1089,7 @@ class Maestro extends MaestroBase {
     return [
       { k: '运行中 Agent', v: '' + (c.runningAgents || 0), s: '共 ' + (c.totalAgents || 0) + ' 个', dot: this.acc(), go: () => this.go('agents') },
       { k: '进行中任务', v: '' + (c.runningTasks || 0), s: '真实任务 ' + (c.totalTasks || 0) + ' 个', dot: '#4F8BE8', go: goT('working') },
-      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '今日成本 $' + ((c.costToday) || 0).toFixed(3), dot: '#2E9E5B', go: goT('done') },
+      { k: '今日已完成', v: '' + (c.doneToday || 0), s: '今日成本 $' + ((c.costToday) || 0).toFixed(3) + (c.dailyBudget > 0 ? ' / 上限 $' + c.dailyBudget : ''), dot: (c.dailyBudget > 0 && (c.costToday || 0) >= c.dailyBudget) ? '#E0922E' : '#2E9E5B', go: goT('done') },
       { k: '失败任务', v: '' + (c.failed || 0), s: (c.pendingRetry || 0) + ' 个待自动重试', dot: '#E0922E', go: goT('failed') },
     ];
   }

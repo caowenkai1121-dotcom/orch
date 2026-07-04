@@ -44,6 +44,12 @@ test('buildAll 从真实任务派生 Maestro 总览数据', () => {
   const bt = api.buildAll(store).tasks.find((x) => x.id === budId);
   assert.equal(bt.budget, 0.5);
 
+  // 全局日成本上限透传(env→counts.dailyBudget),供仪表盘显示
+  process.env.ORCH_DAILY_BUDGET = '2.5';
+  assert.equal(api.buildAll(store).counts.dailyBudget, 2.5);
+  delete process.env.ORCH_DAILY_BUDGET;
+  assert.equal(api.buildAll(store).counts.dailyBudget, 0);
+
   const codex = all.agents.find((a) => a.id === 'codex');
   assert.equal(codex.status, 'working');
   assert.equal(codex.taskId, taskId);

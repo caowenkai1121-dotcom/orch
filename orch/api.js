@@ -213,6 +213,7 @@ function buildAll(store, user) {
       pendingRetry: tasks.filter((t) => { if (t.status !== 'failed') return false; const ar = store.getEvents(t.id).filter((e) => e.type === 'auto_retry').length; return ar > 0 && ar < 2; }).length,
       totalTasks: tasks.length, totalAgents: agents.length,
       costToday: today.cost,
+      dailyBudget: Number(process.env.ORCH_DAILY_BUDGET) || 0, // 全局日成本上限(0=不限),供仪表盘显示护栏状态
     },
   };
 }
