@@ -319,14 +319,17 @@ async function execute(taskId, plan, deps, opts) {
       return;
     }
     const seeded = opts.seedDone || {};
-    const ok = !rec.cancelled && (plan.steps || []).every((s) => (done[s.id] || seeded[s.id]) && (done[s.id] || seeded[s.id]).success);
-    const stoppedByBudget = !ok && !rec.cancelled && ctx.overBudget(); // 因成本上限停(暂停,可提预算后续跑)
+    // 空计划且无已完成步骤 → 从未真正规划/执行(如被成本护栏拦下的 NULL-plan 任务);[].every()===true 会假判 done,须拦
+    const noWork = (plan.steps || []).length === 0 && Object.keys(seeded).length === 0;
+    const ok = !rec.cancelled && !noWork && (plan.steps || []).every((s) => (done[s.id] || seeded[s.id]) && (done[s.id] || seeded[s.id]).success);
+    const stoppedByBudget = !ok && !noWork && !rec.cancelled && ctx.overBudget(); // 因成本上限停(暂停,可提预算后续跑)
     const final = rec.cancelled ? 'cancelled' : (ok ? 'done' : ((rec.paused || stoppedByBudget) ? 'paused' : 'failed'));
     store.setTaskStatus(taskId, final);
     if (store.addEvent) store.addEvent(taskId, 'task', final);
     emit(onEvent, taskId, null, 'task', final);
-    if (final === 'failed') { try { scheduleAutoRetry(taskId, deps); } catch (e) {} }
-    if (stoppedByBudget) store.addTaskMsg(taskId, 'system', overDailyBudget()
+    if (final === 'failed' && !noWork) { try { scheduleAutoRetry(taskId, deps); } catch (e) {} } // noWork 无步骤可重试
+    if (noWork) store.addTaskMsg(taskId, 'system', '⚠ 任务从未成功规划(可能被成本护栏拦下或规划失败),空计划无步骤可跑。请调高预算/ORCH_DAILY_BUDGET 后用「重新规划」重跑。');
+    else if (stoppedByBudget) store.addTaskMsg(taskId, 'system', overDailyBudget()
       ? ('🛑 已达全局日成本上限 $' + (Number(process.env.ORCH_DAILY_BUDGET) || 0) + '(今日已花 $' + (store.usageToday().cost || 0).toFixed(3) + '),未启动步骤已暂停。次日0点(本地)重置或调高 ORCH_DAILY_BUDGET 后恢复。')
       : ('💰 已达任务成本上限 $' + task.budget + '(实际约 $' + (store.taskUsage(taskId).cost || 0).toFixed(3) + '),未启动的步骤已暂停。提高预算后点「继续」,或发消息恢复。'));
     else if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');

@@ -11,6 +11,17 @@ test('retryFailed 对无plan的失败任务不崩(JSON.parse(null) 兜底)', asy
   await assert.doesNotReject(() => runner.retryFailed(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} }));
 });
 
+test('无plan任务重试不假判done(空计划 noWork 守卫)', async () => {
+  const runner = require('../runner');
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('无plan失败任务', '默认项目', 'admin', {});
+  store.setStep(id, 'blocked', '', 'failed', '预算拦截'); store.setTaskStatus(id, 'failed');
+  await runner.retryFailed(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} });
+  const t = store.getTask(id);
+  assert.equal(t.status, 'failed');           // 空计划不被 [].every() 假判 done
+  assert.ok(store.getTaskMsgs(id).some((m) => /从未成功规划/.test(m.text)));
+});
+
 test('全局日成本上限也覆盖执行路径(retry),消息为全局', async () => {
   const store = open(':memory:'); store.seed();
   const id = store.createTask('活', '默认项目', 'admin', {});
