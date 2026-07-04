@@ -265,12 +265,14 @@ async function execute(taskId, plan, deps, opts) {
   const flat = plan.steps || [];
   const downOf = {}; flat.forEach((s) => (s.deps || []).forEach((d) => { (downOf[d] = downOf[d] || []).push(s.id); }));
   const posOf = (sid) => { let i = flat.findIndex((s) => s.id === sid); if (i < 0) i = flat.findIndex((s) => s.body && s.body.some((b) => b.id === sid)); return i; };
+  const projKnow = (store.projectKnowledge ? store.projectKnowledge(task.project) : '').slice(0, 1500); // 本项目约定,注入每步简报
   const brief = (sid) => {
     const i = posOf(sid); if (i < 0) return '';
     const s = flat[i]; const down = downOf[s.id] || [];
     return '总任务: ' + (task.text || '') + '\n你负责流水线第 ' + (i + 1) + '/' + flat.length + ' 步「' + sid + '」'
       + ((s.deps && s.deps.length) ? ',上游: ' + s.deps.join(', ') : '')
-      + (down.length ? ',你的产出将交接给: ' + down.join(', ') : ',你是最后一步,交付即收尾') + '。';
+      + (down.length ? ',你的产出将交接给: ' + down.join(', ') : ',你是最后一步,交付即收尾') + '。'
+      + (projKnow ? '\n【本项目约定】(同项目所有任务遵守)\n' + projKnow : '');
   };
 
   const overTaskBudget = () => task.budget > 0 && (store.taskUsage(taskId).cost || 0) >= task.budget;

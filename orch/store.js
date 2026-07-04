@@ -52,6 +52,8 @@ function open(file) {
       input_tokens INTEGER, output_tokens INTEGER, cost REAL, ts TEXT);
     CREATE TABLE IF NOT EXISTS sessions(
       token TEXT PRIMARY KEY, user_id TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS project_knowledge(
+      project TEXT PRIMARY KEY, knowledge TEXT);
     -- 高频按 task_id 过滤/聚合的表加索引:events(getEvents/agentAvgSeconds/pendingRetry/harvest)、usage(taskUsage/usageByTask)、steps、logs
     CREATE INDEX IF NOT EXISTS idx_events_task_type ON events(task_id, type);
     CREATE INDEX IF NOT EXISTS idx_usage_task ON usage(task_id);
@@ -83,6 +85,9 @@ function open(file) {
     },
     listApps() { return db.prepare('SELECT * FROM apps ORDER BY id DESC').all(); },
     isPublishedTask(taskId) { return !!db.prepare('SELECT 1 FROM apps WHERE task_id=? LIMIT 1').get(taskId); }, // 已发布到应用广场→产出视为公开(仅登录用户)
+    // 项目级知识/约定:按项目名(任务用名引用)持久化,注入每个任务简报,免每任务从零猜技术栈
+    projectKnowledge(name) { const r = db.prepare('SELECT knowledge FROM project_knowledge WHERE project=?').get(name); return (r && r.knowledge) || ''; },
+    setProjectKnowledge(name, text) { db.prepare('INSERT OR REPLACE INTO project_knowledge(project,knowledge) VALUES(?,?)').run(name, String(text || '').slice(0, 4000)); },
     // 任务对话:用户与团队的消息流(运行中=指令注入,结束后=继续开发)
     addTaskMsg(taskId, who, text) { db.prepare('INSERT INTO task_messages(task_id,who,text,ts) VALUES(?,?,?,?)').run(taskId, who, text, new Date().toISOString()); },
     getTaskMsgs(taskId) { return db.prepare('SELECT * FROM task_messages WHERE task_id=? ORDER BY id').all(taskId); },

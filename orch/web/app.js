@@ -662,6 +662,9 @@ class Maestro extends MaestroBase {
       return { id: p.id, name: p.name, av: p.av, color: p.color, on, label: on ? '已授权 ✓' : '授权', bd: on ? '#B9E2C8' : '#E6E3DC', bg: on ? '#E4F4EA' : '#fff', toggle: () => this.grantProj(curProj.name, p.id, !on) };
     });
     v.memberOpts = (this.PEOPLE || []).filter((p) => !me || p.id !== me.id).map((p) => ({ id: p.id, name: p.name })); // 新建项目归属用户选项(排除自己)
+    v.projKnowledge = curProj ? (curProj.knowledge || '') : '';
+    v.projName = curProj ? curProj.name : '';
+    v.saveKnowledge = () => this.saveKnowledge();
 
     // —— v4: 取消/成本 ——
     v.cancelTask = () => this.cancelTask();
@@ -1030,6 +1033,13 @@ class Maestro extends MaestroBase {
   }
   // —— 项目授权 ——
   grantProj(project, userId, on) { fetch('/api/grant', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, userId, on }) }).then(() => this.fetchAll()).catch(() => {}); }
+  saveKnowledge() {
+    const cp = this.state.projectId && (this.PROJECTS || []).find((p) => p.id === this.state.projectId);
+    const el = document.getElementById('pk-text');
+    if (!cp || !el) return;
+    fetch('/api/project/' + encodeURIComponent(cp.name) + '/knowledge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ knowledge: el.value }) })
+      .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('📘 项目约定已保存(下次任务注入)'); this.fetchAll(); } else this.toast('✗ ' + (d.error || '失败')); }).catch(() => {});
+  }
   // —— 部门员工 ——
   submitHire() {
     const g = (id) => (document.getElementById(id) || {}).value || '';

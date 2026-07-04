@@ -95,6 +95,15 @@ app.post('/api/projects', (req, res) => {
   broadcastRaw({ type: 'task' });
   res.json({ id });
 });
+// 项目知识/约定:admin 或该项目属主(拥有其任务/项目行)可编辑
+app.post('/api/project/:name/knowledge', (req, res) => {
+  const name = req.params.name;
+  const pr = store.listProjects().find((p) => p.name === name);
+  const owns = req.user.admin || (pr && pr.owner === req.user.id) || store.listTasks().some((t) => (t.project || '默认项目') === name && t.owner === req.user.name);
+  if (!owns) return res.status(403).json({ ok: false, error: '无权限' });
+  store.setProjectKnowledge(name, (req.body || {}).knowledge || '');
+  res.json({ ok: true });
+});
 app.post('/api/people', adminOnly, (req, res) => res.json({ id: store.addPerson(req.body || {}) }));
 app.post('/api/people/:id/agents', adminOnly, (req, res) => { store.setPersonAgents(req.params.id, (req.body || {}).agentIds || []); res.json({ ok: true }); });
 

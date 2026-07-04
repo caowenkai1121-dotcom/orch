@@ -15,6 +15,15 @@ test('searchContent 命中用户对话,不误伤系统消息', () => {
   assert.ok(hits.find((h) => h.id === id).snip.includes('💬')); // 带对话片段
 });
 
+test('projectKnowledge 存取(按项目名,覆盖派生项目)', () => {
+  const s = open(':memory:'); s.seed();
+  assert.equal(s.projectKnowledge('任意项目'), ''); // 未设 → 空(空值行为不变)
+  s.setProjectKnowledge('我的项目', '统一零构建单文件');
+  assert.equal(s.projectKnowledge('我的项目'), '统一零构建单文件');
+  s.setProjectKnowledge('我的项目', '改了'); // upsert
+  assert.equal(s.projectKnowledge('我的项目'), '改了');
+});
+
 test('setTaskBudget 调整成本上限(解封预算暂停任务)', () => {
   const s = open(':memory:'); s.seed();
   const id = s.createTask('t', 'p', 'o', { budget: 0.5 });

@@ -149,6 +149,7 @@ function buildAll(store, user) {
       depts: Object.keys(deptSet), agentCount: Object.keys(agSet).length, taskCount: ts.length,
       cost: Math.round(cost * 1000) / 1000, doneN, failN,
       tasks: ts.map((t) => t.id), grantIds: store.grantsFor(name), amOwner,
+      knowledge: store.projectKnowledge ? store.projectKnowledge(name) : '',
     };
   });
 
@@ -156,7 +157,7 @@ function buildAll(store, user) {
   projRows.forEach((tp) => {
     if (projMap[tp.name]) return;
     if (vis && !(tp.owner === (user && user.id) || vis.has(tp.name))) return;
-    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
+    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)), knowledge: store.projectKnowledge ? store.projectKnowledge(tp.name) : '' });
   });
 
   const tasksVm = tasks.map((t) => {
