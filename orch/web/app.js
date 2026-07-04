@@ -424,6 +424,11 @@ class Maestro extends MaestroBase {
     v.toast = this.live.toastMsg || '';
     v.metrics = this.realMetrics();
     v.wsOffline = this.live.wsConnected === false; // 仅显式断开后显示(初始 undefined 不显示)
+    // 执行器健康:全局拉一次(服务端缓存),顶栏对未就绪执行器告警(无人值守下 claude/codex 未登录是首要失败源)
+    if (!this.live.health) { this.live.health = {}; this.fetchHealth(); }
+    const downExec = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli' && this.live.health[a.id] && this.live.health[a.id].ok === false).map((a) => a.name);
+    v.execDownWarn = downExec.join('、');
+    v.execDownTitle = downExec.length ? ('这些执行器未检测到(可能未装或未登录 CLI),相关任务会失败:' + downExec.join('、') + '。到 Agent 团队页「↻ 重测」。') : '';
     // 需关注:失败/待审批/待输入的任务(无人值守操作者优先处理)
     const attMeta = { failed: { label: '失败', bg: '#FBE9E7', c: '#B4541E', hint: '可重试' }, awaiting: { label: '待审批', bg: '#FEF3D6', c: '#8a6d00', hint: '批准/编辑计划' }, awaiting_input: { label: '待输入', bg: '#FBE9E7', c: '#B4541E', hint: '员工在等你回答' } };
     v.attention = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: (t.sk === 'failed' && t.failReason) ? t.failReason : attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
