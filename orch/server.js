@@ -334,8 +334,9 @@ app.get('/api/download/:id', (req, res) => {
 // 静态服务产出文件(供预览);防目录穿越
 app.get('/output/:id/*splat', (req, res) => {
   const t = store.getTask(Number(req.params.id));
-  if (!canSeeTask(req.user, t)) return res.sendStatus(403);
   if (!t || !t.dir) return res.sendStatus(404);
+  // 已发布到应用广场的任务视为公开(仍在登录闸后),让普通成员的 app iframe 能渲染;其余走 canSeeTask
+  if (!store.isPublishedTask(t.id) && !canSeeTask(req.user, t)) return res.sendStatus(403);
   const rel = [].concat(req.params.splat || []).join('/'); // Express5 命名通配
   const full = path.resolve(t.dir, rel);
   const baseR = path.resolve(t.dir);
