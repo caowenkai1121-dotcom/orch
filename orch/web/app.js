@@ -1280,6 +1280,7 @@ class Maestro extends MaestroBase {
     const approve = (document.getElementById('nt-approve') || {}).checked ? 1 : 0;
     const ask = (document.getElementById('nt-ask') || {}).checked ? 1 : 0;
     const isolate = (document.getElementById('nt-isolate') || {}).value || 'none';
+    const budget = Number((document.getElementById('nt-budget') || {}).value) || 0; // 成本上限,0=不限
     const agents = [...document.querySelectorAll('.nt-agent:checked')].map((c) => c.value);
     const orchestration = (document.getElementById('nt-orch') || {}).value || '';
     const refine = (document.getElementById('nt-refine') || {}).checked ? 1 : 0;
@@ -1301,7 +1302,7 @@ class Maestro extends MaestroBase {
         .then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); this.fetchSchedules(); }).catch(() => {});
       return;
     }
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, agents, orchestration, refine, dept, models, playbook }) })
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, isolate, budget, agents, orchestration, refine, dept, models, playbook }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {

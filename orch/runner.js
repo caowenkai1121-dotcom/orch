@@ -274,6 +274,7 @@ async function execute(taskId, plan, deps, opts) {
     answers: opts.answers || null,
     isCancelled: () => rec.cancelled,
     isPaused: () => rec.paused,
+    overBudget: () => task.budget > 0 && (store.taskUsage(taskId).cost || 0) >= task.budget, // 成本上限(0=不限)
     skip: rec.skip,
     lastFail: opts.lastFail || null, // 重跑时该步上次的失败输出
     takeNotes: () => { const t = rec.notes.splice(0).join('\n'); return t; }, // 用户中途指令,注入即消费
@@ -311,12 +312,14 @@ async function execute(taskId, plan, deps, opts) {
     }
     const seeded = opts.seedDone || {};
     const ok = !rec.cancelled && (plan.steps || []).every((s) => (done[s.id] || seeded[s.id]) && (done[s.id] || seeded[s.id]).success);
-    const final = rec.cancelled ? 'cancelled' : (ok ? 'done' : (rec.paused ? 'paused' : 'failed'));
+    const stoppedByBudget = !ok && !rec.cancelled && ctx.overBudget(); // 因成本上限停(暂停,可提预算后续跑)
+    const final = rec.cancelled ? 'cancelled' : (ok ? 'done' : ((rec.paused || stoppedByBudget) ? 'paused' : 'failed'));
     store.setTaskStatus(taskId, final);
     if (store.addEvent) store.addEvent(taskId, 'task', final);
     emit(onEvent, taskId, null, 'task', final);
     if (final === 'failed') { try { scheduleAutoRetry(taskId, deps); } catch (e) {} }
-    if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');
+    if (stoppedByBudget) store.addTaskMsg(taskId, 'system', '💰 已达任务成本上限 $' + task.budget + '(实际约 $' + (store.taskUsage(taskId).cost || 0).toFixed(3) + '),未启动的步骤已暂停。提高预算后点「继续」,或发消息恢复。');
+    else if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');
     if (final === 'done' || final === 'failed') harvestExperience(taskId, deps).catch(() => {}); // 异步复盘,不阻塞
   } catch (e) {
     store.setTaskStatus(taskId, 'failed');

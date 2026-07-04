@@ -56,6 +56,18 @@ test('取消后不再起新 step', async () => {
   assert.equal(ran, 1); // 只有 s0(b)跑了,取消后 s1 不跑
 });
 
+test('超成本上限后不再起新步骤', async () => {
+  let ran = 0, over = false;
+  const first = { async run() { ran++; over = true; return { output: '', success: true }; } }; // s0 跑完即超预算
+  const rest = { async run() { ran++; return { output: '', success: true }; } };
+  const done = await runPlan(
+    { steps: [{ id: 's0', agent: 'b', prompt: 'p', deps: [] }, { id: 's1', agent: 'a', prompt: 'p', deps: ['s0'] }] },
+    ctx({ a: rest, b: first }, { overBudget: () => over })
+  );
+  assert.equal(ran, 1);          // 只 s0 跑,超预算后 s1 不起
+  assert.ok(done.s0 && !done.s1);
+});
+
 test('onUsage 透传', async () => {
   const got = [];
   const a = { async run({ onUsage }) { onUsage && onUsage({ input: 5, output: 3, cost: 0.001 }); return { output: '', success: true }; } };

@@ -160,6 +160,7 @@ async function runPlan(plan, ctx) {
     if (decision) break;                               // 有步骤需人决策:不再起新步
     if (ctx.isCancelled && ctx.isCancelled()) break;   // 取消:不再起新步
     if (ctx.isPaused && ctx.isPaused()) break;         // 暂停:在跑步骤收尾后不起新步
+    if (ctx.overBudget && ctx.overBudget()) break;     // 超成本上限:收尾在跑步骤,不再起新步(防无人值守烧钱失控)
     for (const s of plan.steps.filter((s) => !started.has(s.id) && ready(s))) {
       started.add(s.id);
       running.set(s.id, launch(s).finally(() => running.delete(s.id)));

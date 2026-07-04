@@ -1037,6 +1037,7 @@
       <div style="display:flex;gap:14px;align-items:center;margin-top:10px;font-size:13px;">
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="nt-approve">逐步审批</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="nt-ask">遇抉择问我</label>
+        <label style="display:flex;align-items:center;gap:6px;" title="累计成本达上限后暂停未启动步骤,防无人值守烧钱失控;0/空=不限"><span style="color:#8A857C;">成本上限 $</span><input type="number" id="nt-budget" min="0" step="0.1" placeholder="不限" style="width:64px;height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 8px;font-family:inherit;font-size:12.5px;"></label>
         <span style="color:#8A857C;">隔离</span>
         <select id="nt-isolate" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 8px;font-family:inherit;font-size:12.5px;">
           <option value="none">无(共享data目录)</option>
