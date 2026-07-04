@@ -1,6 +1,7 @@
 class MaestroBase extends RT.Component {
   state = {
     screen: 'dashboard',
+    ntAdv: false, // 新建任务:高级选项默认折叠(渐进式披露,简化界面)
     orchMode: 'graph',
     deptId: 'dev',
     agentId: 'claude-dev-01',
@@ -553,6 +554,9 @@ class Maestro extends MaestroBase {
     v.submitAgent = () => this.submitAgent();
     v.submitPerson = () => this.submitPerson();
     v.modalTask = this.state.modal === 'task';
+    v.ntAdvStyle = this.state.ntAdv ? '' : 'display:none'; // 高级选项折叠:display 隐藏不移除 DOM,提交仍读默认值
+    v.ntAdvLabel = this.state.ntAdv ? '⚙ 高级选项 ▴' : '⚙ 高级选项 ▾';
+    v.toggleNtAdv = () => this.setState({ ntAdv: !this.state.ntAdv });
     v.modalAgent = this.state.modal === 'agent';
     v.modalPerson = this.state.modal === 'person';
     v.modalPersonNew = this.state.modal === 'person' && !this.state.assignPid;
@@ -1310,7 +1314,7 @@ class Maestro extends MaestroBase {
   }
   // —— 弹窗 ——
   newTask() {
-    this.setState({ modal: 'task', taskDept: null });
+    this.setState({ modal: 'task', taskDept: null, ntAdv: false });
     const lp = this.live.lastProject;
     if (lp && lp !== '默认项目') setTimeout(() => { const el = document.getElementById('nt-proj-sel'); if (el && [...el.options].some((o) => o.value === lp)) el.value = lp; }, 80);
   }
