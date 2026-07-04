@@ -44,6 +44,12 @@ test('buildAll 从真实任务派生 Maestro 总览数据', () => {
   const bt = api.buildAll(store).tasks.find((x) => x.id === budId);
   assert.equal(bt.budget, 0.5);
 
+  // 「再来一个」配置克隆:任务VM透出 approve/ask/isolate/models
+  const cfgId = Number(store.createTask('配置任务', 'BI', 'admin', { approve: 1, ask: 1, isolate: 'worktree', models: { claude: { model: 'x', effort: 'high' } } }));
+  const cvm = api.buildAll(store).tasks.find((x) => x.id === cfgId);
+  assert.equal(cvm.approve, true); assert.equal(cvm.ask, true); assert.equal(cvm.isolate, 'worktree');
+  assert.deepEqual(cvm.models, { claude: { model: 'x', effort: 'high' } });
+
   // 全局日成本上限透传(env→counts.dailyBudget),供仪表盘显示
   process.env.ORCH_DAILY_BUDGET = '2.5';
   assert.equal(api.buildAll(store).counts.dailyBudget, 2.5);

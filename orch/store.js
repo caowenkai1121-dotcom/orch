@@ -165,7 +165,7 @@ function open(file) {
       return t;
     },
     listTasks() {
-      return db.prepare('SELECT id,text,status,project,owner,budget,approve,isolate,ask,dir,blocked_step,question,parent,created_at,updated_at FROM tasks ORDER BY id DESC').all();
+      return db.prepare('SELECT id,text,status,project,owner,budget,approve,isolate,ask,models,dir,blocked_step,question,parent,created_at,updated_at FROM tasks ORDER BY id DESC').all();
     },
     getLogs(taskId) {
       return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);

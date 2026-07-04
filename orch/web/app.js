@@ -1253,7 +1253,17 @@ class Maestro extends MaestroBase {
   cloneTask() {
     const t = (this.TASKS || []).find((x) => x.id === this.state.taskId);
     this.setState({ modal: 'task', taskDept: null });
-    setTimeout(() => { const el = document.getElementById('nt-text'); if (el && t) el.value = t.title; }, 60); // 填 DOM,避免 render 覆盖
+    setTimeout(() => { // 填 DOM,避免 render 覆盖;克隆配置(预算/隔离/审批/问我/大模型/执行器),非仅标题
+      if (!t) return;
+      const set = (id, v) => { const el = document.getElementById(id); if (el != null && v != null) el.value = v; };
+      const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+      set('nt-text', t.title);
+      if (t.budget) set('nt-budget', t.budget);
+      set('nt-isolate', t.isolate || 'none');
+      chk('nt-approve', t.approve); chk('nt-ask', t.ask);
+      (this.modelPickers() || []).forEach((mp) => { const m = t.models && t.models[mp.agent]; if (m) { set(mp.selId, m.model || ''); set(mp.effId, m.effort || ''); } });
+      (t.agents || []).forEach((a) => { const cb = [...document.querySelectorAll('.nt-agent')].find((c) => c.value === a); if (cb) cb.checked = true; });
+    }, 80);
   }
   // —— 弹窗 ——
   newTask() {
