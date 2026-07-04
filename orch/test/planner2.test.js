@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
-const { makePlan, validate, lintPlan } = require('../planner');
+const { makePlan, validate, lintPlan, mergeEditedPlan } = require('../planner');
 
 test('规划期 claude 调用受并发信号量约束(不再fork风暴)', async () => {
   process.env.ORCH_CONCURRENCY = '1';
@@ -68,4 +68,18 @@ test('#9 执行器模式:结构坏(重复id)计划带问题回喂 fromLLM 重拆
   const plan = await makePlan('做事', { mode: 'llm', agents: ['claude', 'codex'], roles: [], depts: [], refine: false, templatesDir: TPL, claude });
   assert.equal(call, 2);                                   // 执行器路径也回喂重拆一次
   assert.deepEqual([...new Set(plan.steps.map((s) => s.id))].sort(), ['a', 'b']);
+});
+
+test('#16 mergeEditedPlan:已完成步强制保留原样,未完成步删除生效', () => {
+  const cur = { task: 't', steps: [{ id: 'a', agent: 'claude', prompt: '原A', deps: [] }, { id: 'b', agent: 'codex', prompt: '原B', deps: ['a'] }] };
+  const incoming = { task: 't', steps: [{ id: 'a', agent: 'claude', prompt: '改过的A', deps: [] }] }; // 客户端改了 a、删了 b
+  const merged = mergeEditedPlan(cur, incoming, ['a']);    // a 已完成
+  assert.equal(merged.steps.find((s) => s.id === 'a').prompt, '原A'); // 已完成 a 强制保留原样
+  assert.ok(!merged.steps.find((s) => s.id === 'b'));                 // 未完成 b 客户端删了 → 删除生效
+});
+test('#16 mergeEditedPlan:未完成步的编辑生效', () => {
+  const cur = { task: 't', steps: [{ id: 'a', agent: 'claude', prompt: '原A', deps: [] }] };
+  const incoming = { task: 't', steps: [{ id: 'a', agent: 'claude', prompt: '改过的A', deps: [] }] };
+  const merged = mergeEditedPlan(cur, incoming, []);       // 无已完成步
+  assert.equal(merged.steps.find((s) => s.id === 'a').prompt, '改过的A'); // 未完成 → 编辑生效
 });

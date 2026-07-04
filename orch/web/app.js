@@ -685,9 +685,14 @@ class Maestro extends MaestroBase {
     } else v.failBanner = null;
     v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
     v.approveTask = () => this.approveTask();
-    // 审批前编辑计划
-    if (v.canApprove && this.live.rawPlanFor !== this.state.taskId) this.fetchRawPlan(this.state.taskId);
-    const rp = v.canApprove && this.live.rawPlanFor === this.state.taskId && this.live.rawPlan;
+    // #16 可编辑计划:待审批(批准前编辑)或已暂停(保存后恢复生效)。运行中不可编(内存 plan 固定)。
+    v.canEditPlan = !!(curT && (curT.sk === 'awaiting' || curT.sk === 'paused') && canMod);
+    v.canSavePlan = !!(curT && curT.sk === 'paused' && canMod);
+    v.editPlanHint = (curT && curT.sk === 'paused') ? '改未开始步的指令或删步,「保存」后恢复任务时生效(已完成步不受影响)' : '改指令或删掉不要的步骤,再点「批准并运行」';
+    v.savePlan = () => this.savePlan();
+    // 编辑用原始 plan(审批/暂停均需)
+    if (v.canEditPlan && this.live.rawPlanFor !== this.state.taskId) this.fetchRawPlan(this.state.taskId);
+    const rp = v.canEditPlan && this.live.rawPlanFor === this.state.taskId && this.live.rawPlan;
     const cut = this.state.epCut || {};
     v.editSteps = (rp && rp.steps ? rp.steps : []).filter((s) => !cut[s.id]).map((s, i) => ({
       n: i + 1, id: s.id, isLoop: !!s.body, editable: !s.body,
@@ -995,26 +1000,35 @@ class Maestro extends MaestroBase {
       this.scheduleRender();
     }).catch(() => {});
   }
+  // 收集编辑后的 plan:textarea 改写 prompt,epCut 删步(并清理指向被删步的依赖)。审批与暂停编辑共用。
+  _editedPlan(id) {
+    const p = this.live.rawPlanFor === id && this.live.rawPlan;
+    if (!p || !p.steps) return null;
+    const cut = this.state.epCut || {};
+    const edits = {};
+    document.querySelectorAll('.ep-prompt').forEach((el) => { edits[el.getAttribute('data-sid')] = el.value; });
+    const steps = p.steps.filter((s) => !cut[s.id]).map((s) => {
+      const o = { ...s };
+      if (!o.body && edits[o.id] != null && edits[o.id].trim()) o.prompt = edits[o.id];
+      return o;
+    });
+    const ids = new Set(steps.map((s) => s.id));
+    steps.forEach((s) => { if (s.deps) s.deps = s.deps.filter((d) => ids.has(d)); });
+    return { task: p.task, steps };
+  }
   approveTask() {
     const id = this.state.taskId;
     if (typeof id !== 'number') return;
-    // 合并编辑:textarea 改写 prompt,epCut 删步(并清理指向被删步的依赖)
-    let body = {};
-    const p = this.live.rawPlanFor === id && this.live.rawPlan;
-    if (p && p.steps) {
-      const cut = this.state.epCut || {};
-      const edits = {};
-      document.querySelectorAll('.ep-prompt').forEach((el) => { edits[el.getAttribute('data-sid')] = el.value; });
-      const steps = p.steps.filter((s) => !cut[s.id]).map((s) => {
-        const o = { ...s };
-        if (!o.body && edits[o.id] != null && edits[o.id].trim()) o.prompt = edits[o.id];
-        return o;
-      });
-      const ids = new Set(steps.map((s) => s.id));
-      steps.forEach((s) => { if (s.deps) s.deps = s.deps.filter((d) => ids.has(d)); });
-      body = { plan: { task: p.task, steps } };
-    }
-    fetch('/task/' + id + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(() => this.fetchAll()).catch(() => {});
+    const plan = this._editedPlan(id);
+    fetch('/task/' + id + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(plan ? { plan } : {}) }).then(() => this.fetchAll()).catch(() => {});
+  }
+  // #16 暂停任务上保存计划改动(不运行);恢复时对未开始步生效,已完成步服务端强制保留
+  savePlan() {
+    const id = this.state.taskId;
+    if (typeof id !== 'number') return;
+    const plan = this._editedPlan(id); if (!plan) return;
+    fetch('/task/' + id + '/edit-plan', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ plan }) })
+      .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('💾 计划已保存,恢复时对未开始步生效'); this.live.rawPlanFor = null; this.fetchAll(); } else this.toast('✗ ' + (d.error || '保存失败')); }).catch(() => this.toast('✗ 保存失败'));
   }
 
   // —— 登录/账号 ——

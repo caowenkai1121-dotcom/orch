@@ -175,6 +175,14 @@ function lintPlan(plan, hasRole) {
   return [...new Set(problems)];
 }
 
+// #16 合并编辑后的计划:已完成步(doneIds)原样保留(防客户端误删/误改历史),其余用客户端编辑后的,再 sanitizeDeps
+function mergeEditedPlan(cur, incoming, doneIds) {
+  const done = new Set(doneIds || []);
+  const kept = ((cur && cur.steps) || []).filter((s) => s && done.has(s.id));
+  const edited = ((incoming && incoming.steps) || []).filter((s) => s && s.id != null && !done.has(s.id));
+  return sanitizeDeps({ task: (cur && cur.task) || (incoming && incoming.task), steps: kept.concat(edited) });
+}
+
 // 依赖健全化:剔除指向不存在步骤的依赖、自依赖,拓扑排序断环(防 runPlan 静默卡死)
 function sanitizeDeps(plan) {
   if (!plan || typeof plan !== 'object') return { steps: [] };
@@ -294,4 +302,4 @@ async function makePlan(text, opts) {
   return mark({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] });
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan };

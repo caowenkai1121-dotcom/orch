@@ -544,6 +544,25 @@ app.get('/api/diff/:id/:sha', (req, res) => {
   } catch (e) { res.json({ patch: '(读取失败)' }); }
 });
 
+// #16 运行期活编辑计划:暂停/待审批任务上编辑未开始步(改指令/删步),保存后恢复生效。
+// 内存 plan 在运行中固定,故运行中禁编;已完成步服务端强制保留(防客户端误删/误改历史)。
+app.post('/task/:id/edit-plan', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能编辑计划,请先暂停' });
+  const incoming = req.body && req.body.plan;
+  if (!incoming || !Array.isArray(incoming.steps)) return res.json({ ok: false, error: '计划为空或格式错误' });
+  let cur = {}; try { cur = JSON.parse(t.plan) || {}; } catch (e) {}
+  cur.task = t.text;
+  const doneIds = store.doneSteps(t.id).map((s) => s.step_id); // 已完成步:合并时强制保留,不受客户端编辑影响
+  const merged = require('./planner').mergeEditedPlan(cur, incoming, doneIds);
+  store.setPlan(t.id, merged);
+  store.addTaskMsg(t.id, 'system', '✎ 计划已编辑保存;恢复任务时对尚未开始的步骤生效(已完成步不受影响)。');
+  broadcast({ taskId: t.id, type: 'task', data: t.status });
+  res.json({ ok: true });
+});
+
 // #12 计划版本(动态重规划快照):列出 + 恢复(回滚坏的重规划)
 app.get('/api/plan-versions/:id', (req, res) => {
   const t = store.getTask(Number(req.params.id));

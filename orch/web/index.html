@@ -476,9 +476,9 @@
           </div>
         </div>
 
-        <sc-if value="{{ canApprove }}">
+        <sc-if value="{{ canEditPlan }}">
         <div style="background:#fff;border:1px solid #F3E2A0;border-radius:13px;padding:14px 16px;margin-bottom:16px;">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span style="font-size:13.5px;font-weight:650;">✎ 审批前可编辑计划</span><span style="font-size:11.5px;color:#A39E94;">改指令或删掉不要的步骤,再点「批准并运行」</span></div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;"><span style="font-size:13.5px;font-weight:650;">✎ 可编辑计划</span><span style="font-size:11.5px;color:#A39E94;">{{ editPlanHint }}</span></div>
           <sc-for list="{{ editSteps }}" as="e">
             <div style="border:1px solid #ECEAE4;border-radius:10px;padding:10px 12px;margin-bottom:9px;background:#FBFAF8;">
               <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
@@ -492,6 +492,7 @@
               <sc-if value="{{ e.isLoop }}"><div style="font-size:11.5px;color:#A39E94;">(质量回退环:内含实现→门禁循环,整体保留或删除)</div></sc-if>
             </div>
           </sc-for>
+          <sc-if value="{{ canSavePlan }}"><button onClick="{{ savePlan }}" style-hover="filter:brightness(.97)" style="height:32px;padding:0 14px;border-radius:8px;background:#2E9E5B;color:#fff;border:none;font-size:12.5px;font-weight:650;cursor:pointer;font-family:inherit;">💾 保存改动(恢复时对未开始步生效)</button></sc-if>
         </div>
         </sc-if>
 
