@@ -587,23 +587,22 @@ function broadcastRaw(ev) {
 function hhmmss() { const d = new Date(), z = (n) => (n < 10 ? '0' + n : '' + n); return z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds()); }
 function toActivity(ev) {
   const { taskId, stepId, type, data } = ev;
+  // 只有 plan/status/task 进活动流;log/usage 等最高频事件直接早退,不再白跑 getTask+roleMap+roleView+planRoleMap 4 次查询
+  if (type !== 'plan' && type !== 'status' && type !== 'task') return null;
+  const time = hhmmss();
+  if (type === 'plan') return { a: '编排器', c: '#1A1814', t: '拆解为 ' + ((data && data.steps && data.steps.length) || 0) + ' 步流水线', dot: '#F0B400', soft: '#FFF6D6', time };
+  if (type === 'task') return { a: '编排器', c: '#1A1814', t: data === 'done' ? '任务完成 ✓' : ('任务结束: ' + data), dot: data === 'done' ? '#2E9E5B' : '#DC5B52', soft: data === 'done' ? '#E4F4EA' : '#FBE9E7', time };
+  // 仅 status 的 running/done/failed 需查库算员工署名(waiting/blocked 等不进流,免查询)
+  if (data !== 'running' && data !== 'done' && data !== 'failed') return null;
   const t = store.getTask(taskId);
   const st = t && t.steps ? t.steps.find((x) => x.step_id === stepId) : null;
   const role = st && api.roleMap(store)[st.agent];
-  // 员工署名优先:「工程部·前端开发工程师」而非执行器名
-  const emp = t && stepId ? (api.roleView(store)[api.planRoleMap(t)[stepId]] || null) : null;
+  const emp = t && stepId ? (api.roleView(store)[api.planRoleMap(t)[stepId]] || null) : null; // 员工署名优先
   const who = emp ? (emp.deptName + '·' + emp.name) : (role ? role.label : '编排器');
   const c = emp ? emp.color : (role ? role.color : '#1A1814');
-  const time = hhmmss();
-  if (type === 'plan') return { a: '编排器', c: '#1A1814', t: '拆解为 ' + ((data && data.steps && data.steps.length) || 0) + ' 步流水线', dot: '#F0B400', soft: '#FFF6D6', time };
-  if (type === 'status') {
-    if (data === 'running') return { a: who, c, t: '开始 ' + stepId, dot: '#F0B400', soft: '#FFF6D6', time };
-    if (data === 'done') return { a: who, c, t: '完成 ' + stepId + ' ✓', dot: '#2E9E5B', soft: '#E4F4EA', time };
-    if (data === 'failed') return { a: who, c, t: stepId + ' 失败,退回', dot: '#DC5B52', soft: '#FBE9E7', time };
-    return null;
-  }
-  if (type === 'task') return { a: '编排器', c: '#1A1814', t: data === 'done' ? '任务完成 ✓' : ('任务结束: ' + data), dot: data === 'done' ? '#2E9E5B' : '#DC5B52', soft: data === 'done' ? '#E4F4EA' : '#FBE9E7', time };
-  return null; // log 等不进活动流(太碎)
+  if (data === 'running') return { a: who, c, t: '开始 ' + stepId, dot: '#F0B400', soft: '#FFF6D6', time };
+  if (data === 'done') return { a: who, c, t: '完成 ' + stepId + ' ✓', dot: '#2E9E5B', soft: '#E4F4EA', time };
+  return { a: who, c, t: stepId + ' 失败,退回', dot: '#DC5B52', soft: '#FBE9E7', time }; // failed
 }
 function broadcast(ev) {
   const a = toActivity(ev);
