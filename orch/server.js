@@ -559,6 +559,9 @@ app.post('/task/:id/edit-plan', (req, res) => {
   cur.task = t.text;
   const doneIds = store.doneSteps(t.id).map((s) => s.step_id); // 已完成步:合并时强制保留,不受客户端编辑影响
   const merged = require('./planner').mergeEditedPlan(cur, incoming, doneIds);
+  // 审查LOW-3:拒绝保存缺指派的畸形步(官方UI不会产出,防原始API写坏结构致恢复时 runStep 抛「未知agent」中断)
+  const bad = (merged.steps || []).filter((s) => !s.body && !s.agent && !s.role);
+  if (bad.length) return res.json({ ok: false, error: '步骤缺执行器/员工指派,拒绝保存: ' + bad.map((s) => s.id).join(', ') });
   store.setPlan(t.id, merged);
   store.addTaskMsg(t.id, 'system', '✎ 计划已编辑保存;恢复任务时对尚未开始的步骤生效(已完成步不受影响)。');
   broadcast({ taskId: t.id, type: 'task', data: t.status });
