@@ -1217,7 +1217,9 @@ class Maestro extends MaestroBase {
     if (!t) return;
     const v = window.prompt('设置该任务成本上限($,0 或留空=不限):', t.budget > 0 ? String(t.budget) : '');
     if (v === null) return; // 取消
-    const b = Number(v) || 0;
+    const s = v.trim();
+    const b = s === '' ? 0 : Number(s);
+    if (Number.isNaN(b) || b < 0) { this.toast('✗ 请输入有效金额(0 或留空=不限)'); return; } // 防打错把上限清成"不限"
     fetch('/task/' + id + '/budget', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ budget: b }) })
       .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('💰 成本上限已设为 ' + (b > 0 ? '$' + b : '不限')); this.fetchAll(); } else this.toast('✗ ' + (d.error || '失败')); }).catch(() => {});
   }
