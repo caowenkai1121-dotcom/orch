@@ -608,4 +608,20 @@ function broadcast(ev) {
   const a = toActivity(ev);
   if (a) { activity.unshift(a); if (activity.length > 40) activity.length = 40; broadcastRaw({ type: 'activity', data: a }); }
   broadcastRaw(ev);
+  if (ev.type === 'task' && process.env.ORCH_NOTIFY_URL) notifyOutbound(ev); // 出站推送:离机也能收结果
+}
+// 外部渠道推送(设 ORCH_NOTIFY_URL 即启用,指向自有 ntfy/Slack/Discord/飞书 webhook)。
+// fire-and-forget + 超时 + 静默:绝不冒泡进引擎把好任务判 failed(同 broadcastRaw 隔离原则)。
+const NOTIFY_STATES = new Set(['done', 'failed', 'paused', 'awaiting_input', 'cancelled']);
+function notifyOutbound(ev) {
+  try {
+    const status = String(ev.data || '').split(':')[0].trim(); // 'failed: xxx'(catch分支)→ 'failed'
+    if (!NOTIFY_STATES.has(status)) return;
+    const t = store.getTask(ev.taskId); if (!t) return;
+    const u = store.taskUsage ? store.taskUsage(ev.taskId) : { cost: 0 };
+    let failReason = '';
+    if (status === 'failed') { const fs = (t.steps || []).filter((s) => s.status === 'failed' && s.output); const last = fs[fs.length - 1]; if (last) failReason = String(last.output).replace(/\s+/g, ' ').slice(-200); }
+    const body = JSON.stringify({ id: t.id, status, text: t.text, cost: (u && u.cost) || 0, failReason, url: 'http://localhost:3000/#task-' + t.id });
+    fetch(process.env.ORCH_NOTIFY_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(5000) }).catch(() => {});
+  } catch (e) { /* 推送失败绝不影响任务 */ }
 }
