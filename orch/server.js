@@ -137,7 +137,7 @@ function createAndRunTask(ownerName, body) {
   if (cap > 0) {
     const spent = store.usageToday().cost || 0;
     if (spent >= cap) {
-      const msg = '🛑 已达全局日成本上限 $' + cap + '(今日已花 $' + spent.toFixed(3) + '),任务未执行(未规划)。次日(UTC)重置,或提高 ORCH_DAILY_BUDGET 后重新下发本任务。';
+      const msg = '🛑 已达全局日成本上限 $' + cap + '(今日已花 $' + spent.toFixed(3) + '),任务未执行(未规划)。次日0点(本地)重置,或提高 ORCH_DAILY_BUDGET 后重新下发本任务。';
       store.setStep(id, 'blocked', '', 'failed', msg);
       store.setTaskStatus(id, 'failed');
       if (store.addEvent) store.addEvent(id, 'task', 'failed');

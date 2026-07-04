@@ -235,6 +235,15 @@ test('今日成本按执行器分组', () => {
   assert.equal(cl.c, 0.05); assert.equal(cl.n, 2);
 });
 
+test('usageToday 计入今日用量(本地日边界)', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('x', 'P', 'admin', {});
+  s.addUsage(id, 'a', 'claude', { input: 10, output: 5, cost: 0.02 });
+  const u = s.usageToday();
+  assert.equal(u.cost, 0.02); assert.equal(u.input, 10); assert.equal(u.output, 5); // 刚记的用量(ts=now≥本地零点)计入今日
+});
+
 test('累计总成本', () => {
   const { open } = require('../store');
   const s = open(':memory:'); s.seed();

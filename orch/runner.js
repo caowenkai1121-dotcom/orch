@@ -326,7 +326,7 @@ async function execute(taskId, plan, deps, opts) {
     emit(onEvent, taskId, null, 'task', final);
     if (final === 'failed') { try { scheduleAutoRetry(taskId, deps); } catch (e) {} }
     if (stoppedByBudget) store.addTaskMsg(taskId, 'system', overDailyBudget()
-      ? ('🛑 已达全局日成本上限 $' + (Number(process.env.ORCH_DAILY_BUDGET) || 0) + '(今日已花 $' + (store.usageToday().cost || 0).toFixed(3) + '),未启动步骤已暂停。次日 UTC 重置或调高 ORCH_DAILY_BUDGET 后恢复。')
+      ? ('🛑 已达全局日成本上限 $' + (Number(process.env.ORCH_DAILY_BUDGET) || 0) + '(今日已花 $' + (store.usageToday().cost || 0).toFixed(3) + '),未启动步骤已暂停。次日0点(本地)重置或调高 ORCH_DAILY_BUDGET 后恢复。')
       : ('💰 已达任务成本上限 $' + task.budget + '(实际约 $' + (store.taskUsage(taskId).cost || 0).toFixed(3) + '),未启动的步骤已暂停。提高预算后点「继续」,或发消息恢复。'));
     else if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');
     if (final === 'done' || final === 'failed') harvestExperience(taskId, deps).catch(() => {}); // 异步复盘,不阻塞
