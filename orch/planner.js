@@ -7,7 +7,7 @@ const { metaDir } = require('./workspace'); // 规划/细化的中性 cwd,隔离
 function fill(steps, task) {
   return steps.map((s) => {
     const out = { ...s };
-    if (out.prompt) out.prompt = out.prompt.replace('{task}', task);
+    if (out.prompt) out.prompt = out.prompt.split('{task}').join(task); // split/join:全部替换 + 不把 task 里的 $&/$1 当特殊替换模式
     if (out.body) out.body = fill(out.body, task);
     return out;
   });
@@ -26,9 +26,21 @@ function fromTemplate(text, templatesDir) {
   return null;
 }
 
+// 从 LLM 输出抽 JSON 计划:剥代码围栏 + 括号配平扫描出所有平衡 {...} 候选,返回首个能 parse 且含 steps 的
+//(旧贪婪正则 /\{[\s\S]*\}/ 会从"回显的格式说明如 {id,agent} 的 { "一路吃到最后一个 } → parse 崩 → 计划降级单步)
 function extractJson(s) {
-  const m = s.match(/\{[\s\S]*\}/); // 抓第一个 {...} 块
-  return JSON.parse(m ? m[0] : s);
+  s = String(s == null ? '' : s).replace(/```(?:json)?/gi, '');
+  const cands = []; let depth = 0, start = -1, inStr = false, esc = false;
+  for (let j = 0; j < s.length; j++) {
+    const c = s[j];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; }
+    else if (c === '"') inStr = true;
+    else if (c === '{') { if (depth === 0) start = j; depth++; }
+    else if (c === '}') { depth--; if (depth === 0 && start >= 0) { cands.push(s.slice(start, j + 1)); start = -1; } }
+  }
+  for (const c of cands) { try { const o = JSON.parse(c); if (o && o.steps) return o; } catch (e) {} } // 优先含 steps 的真计划
+  for (const c of cands) { try { return JSON.parse(c); } catch (e) {} }                                  // 退而求其次:任一可 parse
+  return JSON.parse(s); // 全失败:原样 parse(抛错→上层降级,行为同旧)
 }
 
 function collectIds(steps, acc) {
@@ -305,4 +317,4 @@ async function makePlan(text, opts) {
   return mark({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] });
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan, extractJson, fill };
