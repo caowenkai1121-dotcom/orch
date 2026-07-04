@@ -86,7 +86,7 @@ function open(file) {
     getPlaybook(id) { return db.prepare('SELECT * FROM playbooks WHERE id=?').get(id); },
     deletePlaybook(id) { db.prepare('DELETE FROM playbooks WHERE id=?').run(id); },
     // 定时任务
-    addSchedule(d) { return db.prepare('INSERT INTO schedules(text,project,owner,spec,dept,agents,models,playbook,enabled,created_at) VALUES(?,?,?,?,?,?,?,?,1,?)').run(d.text, d.project || '默认项目', d.owner, JSON.stringify(d.spec || {}), d.dept || null, JSON.stringify(d.agents || []), d.models ? JSON.stringify(d.models) : null, d.playbook || null, new Date().toISOString()).lastInsertRowid; },
+    addSchedule(d) { const now = new Date().toISOString(); return db.prepare('INSERT INTO schedules(text,project,owner,spec,dept,agents,models,playbook,enabled,last_run,created_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)').run(d.text, d.project || '默认项目', d.owner, JSON.stringify(d.spec || {}), d.dept || null, JSON.stringify(d.agents || []), d.models ? JSON.stringify(d.models) : null, d.playbook || null, now, now).lastInsertRowid; }, // last_run 播种=created_at:建于槽后当天不误补跑
     listSchedules() { return db.prepare('SELECT * FROM schedules ORDER BY id DESC').all(); },
     setScheduleEnabled(id, on) { db.prepare('UPDATE schedules SET enabled=? WHERE id=?').run(on ? 1 : 0, id); },
     setScheduleRun(id) { db.prepare('UPDATE schedules SET last_run=? WHERE id=?').run(new Date().toISOString(), id); },

@@ -545,16 +545,7 @@ app.delete('/api/schedules/:id', (req, res) => {
   store.deleteSchedule(s.id); res.json({ ok: true });
 });
 
-// 到点判断:daily HH:MM / weekly dow+HH:MM / every N 小时
-function scheduleDue(s, now) {
-  let spec = {}; try { spec = JSON.parse(s.spec || '{}'); } catch (e) { return false; }
-  const last = s.last_run ? new Date(s.last_run) : null;
-  const hhmm = (d) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-  if (spec.kind === 'hours') return !last || (now - last) >= (Number(spec.n) || 1) * 3600e3;
-  if (spec.kind === 'daily') return hhmm(now) === spec.at && (!last || last.toDateString() !== now.toDateString());
-  if (spec.kind === 'weekly') return now.getDay() === Number(spec.dow) && hhmm(now) === spec.at && (!last || (now - last) > 6 * 24 * 3600e3);
-  return false;
-}
+const { scheduleDue } = require('./schedule'); // 截止式到点判断(重启/漂移可补跑)
 setInterval(() => {
   const now = new Date();
   store.listSchedules().filter((s) => s.enabled).forEach((s) => {
