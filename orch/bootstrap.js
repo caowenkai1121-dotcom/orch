@@ -25,12 +25,13 @@ function importDataDir(store, ROOT) {
   if (!fs.existsSync(dataRoot)) return;
   const dirs = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory() && e.name !== '.git' && e.name !== 'node_modules').map((e) => e.name); } catch (e) { return []; } };
   const seen = new Set(store.listTasks().map((t) => t.dir).filter(Boolean).map((d) => path.resolve(d)));
+  const tomb = new Set((store.deletedDirs ? store.deletedDirs() : []).map((d) => path.resolve(String(d)))); // 已删任务目录:reap 因锁失败残留时,别再当历史产出复活
   let n = 0;
   for (const owner of dirs(dataRoot)) {
     for (const project of dirs(path.join(dataRoot, owner))) {
       for (const folder of dirs(path.join(dataRoot, owner, project))) {
         const full = path.resolve(dataRoot, owner, project, folder);
-        if (seen.has(full)) continue;
+        if (seen.has(full) || tomb.has(full)) continue;
         if (!listFilesIn(full).length) continue; // 空目录跳过
         const text = folder.replace(/-\d+$/, '') || folder;
         const id = store.createTask(text, project, owner, {});

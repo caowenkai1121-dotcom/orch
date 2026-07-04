@@ -469,7 +469,7 @@ app.delete('/task/:id', (req, res) => {
 function reapTaskDir(t) {
   try {
     if (t.isolate === 'worktree') reapWorktree(ROOT, t.id);
-    else if (t.dir) { const d = path.resolve(t.dir); if (d.startsWith(path.resolve(ROOT, 'data') + path.sep)) fs.rmSync(d, { recursive: true, force: true }); }
+    else if (t.dir) { const d = path.resolve(t.dir); if (d.startsWith(path.resolve(ROOT, 'data') + path.sep)) { store.addEvent(0, 'deleted_dir', d); fs.rmSync(d, { recursive: true, force: true }); } } // 先记墓碑再删:rmSync 若因子进程锁文件抛 EPERM,墓碑仍在→importDataDir 不会重启复活该任务
   } catch (e) {}
 }
 

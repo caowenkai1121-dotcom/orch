@@ -147,6 +147,8 @@ function open(file) {
     },
     addEvent(taskId, type, data) { db.prepare('INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)').run(taskId, new Date().toISOString(), type, JSON.stringify(data == null ? null : data)); },
     getEvents(taskId) { return db.prepare('SELECT * FROM events WHERE task_id=? ORDER BY id').all(taskId); },
+    // 删除任务时记的目录墓碑(task_id=0 全局):reap 若因锁文件失败残留,importDataDir 据此跳过,不把已删任务当历史产出复活
+    deletedDirs() { return db.prepare("SELECT data FROM events WHERE task_id=0 AND type='deleted_dir'").all().map((r) => { try { return JSON.parse(r.data); } catch (e) { return null; } }).filter(Boolean); },
     addUsage(taskId, stepId, agent, u) { db.prepare('INSERT INTO usage(task_id,step_id,agent,input_tokens,output_tokens,cost,ts) VALUES(?,?,?,?,?,?,?)').run(taskId, stepId, agent, (u && u.input) || 0, (u && u.output) || 0, (u && u.cost) || 0, new Date().toISOString()); },
     taskUsage(taskId) { const r = db.prepare('SELECT COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c FROM usage WHERE task_id=?').get(taskId); return { input: r.i, output: r.o, cost: r.c }; },
     usageByTask() { const m = new Map(); db.prepare('SELECT task_id, COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c FROM usage GROUP BY task_id').all().forEach((r) => m.set(r.task_id, { input: r.i, output: r.o, cost: r.c })); return m; }, // 一趟聚合,消除 buildAll 每任务 taskUsage 的 N+1
