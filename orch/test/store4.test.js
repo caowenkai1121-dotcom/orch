@@ -2,6 +2,16 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { open } = require('../store');
 
+test('setTaskBudget 调整成本上限(解封预算暂停任务)', () => {
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('t', 'p', 'o', { budget: 0.5 });
+  assert.equal(s.getTask(id).budget, 0.5);
+  s.setTaskBudget(id, 2);
+  assert.equal(s.getTask(id).budget, 2);
+  s.setTaskBudget(id, 0); // 0=不限
+  assert.equal(s.getTask(id).budget, 0);
+});
+
 test('events 追加与读取', () => {
   const s = open(':memory:'); s.seed();
   const id = s.createTask('x', 'p', 'o');

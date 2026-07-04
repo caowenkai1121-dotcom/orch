@@ -381,6 +381,16 @@ app.post('/task/:id/pause', (req, res) => {
   broadcastRaw({ type: 'msg', taskId: id });
   res.json({ ok });
 });
+app.post('/task/:id/budget', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  const b = Number((req.body || {}).budget) || 0;
+  store.setTaskBudget(id, b);
+  store.addTaskMsg(id, 'system', '💰 成本上限已调整为 ' + (b > 0 ? '$' + b : '不限') + '。' + (t.status === 'paused' ? '发消息或点「继续」即恢复执行(已完成步骤不重跑)。' : ''));
+  broadcastRaw({ type: 'msg', taskId: id });
+  res.json({ ok: true, budget: b });
+});
 app.post('/task/:id/skip', (req, res) => {
   const id = Number(req.params.id); const stepId = (req.body || {}).stepId;
   if (!owns(req.user, store.getTask(id))) return res.status(403).json({ ok: false });

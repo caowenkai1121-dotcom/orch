@@ -93,6 +93,7 @@ function open(file) {
     deleteSchedule(id) { db.prepare('DELETE FROM schedules WHERE id=?').run(id); },
     deleteApp(id) { db.prepare('DELETE FROM apps WHERE id=?').run(id); },
     setTaskDir(id, dir) { db.prepare('UPDATE tasks SET dir=? WHERE id=?').run(dir, id); },
+    setTaskBudget(id, budget) { db.prepare('UPDATE tasks SET budget=? WHERE id=?').run(Number(budget) || 0, id); }, // 调整成本上限(0=不限),用于解封预算暂停任务
     deleteTask(id) { // 级联清任务及其全部关联数据
       db.prepare('DELETE FROM tasks WHERE id=?').run(id);
       ['steps', 'logs', 'events', 'usage', 'task_messages'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
