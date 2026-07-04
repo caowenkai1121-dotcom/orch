@@ -97,6 +97,14 @@ test('审查修复:sanitizeDeps 递归清理 loop body(去重id+剔自依赖)', 
   assert.deepEqual(loop.body.find((b) => b.id === 'impl').deps, []); // 自依赖剔除
 });
 
+test('审查修复:role模式LLM夹带裸agent(gemini)经makePlan被coerce到部门池、不降级', async () => {
+  const roles = [{ id: 'engineering-rapid-prototyper', dept: 'engineering', name: '原型', description: '', prompt: 'p', executor: 'claude' }];
+  const claude = { async run() { return { output: '{"steps":[{"id":"a","role":"engineering-rapid-prototyper","prompt":"x","deps":[]},{"id":"b","agent":"gemini","prompt":"y","deps":["a"]}]}', success: true }; } };
+  const plan = await makePlan('做事', { mode: 'llm', agents: ['claude', 'codex', 'gemini'], roles, depts: [], deptPools: { engineering: ['claude', 'codex'] }, refine: false, templatesDir: TPL, claude });
+  const b = plan.steps.find((s) => s.id === 'b');
+  assert.ok(b && ['claude', 'codex'].includes(b.agent), '裸 gemini 应被 coerce 到池内,实际=' + (b && b.agent));
+});
+
 test('审查修复:role模式裸agent越出部门执行器池被coerce(防未验证/broken自动发现agent混入)', () => {
   const { resolveRoles } = require('../planner');
   const steps = [{ id: 'v', agent: 'gemini', deps: [] }];                    // LLM 未给 role、直接吐裸 agent gemini(不在池)

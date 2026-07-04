@@ -234,11 +234,14 @@ test('sanitizeDeps 归一化畸形 steps(防execute崩)', () => {
   assert.equal(p.steps[0].id, 'a');
 });
 
-test('调度提示含粒度匹配(避免过度拆分)', async () => {
+test('调度提示含复杂度路由(简单直接/复杂开需求会议)+细粒度拆解', async () => {
   const roles = [{ id: 'engineering-rapid-prototyper', dept: 'engineering', name: '快速原型', description: '', prompt: 'p', executor: 'claude' }];
   let seen = '';
   const fakeClaude = { async run({ prompt }) { seen = prompt; return { output: '{"steps":[{"id":"a","role":"engineering-rapid-prototyper","prompt":"x","deps":[]}]}', success: true }; } };
   await makePlan('活', { agents: ['claude'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
-  assert.match(seen, /拆分粒度匹配任务复杂度/);
-  assert.match(seen, /简单任务.*1-2步/);
+  assert.match(seen, /先判复杂度/);          // 复杂度路由
+  assert.match(seen, /简单任务.*1-2步/);     // 简单任务直接做
+  assert.match(seen, /方案设计/);            // 复杂任务先设计方案
+  assert.match(seen, /方案综合/);            // 综合决定方案
+  assert.match(seen, /拆解要细/);            // 细粒度可追溯
 });

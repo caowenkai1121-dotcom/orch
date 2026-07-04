@@ -124,7 +124,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。纯审查/分析且确定不改文件的步可加 "permission":"read" 在只读沙箱运行(会改文件的步不要加)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
-    + `调度要求:0)拆分粒度匹配任务复杂度——简单任务(单文件/脚本/小改动)1-2步即可,不必强加质量门;复杂任务(多模块/需评审)才用质量门loop,别过度拆分浪费;1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
+    + `调度要求:0)先判复杂度:【简单任务】(单文件/脚本/小改动/单一明确产出)1-2步直接做,不开会不强加质量门;【复杂任务】(多模块/前后端/多角色协作/需架构决策)先安排"方案设计"阶段——挑2-4个相关角色(如产品经理理需求边界、架构师定技术选型与接口、设计师定视觉、测试定验收口径)各自并行输出本视角方案要点(deps 都为空、纯写 md 文档不改代码,加 "permission":"read",各写一个如 meet_arch.md 的文件),再一个"方案综合"步(deps=全部讨论步、主导角色综合各方)产出《方案.md》定架构/模块划分/接口/分工/验收;后续实现步 deps 指向它、按《方案.md》做(即便需求已清晰,复杂任务也先把"怎么做"设计定下来再动手)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 clarify_req/design_ui/impl_login/test_auth),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让流水线能看出每个角色何时做什么,别把多件事塞进一步(简单任务仍保持1-2步,别为拆而拆);2)只挑真正需要的员工,部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
@@ -295,7 +295,9 @@ async function makePlan(text, opts) {
         const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
         try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds) && !lintPlan(p2, true).length) p = p2; } catch (e) {}
       }
-      if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; }
+      // 接受条件:每步是合法 role,或 LLM 夹带的裸合法 agent(容忍夹带,resolveRoles 会把裸 agent coerce 到部门执行器池);非法 role 仍视为失败→降级
+      const rmOk = (s) => s.type === 'loop' ? (Array.isArray(s.body) && s.body.length && s.body.every(rmOk)) : (roleIds.includes(s.role) || (!s.role && allowed.includes(s.agent)));
+      if (p.steps.every(rmOk)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; } // 解析:role→executor、裸 agent→coerce 到池(防 broken 自动发现 agent 混入)
     } catch (e) { /* 落到执行器模式 */ }
     empModeFell = true; // 员工模式进了但没成功返回 → 下面回退即降级
   }
