@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const sessions = new Map(); // token -> userId
+// 会话持久化在 SQLite(见 store.sessions),进程重启不掉线
 
 function parseCookie(h) {
   const o = {};
@@ -11,13 +11,13 @@ function login(store, name, pw) {
   const p = store.verifyLogin(name, pw);
   if (!p) return null;
   const tok = crypto.randomBytes(18).toString('hex');
-  sessions.set(tok, p.id);
+  store.addSession(tok, p.id);
   return { tok, user: p };
 }
-function logout(tok) { sessions.delete(tok); }
+function logout(store, tok) { store.delSession(tok); }
 function tokenFromReq(req) { return parseCookie(req.headers.cookie).orch_sess; }
 function userFromReq(store, req) {
-  const uid = sessions.get(tokenFromReq(req));
+  const uid = store.sessionUser(tokenFromReq(req));
   return uid ? store.getPerson(uid) : null;
 }
 

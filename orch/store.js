@@ -50,6 +50,8 @@ function open(file) {
     CREATE TABLE IF NOT EXISTS usage(
       id INTEGER PRIMARY KEY, task_id INTEGER, step_id TEXT, agent TEXT,
       input_tokens INTEGER, output_tokens INTEGER, cost REAL, ts TEXT);
+    CREATE TABLE IF NOT EXISTS sessions(
+      token TEXT PRIMARY KEY, user_id TEXT, created_at TEXT);
   `);
   // 迁移:给旧库补列
   const ensureCol = (t, c, type) => { const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r) => r.name); if (!cols.includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${type}`); };
@@ -204,6 +206,16 @@ function open(file) {
     resetHookToken(id) { db.prepare('UPDATE people SET hook_token=? WHERE id=?').run(crypto.randomBytes(16).toString('hex'), id); return this.getPerson(id).hook_token; },
     personByHookToken(tok) { return tok ? db.prepare('SELECT * FROM people WHERE hook_token=?').get(tok) : null; },
     verifyLogin(name, pw) { const p = db.prepare('SELECT * FROM people WHERE name=?').get(name); return (p && p.password === hashPw(pw)) ? p : null; },
+    // 会话:落库,进程重启不掉线(单机本地工具);30 天过期,读时惰性清理
+    addSession(token, userId) { db.prepare('INSERT OR REPLACE INTO sessions(token,user_id,created_at) VALUES(?,?,?)').run(token, userId, new Date().toISOString()); },
+    sessionUser(token) {
+      if (!token) return null;
+      const r = db.prepare('SELECT user_id, created_at FROM sessions WHERE token=?').get(token);
+      if (!r) return null;
+      if (Date.now() - new Date(r.created_at).getTime() > 30 * 24 * 3600 * 1000) { db.prepare('DELETE FROM sessions WHERE token=?').run(token); return null; }
+      return r.user_id;
+    },
+    delSession(token) { if (token) db.prepare('DELETE FROM sessions WHERE token=?').run(token); },
     // 部门
     listDepts() { return db.prepare('SELECT * FROM departments ORDER BY created_at').all(); },
     addDept(d) {
