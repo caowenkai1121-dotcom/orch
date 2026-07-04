@@ -936,7 +936,7 @@ class Maestro extends MaestroBase {
     fetch('/api/doctor').then((r) => r.ok ? r.json() : { issues: [] }).then((d) => {
       const iss = d.issues || [];
       if (!iss.length) { this.toast('🩺 健康自检:未发现问题'); return; }
-      if (!window.confirm('🩺 健康自检发现 ' + iss.length + ' 个问题:\n' + iss.map((i) => '· ' + i.detail).join('\n') + '\n\n执行清理?(僵尸任务→标失败可重试;孤儿 worktree→移除目录+分支)')) return;
+      if (!window.confirm('🩺 健康自检发现 ' + iss.length + ' 个问题:\n' + iss.map((i) => '· ' + i.detail).join('\n') + '\n\n执行清理?(僵尸任务→标失败可重试;孤儿 worktree→移除目录+分支;孤儿产出目录→删除回收磁盘)')) return;
       fetch('/api/doctor/repair', { method: 'POST' }).then((r) => r.json()).then((rr) => { this.toast('🩺 已修复 ' + (rr.fixed || 0) + ' 项'); this.fetchAll(); }).catch(() => this.toast('✗ 修复失败'));
     }).catch(() => this.toast('✗ 自检失败'));
   }

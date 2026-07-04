@@ -68,6 +68,19 @@ function reapWorktree(root, id) {
   } catch (e) {}
   return removed;
 }
+// 列出 data/<owner>/<project>/<text>-<id> 叶子目录及其任务 id(供 doctor 找孤儿产出目录:任务已删但目录留存)
+function listDataDirs(root) {
+  const out = [];
+  try {
+    const base = path.join(root, 'data');
+    if (!fs.existsSync(base)) return out;
+    const dirs = (d) => fs.readdirSync(d).filter((n) => { try { return fs.statSync(path.join(d, n)).isDirectory(); } catch (e) { return false; } });
+    for (const o of dirs(base)) for (const pr of dirs(path.join(base, o))) for (const tk of dirs(path.join(base, o, pr))) {
+      const m = tk.match(/-(\d+)$/); if (m) out.push({ id: Number(m[1]), dir: path.join(base, o, pr, tk) });
+    }
+  } catch (e) {}
+  return out;
+}
 // 列出 worktrees/ 下所有 orch worktree 的任务 id(供 doctor 找孤儿)
 function listWorktreeIds(root) {
   try {
@@ -87,4 +100,4 @@ function metaDir() {
   return _metaDir;
 }
 
-module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir, reapWorktree, listWorktreeIds };
+module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir, reapWorktree, listWorktreeIds, listDataDirs };

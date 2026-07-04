@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { makeWorkspace, metaDir, listWorktreeIds, reapWorktree } = require('../workspace');
+const { makeWorkspace, metaDir, listWorktreeIds, reapWorktree, listDataDirs } = require('../workspace');
 
 test('metaDir:中性 scratch 目录,存在且不在 orch 源码目录内', () => {
   const d = metaDir();
@@ -24,6 +24,16 @@ test('#15 doctor:listWorktreeIds 列出 worktrees/task-N 的任务 id', () => {
   fs.mkdirSync(path.join(root, 'worktrees', 'misc'), { recursive: true }); // 非 task-N → 忽略
   assert.deepEqual(listWorktreeIds(root).sort((a, b) => a - b), [3, 7]);
   assert.deepEqual(listWorktreeIds(path.join(root, 'nope')), []); // 无 worktrees 目录 → 空
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('#15 doctor:listDataDirs 列出 data/owner/project/text-id 叶子及任务 id(无-id后缀忽略)', () => {
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'orch-data-'));
+  fs.mkdirSync(path.join(root, 'data', 'me', 'proj', 'task-a-12'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'data', 'me', 'proj', 'build-site-7'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'data', 'me', 'proj', 'no-id-here'), { recursive: true });
+  assert.deepEqual(listDataDirs(root).map((x) => x.id).sort((a, b) => a - b), [7, 12]);
+  assert.deepEqual(listDataDirs(path.join(root, 'nope')), []); // 无 data 目录 → 空
   fs.rmSync(root, { recursive: true, force: true });
 });
 

@@ -4,7 +4,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const { open } = require('./store');
 const { makePlan } = require('./planner');
-const { makeWorkspace, taskDir, worktreeDir, reapWorktree, listWorktreeIds } = require('./workspace');
+const { makeWorkspace, taskDir, worktreeDir, reapWorktree, listWorktreeIds, listDataDirs } = require('./workspace');
 const { runTask } = require('./runner');
 const api = require('./api');
 const boot = require('./bootstrap');
@@ -471,6 +471,7 @@ app.get('/api/doctor', adminOnly, (req, res) => {
   const tasks = store.listTasks(); const taskIds = new Set(tasks.map((t) => t.id));
   tasks.forEach((t) => { if ((t.status === 'running' || t.status === 'planning') && !runs.has(t.id)) issues.push({ kind: 'zombie_task', id: t.id, detail: '任务 ' + t.id + '「' + (t.text || '').slice(0, 24) + '」状态=' + t.status + ' 但无在跑进程(僵尸)' }); });
   try { listWorktreeIds(ROOT).forEach((id) => { if (!taskIds.has(id)) issues.push({ kind: 'orphan_worktree', id, detail: 'worktrees/task-' + id + ' 对应任务已删除(孤儿目录+分支)' }); }); } catch (e) {}
+  try { listDataDirs(ROOT).forEach(({ id, dir }) => { if (!taskIds.has(id)) issues.push({ kind: 'orphan_datadir', id, detail: 'data 目录 ' + path.relative(ROOT, dir).replace(/\\/g, '/') + ' 对应任务已删除(孤儿产出目录,占磁盘)' }); }); } catch (e) {}
   res.json({ ok: issues.length === 0, issues });
 });
 app.post('/api/doctor/repair', adminOnly, (req, res) => {
@@ -478,6 +479,7 @@ app.post('/api/doctor/repair', adminOnly, (req, res) => {
   const tasks = store.listTasks(); const taskIds = new Set(tasks.map((t) => t.id));
   tasks.forEach((t) => { if ((t.status === 'running' || t.status === 'planning') && !runs.has(t.id)) { store.setTaskStatus(t.id, 'failed'); store.addEvent(t.id, 'task', 'failed'); store.addTaskMsg(t.id, 'system', '🩺 健康自检:僵尸任务(无在跑进程)已标记失败,可「重试失败步骤」续跑。'); fixed++; } });
   try { listWorktreeIds(ROOT).forEach((id) => { if (!taskIds.has(id) && reapWorktree(ROOT, id)) fixed++; }); } catch (e) {}
+  try { listDataDirs(ROOT).forEach(({ id, dir }) => { if (!taskIds.has(id)) { try { fs.rmSync(dir, { recursive: true, force: true }); fixed++; } catch (e) {} } }); } catch (e) {} // 孤儿产出目录:任务已删→产出不可访问,清理回收磁盘
   broadcastRaw({ type: 'task' });
   res.json({ ok: true, fixed });
 });
