@@ -80,7 +80,34 @@ function handoff(out) {
   return i >= 0 ? s.slice(i, i + 1800) : s.slice(-2500);
 }
 
+// PlanWeave 融合(localReviewExecutor):把脚本/命令退出码当确定性质量门——退出0=PASS、非0=FAIL。
+// 异步 spawn 不阻塞事件循环;success 恒 true(命令跑完了),PASS/FAIL 由输出交给 gateFailed 判(与 LLM 门同语义);仅命令跑不起来才 success:false。复用步骤超时守卫。
+function runGateCmd(cmd, workdir, onLog) {
+  return new Promise((resolve) => {
+    const p = require('child_process').spawn(cmd, { cwd: workdir || process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const T = require('./adapters/steptimeout').arm(p);
+    let out = '';
+    const cap = (b) => { const s = b.toString(); out += s; if (onLog) s.split('\n').filter(Boolean).forEach((l) => onLog('🔧 ' + l)); };
+    p.stdout.on('data', cap); p.stderr.on('data', cap);
+    p.on('close', (code) => { T.clear(); const pass = code === 0 && !T.timedOut();
+      resolve({ output: (pass ? 'PASS ✅ 脚本质量门通过' : 'FAIL 脚本质量门未通过') + '(' + cmd + ',退出码 ' + code + (T.timedOut() ? ',超时' : '') + ')\n' + out.slice(-1500), success: true }); });
+    p.on('error', (e) => { T.clear(); resolve({ output: 'FAIL 脚本质量门无法运行(' + cmd + '):' + ((e && e.message) || e), success: false }); });
+  });
+}
+
 async function runStep(step, ctx, prevOutput) {
+  const workdir = await ctx.workspace.make(step.id);
+  // PlanWeave 融合:step.gate_cmd 存在则本步是确定性脚本门,不调 LLM(零 token+可复现),退出码定 PASS/FAIL,与 expected_outcome 契约互补
+  if (step.gate_cmd) {
+    const sg = sem(); await sg.acquire();
+    try {
+      if (ctx.isCancelled && ctx.isCancelled()) { ctx.onStatus(step.id, 'failed'); return { output: '(已取消,未启动)', success: false }; }
+      ctx.onStatus(step.id, 'running');
+      const r = await runGateCmd(step.gate_cmd, workdir, (line) => ctx.onLog(step.id, line));
+      ctx.onStatus(step.id, r.success ? 'done' : 'failed');
+      return r;
+    } finally { sg.release(); }
+  }
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
   // {prev} 占位替换;无占位但有上游产出 → 自动前置交接(员工模式 LLM 生成的步骤走这里)
@@ -89,7 +116,6 @@ async function runStep(step, ctx, prevOutput) {
     ? step.prompt.replace('{prev}', prevTxt)
     : (prevTxt ? '【上游交接】\n' + prevTxt + '\n\n' + step.prompt : step.prompt);
   const answer = ctx.answers && ctx.answers[step.id]; // 续跑时注入用户决策
-  const workdir = await ctx.workspace.make(step.id);
   // 任务简报:全局目标+流水线位置+工作目录现状 → 员工带着现场感知干活
   const b = ctx.brief ? ctx.brief(step.id) : '';
   const files = dirBrief(workdir);

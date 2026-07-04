@@ -46,6 +46,7 @@ npm start              # 起 http://localhost:3000
 **智能**
 - **动态重规划**(AgentScope + PlanWeave):任务勾「遇偏离重规划」后,运行中步骤发现实现现实与原计划结构性不符时输出 `NEED_REPLAN`,引擎就剩余工作重新拆解接进活 DAG;默认关、上限3次、`plan_versions` 版本化可回滚、可走审批门。任务详情「🕑 计划版本」列快照+一键恢复。
 - **expected_outcome 契约**(AgentScope):step 声明预期产出/验收标准,质量门据此判 PASS/FAIL 而非凭感觉。
+- **确定性脚本质量门**(PlanWeave `localReviewExecutor`,轮192):step 带 `gate_cmd`(如 `npm test`/`tsc`)则该门不调 LLM,命令退出码 0=PASS、非0=FAIL——零 token、可复现、判定不飘,与 LLM 主观门混用(客观门守硬指标、LLM 门守主观质量)。复用 shquote/steptimeout,异步不阻塞。
 - **计划结构体检 + 回喂**(PlanWeave):LLM 出的坏计划(重复id/缺指派/loop缺body)带具体问题回喂重拆一次而非静默降级;sanitizeDeps 兜底去重 id。
 - **上下文压缩**(AgentScope):findings 过大时 LLM 压成缓存摘要,短任务零成本走原截断。
 
