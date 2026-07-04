@@ -437,7 +437,7 @@ class Maestro extends MaestroBase {
     v.noActiveAgents = ((this.live.counts || {}).runningAgents || 0) === 0;
     v.hasActive = !v.noActiveAgents;
     v.noActivity = !(this.state.activity && this.state.activity.length);
-    v.recentDone = (this.TASKS || []).filter((t) => t.sk === 'done').slice(0, 5).map((t) => ({ title: t.title, updated: t.updated, durLabel: t.durLabel || '', open: () => this.go('task', { taskId: t.id }) }));
+    v.recentDone = (this.TASKS || []).filter((t) => t.sk === 'done').slice(0, 5).map((t) => ({ title: t.title, meta: t.updated + (t.durLabel ? ' · ⏱ ' + t.durLabel : ''), open: () => this.go('task', { taskId: t.id }) })); // durLabel 空(导入历史/瞬时)不缀 ⏱,免悬空
     // 后台标签页也能看到待处理数
     try { const running = (this.live.counts || {}).runningTasks || 0; document.title = (v.attention.length ? '(' + v.attention.length + ') ' : (running ? '● ' : '')) + 'Maestro · 智能体编排工作台'; } catch (e) {}
     v.cv = this.realCv();

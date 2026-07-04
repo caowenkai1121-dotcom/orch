@@ -171,7 +171,7 @@ function buildAll(store, user) {
     let durLabel = '';
     if ((t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') && t.created_at && t.updated_at) {
       const sec = Math.round((new Date(t.updated_at).getTime() - new Date(t.created_at).getTime()) / 1000);
-      if (sec >= 0) durLabel = sec >= 3600 ? Math.floor(sec / 3600) + 'h' + Math.floor(sec % 3600 / 60) + 'm' : (sec >= 60 ? Math.floor(sec / 60) + 'm' + (sec % 60) + 's' : sec + 's');
+      if (sec > 0) durLabel = sec >= 3600 ? Math.floor(sec / 3600) + 'h' + Math.floor(sec % 3600 / 60) + 'm' : (sec >= 60 ? Math.floor(sec / 60) + 'm' + (sec % 60) + 's' : sec + 's'); // 0s(导入历史/瞬时)不显,避免"⏱ 0s"误导似坏了
     }
     // 运行中:哪个部门的哪个员工正在做哪一步
     let nowDoing = '';
