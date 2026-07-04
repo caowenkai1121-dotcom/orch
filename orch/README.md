@@ -35,7 +35,7 @@ npm start              # 起 http://localhost:3000
 
 ## V4:四外部项目深度融合(轮 153–172)
 
-深度调研 [tolaria](https://github.com/refactoringhq/tolaria) / [agentscope](https://github.com/agentscope-ai/agentscope) / [PlanWeave](https://github.com/GaosCode/PlanWeave) / [emdash](https://github.com/generalaction/emdash),把可移植增量融合进 orch,并对抗式自审加固 + 双 agent 真实端到端验证。
+深度调研 [tolaria](https://github.com/refactoringhq/tolaria) / [agentscope](https://github.com/agentscope-ai/agentscope) / [PlanWeave](https://github.com/GaosCode/PlanWeave) / [emdash](https://github.com/generalaction/emdash),把可移植增量融合进 orch,并对抗式自审加固 + 双 agent 真实端到端验证。逐方法融合溯源(每个外部方法→orch 落点/跳过理由)见 [FUSION.md](FUSION.md)。
 
 **健壮**
 - **并行步命名锁**(PlanWeave):step 加 `lock`/`locks`,同名锁的并发步互斥串行,根治共享目录内容互相覆盖。
