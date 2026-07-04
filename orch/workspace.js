@@ -21,14 +21,28 @@ function makeWorkspace(rootRepo) {
 const { execSync } = require('child_process');
 // #4 冷 worktree 供给:读 root/.orch.json {setup, preserve};新建 worktree 后把主 checkout 的依赖/密钥带进来再跑 setup,
 // 让隔离 worktree 能真正构建/测试(否则冷 checkout 缺 node_modules/.env,build/test 步必挂)。全程 best-effort,失败不阻断任务。
+// preserve 模式展开:字面路径原样;含 * 的按 basename 级 glob 展开其父目录。硬规则:绝不含 .orch.json 自身。
+function expandPreserve(root, patterns) {
+  const rels = [];
+  for (const pat of (patterns || [])) {
+    const p = String(pat);
+    if (p === '.orch.json') continue;
+    if (p.indexOf('*') < 0) { rels.push(p); continue; }
+    const parent = path.dirname(p), bn = path.basename(p);
+    const re = new RegExp('^' + bn.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+    try { fs.readdirSync(path.join(root, parent)).forEach((f) => { if (re.test(f) && f !== '.orch.json') rels.push(parent === '.' ? f : path.join(parent, f)); }); } catch (e) {}
+  }
+  return rels;
+}
 function provisionWorktree(root, dir) {
   try {
     const cfgP = path.join(root, '.orch.json');
     if (!fs.existsSync(cfgP)) return;
     let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(cfgP, 'utf8')) || {}; } catch (e) { return; }
-    // preserve 先于 setup:node_modules 软链省重装,.env 等直接拷。
-    // ponytail: 仅支持字面相对路径,不做 glob;需要 glob 再上。
-    for (const rel of (Array.isArray(cfg.preserve) ? cfg.preserve : [])) {
+    // preserve 先于 setup:node_modules 软链省重装,.env 等直接拷。emdash 融合:支持 basename 级 glob(如 .env.*.local)
+    // + 配置存在但未列 preserve 时默认带 env/keys(冷 worktree 缺 .env 会让 build/test 直接挂,开箱即用)。
+    const patterns = Array.isArray(cfg.preserve) ? cfg.preserve : ['.env', '.env.local', '.env.*.local'];
+    for (const rel of expandPreserve(root, patterns)) {
       try {
         const src = path.join(root, rel), dst = path.join(dir, rel);
         if (!fs.existsSync(src) || fs.existsSync(dst)) continue;
@@ -100,4 +114,4 @@ function metaDir() {
   return _metaDir;
 }
 
-module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir, reapWorktree, listWorktreeIds, listDataDirs };
+module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir, reapWorktree, listWorktreeIds, listDataDirs, expandPreserve };

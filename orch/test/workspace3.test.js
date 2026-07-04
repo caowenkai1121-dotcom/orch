@@ -4,7 +4,20 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
-const { worktreeDir, dockerArgs } = require('../workspace');
+const { worktreeDir, dockerArgs, expandPreserve } = require('../workspace');
+
+test('emdash融合:expandPreserve 展开 basename 级 glob + 硬规则不含 .orch.json', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'orch-pw-'));
+  try {
+    ['.env', '.env.local', '.env.prod.local', '.orch.json', 'other.txt'].forEach((f) => fs.writeFileSync(path.join(root, f), 'x'));
+    const rels = expandPreserve(root, ['.env', '.env.*.local', '.orch.json']);
+    assert.ok(rels.includes('.env'));            // 字面路径
+    assert.ok(rels.includes('.env.prod.local')); // glob 展开命中
+    assert.ok(!rels.includes('.env.local'));     // .env.*.local 不匹配 .env.local(中间需有段)
+    assert.ok(!rels.includes('.orch.json'));     // 硬规则:绝不拷配置自身(即使显式列出)
+    assert.ok(!rels.includes('other.txt'));      // 不误纳无关文件
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 
 test('worktree 在 git 仓内建独立分支目录', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-'));
