@@ -1206,6 +1206,7 @@ class Maestro extends MaestroBase {
     const s = String(err || '');
     if (/成本上限|日成本|ORCH_DAILY_BUDGET/i.test(s)) return '💡 已达成本上限,任务未执行/暂停(非报错)。提高上限(全局 ORCH_DAILY_BUDGET,或新建任务时的「成本上限」)后重新下发本任务,或次日0点(本地)重置后再试。';
     if (/rate limit|usage limit|session limit|429/i.test(s)) return '💡 执行器限额,系统通常会自动排定重试(最多2次),也可稍后手动重试。';
+    if (/not logged in|未登录|请登录|login|unauthor|authenticat|credential|api[ _-]?key|401/i.test(s)) return '💡 执行器未登录/凭证失效(无人值守首要失败源)。在终端登录该 CLI(如 claude、codex login)后重试;顶栏「执行器未就绪」也会提示。';
     if (/超时|timeout|timed out/i.test(s)) return '💡 步骤执行超时。可能任务太大,可拆成更小的需求重新下发,或重试。';
     if (/cannot find module|module not found|no such file|命令未找到|not found|command not found/i.test(s)) return '💡 缺少依赖/文件。产出可能引用了未安装的包,重试时员工会尝试补齐。';
     if (/permission|denied|EACCES|EPERM/i.test(s)) return '💡 权限问题。检查产出目录写权限或执行器配置。';
