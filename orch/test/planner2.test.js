@@ -56,3 +56,16 @@ test('#9 员工模式:结构坏(重复id)计划带问题回喂 planner 重拆一
   const ids = plan.steps.map((s) => s.id);
   assert.deepEqual([...new Set(ids)].sort(), ['a', 'b']);   // 采用了无重复 id 的重拆结果
 });
+
+test('#9 执行器模式:结构坏(重复id)计划带问题回喂 fromLLM 重拆一次', async () => {
+  let call = 0;
+  const claude = { async run() {
+    call++;
+    return call === 1
+      ? { output: '{"steps":[{"id":"a","agent":"claude","prompt":"p","deps":[]},{"id":"a","agent":"codex","prompt":"q","deps":[]}]}', success: true } // 重复 id
+      : { output: '{"steps":[{"id":"a","agent":"claude","prompt":"p","deps":[]},{"id":"b","agent":"codex","prompt":"q","deps":["a"]}]}', success: true }; // 干净
+  } };
+  const plan = await makePlan('做事', { mode: 'llm', agents: ['claude', 'codex'], roles: [], depts: [], refine: false, templatesDir: TPL, claude });
+  assert.equal(call, 2);                                   // 执行器路径也回喂重拆一次
+  assert.deepEqual([...new Set(plan.steps.map((s) => s.id))].sort(), ['a', 'b']);
+});

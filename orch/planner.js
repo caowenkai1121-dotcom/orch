@@ -46,7 +46,7 @@ function validate(plan, agentIds) {
   };
   return plan.steps.every(checkStep);
 }
-async function fromLLM(text, claude, agentIds, orchestration) {
+async function fromLLM(text, claude, agentIds, orchestration, feedback) {
   const prompt = `把下面的开发任务拆成 JSON,字段 steps,每步 {id,agent,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出"。`
     + `agent 只能取这些 id 之一: ${agentIds.join(', ')}。`
     + (orchestration ? `严格按用户给出的编排来分步与指派 agent:「${orchestration}」。` : '')
@@ -54,6 +54,7 @@ async function fromLLM(text, claude, agentIds, orchestration) {
     + `多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。`
     + `要求:每步必须自包含、可直接执行,不要假设存在外部设计文档/接口/数据——需要就让该步自己创建(如先建 mock 数据/页面);`
     + `每步 prompt 明确产出物(创建哪些文件),让 agent 直接动手做完,不要反问。`
+    + (feedback ? `\n⚠ 上次拆分存在这些问题,请修正后重新拆分(agent 必须取上列 id,step id 不得重复,每步须指派 agent):${feedback}` : '')
     + `只输出 JSON,不要解释。任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
   const plan = extractJson(output);
@@ -268,7 +269,12 @@ async function makePlan(text, opts) {
   }
   // 3) 有文字编排 → 按编排(执行器模式)
   if (orch && claude) {
-    try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return mark(sanitizeDeps(p)); } catch (e) {}
+    try {
+      let p = await fromLLM(brief, claude, allowed, orch);
+      const lint = lintPlan(p, false); // #9 执行器模式同样体检:坏计划带问题回喂重拆一次
+      if (lint.length) { try { const p2 = await fromLLM(brief, claude, allowed, orch, lint.join('；')); if (validate(p2, allowed) && !lintPlan(p2, false).length) p = p2; } catch (e) {} }
+      if (validate(p, allowed)) return mark(sanitizeDeps(p));
+    } catch (e) {}
   }
   // 4) 显式模板模式且含 claude+codex → 走模板
   if (mode === 'template' && allowed.includes('claude') && allowed.includes('codex')) {
@@ -276,7 +282,12 @@ async function makePlan(text, opts) {
   }
   // 5) 多执行器 → LLM 拆
   if (claude && allowed.length > 1) {
-    try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return mark(sanitizeDeps(p)); } catch (e) {}
+    try {
+      let p = await fromLLM(brief, claude, allowed);
+      const lint = lintPlan(p, false); // #9 执行器模式体检 + 回喂
+      if (lint.length) { try { const p2 = await fromLLM(brief, claude, allowed, undefined, lint.join('；')); if (validate(p2, allowed) && !lintPlan(p2, false).length) p = p2; } catch (e) {} }
+      if (validate(p, allowed)) return mark(sanitizeDeps(p));
+    } catch (e) {}
   }
   // 6) 兜底
   if (allowed.includes('claude') && allowed.includes('codex')) { const tpl = fromTemplate(brief, templatesDir); if (tpl) return mark(tpl); }
