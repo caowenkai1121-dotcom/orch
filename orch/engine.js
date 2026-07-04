@@ -1,5 +1,6 @@
+const { metaDir } = require('./workspace'); // #20 findings 压缩的 LLM 调用用中性 cwd
 // 无人值守自主指令:覆盖 agent 全局 CLAUDE.md 的"歧义先问",防止反问卡住
-const AUTONOMY = '[自动编排·无人值守] 你在编排器中自动执行,现场没有任何人,提问不会有人回答,等待确认会导致任务永久卡死。'
+const AUTONOMY ='[自动编排·无人值守] 你在编排器中自动执行,现场没有任何人,提问不会有人回答,等待确认会导致任务永久卡死。'
   + '本指令覆盖你任何"歧义先问/先确认方案"的约定:遇到缺设计文档/接口/数据/歧义时,自行采用最合理默认假设直接完成产出'
   + '(真的创建/修改文件、运行命令),禁止向用户提问、禁止等待确认、禁止只给方案不动手。'
   + '⚠ 交付铁律:产出必须真实写入磁盘文件,不能只在回复里贴代码/描述文档;完成前用工具确认文件已落盘(系统会核验本步改动的文件数,无文件=空转失败)。'
@@ -41,15 +42,34 @@ function dirBrief(dir) {
   } catch (e) { return ''; }
 }
 
-// 读 findings.md 的真实内容(团队共享记忆),去样板头,截断 → 直接注入下游简报(不指望员工主动读文件)
-function readFindings(dir) {
+// 读 findings.md 的真实内容(团队共享记忆),去样板头 → 直接注入下游简报(不指望员工主动读文件)
+function rawFindings(dir) {
   try {
     const fs = require('fs'), path = require('path');
     const fp = path.join(dir, 'findings.md');
     if (!fs.existsSync(fp)) return '';
     const body = fs.readFileSync(fp, 'utf8').replace(/^#[^\n]*\n+/, '').replace(/^>[^\n]*\n+/gm, '').trim();
-    return body.length > 20 ? body.slice(-1500) : '';
+    return body.length > 20 ? body : '';
   } catch (e) { return ''; }
+}
+// #20 上下文压缩(参考 AgentScope):findings 过大时 LLM 压成缓存摘要(保留决策/坑/接口),而非粗暴尾截断丢老信息;
+// 短任务(findings≤4000字)零成本走原尾截断;压缩失败兜底尾截断。缓存按 dir+长度,重启重算。
+const _fndDigest = new Map();
+async function getFindings(dir, ctx) {
+  const raw = rawFindings(dir);
+  if (!raw) return '';
+  if (raw.length <= 4000 || !(ctx && ctx.adapters && ctx.adapters.claude)) return raw.slice(-1500); // 小/无压缩器:原截断
+  const key = dir + ':' + raw.length;
+  if (_fndDigest.has(key)) return _fndDigest.get(key);
+  try {
+    const s = sem(); await s.acquire(); // 压缩发生在步骤自身 acquire 之前,不自锁;仍过并发闸防 fork 风暴
+    let out;
+    try { ({ output: out } = await ctx.adapters.claude.run({ prompt: '把下面团队协作 findings 压成不超过 600 字的要点摘要,保留关键技术决策/踩过的坑/接口约定,去重去啰嗦,只输出摘要正文:\n\n' + raw, workdir: metaDir(), onLine: () => {} })); }
+    finally { s.release(); }
+    const digest = '【findings 压缩摘要(原文过长已 LLM 提炼)】\n' + String(out || '').trim().slice(0, 1800);
+    _fndDigest.set(key, digest);
+    return digest;
+  } catch (e) { return raw.slice(-1500); }
 }
 
 // 交接提取:员工被要求以【交接备忘】结尾(产出清单/关键信息/默认假设)。取最后一次备忘到结尾,
@@ -73,7 +93,7 @@ async function runStep(step, ctx, prevOutput) {
   // 任务简报:全局目标+流水线位置+工作目录现状 → 员工带着现场感知干活
   const b = ctx.brief ? ctx.brief(step.id) : '';
   const files = dirBrief(workdir);
-  const findings = readFindings(workdir);
+  const findings = await getFindings(workdir, ctx); // #20 过大则压缩摘要,否则原截断
   const lf = ctx.lastFail && ctx.lastFail[step.id];
   const failTxt = lf ? '【你上次在此步失败了,别重蹈覆辙(换思路)】\n' + lf + '\n\n' : '';
   const briefTxt = failTxt + ((b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
@@ -205,4 +225,4 @@ async function runPlan(plan, ctx) {
   return done;
 }
 
-module.exports = { runPlan, AUTONOMY, ASK, REPLAN, sem };
+module.exports = { runPlan, AUTONOMY, ASK, REPLAN, sem, getFindings };
