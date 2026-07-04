@@ -555,7 +555,8 @@ store.listTasks().filter((t) => t.status === 'failed').forEach((t) => {
 const activity = []; // 真实活动流环形缓冲(最新在前)
 function broadcastRaw(ev) {
   const msg = JSON.stringify(ev);
-  wss.clients.forEach((c) => { if (c.readyState === 1) c.send(msg); });
+  // 单个客户端 send 抛错(socket 刚好关闭的 TOCTOU)不得中断其它客户端广播,更不得沿 onEvent 冒泡进引擎把好任务搞成 failed
+  wss.clients.forEach((c) => { if (c.readyState === 1) { try { c.send(msg); } catch (e) {} } });
 }
 function hhmmss() { const d = new Date(), z = (n) => (n < 10 ? '0' + n : '' + n); return z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds()); }
 function toActivity(ev) {
