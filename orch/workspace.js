@@ -32,4 +32,14 @@ function dockerArgs(mountDir, image, cmd, args) {
   return ['run', '--rm', '-v', mountDir + ':/work', '-w', '/work', image, cmd, ...args];
 }
 
-module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs };
+// 元 LLM 调用(规划/需求细化/复盘)的中性工作目录:隔离在临时目录,防思考型 agent(skip-permissions)
+// 万一误写文件时污染/损坏 orch 自身源码。这些调用只需一个有效 cwd,不需要目录内容。
+let _metaDir = null;
+function metaDir() {
+  if (_metaDir) return _metaDir;
+  _metaDir = path.join(require('os').tmpdir(), 'orch-meta');
+  try { fs.mkdirSync(_metaDir, { recursive: true }); } catch (e) { _metaDir = require('os').tmpdir(); }
+  return _metaDir;
+}
+
+module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir };

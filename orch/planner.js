@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
+const { metaDir } = require('./workspace'); // 规划/细化的中性 cwd,隔离误写
 
 // 把 plan 里所有 prompt 的 {task} 替换成任务文本
 function fill(steps, task) {
@@ -54,7 +55,7 @@ async function fromLLM(text, claude, agentIds, orchestration) {
     + `要求:每步必须自包含、可直接执行,不要假设存在外部设计文档/接口/数据——需要就让该步自己创建(如先建 mock 数据/页面);`
     + `每步 prompt 明确产出物(创建哪些文件),让 agent 直接动手做完,不要反问。`
     + `只输出 JSON,不要解释。任务: ${text}`;
-  const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
+  const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
   const plan = extractJson(output);
   plan.task = text;
   return plan;
@@ -65,7 +66,7 @@ async function refineBrief(text, claude) {
   const p = '你是资深产品经理+架构师。把下面用户的简短需求扩写成一份高质量、可直接执行的开发任务说明(brief),'
     + '包含:明确目标;核心功能点(具体到可交付);页面/模块结构;技术选型(优先零依赖或 CDN、单文件优先);验收要点。'
     + '要具体可落地,不空话,不反问。直接输出 brief 正文(不超过 300 字)。\n\n用户需求: ' + text;
-  const { output } = await claude.run({ prompt: p, workdir: process.cwd(), onLine: () => {} });
+  const { output } = await claude.run({ prompt: p, workdir: metaDir(), onLine: () => {} });
   const b = (output || '').trim();
   return b ? (text + '\n\n【需求细化】\n' + b).slice(0, 3500) : text;
 }
@@ -111,7 +112,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + `调度要求:0)拆分粒度匹配任务复杂度——简单任务(单文件/脚本/小改动)1-2步即可,不必强加质量门;复杂任务(多模块/需评审)才用质量门loop,别过度拆分浪费;1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分的这些 role 不在员工目录里,请只用目录中真实存在的员工 id 重新拆分:${feedback}` : '')
     + `\n任务: ${text}`;
-  const { output } = await claude.run({ prompt, workdir: process.cwd(), onLine: () => {} });
+  const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
   const plan = extractJson(output);
   plan.task = text;
   return plan;
