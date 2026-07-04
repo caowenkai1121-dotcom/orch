@@ -88,6 +88,11 @@ async function runStep(step, ctx, prevOutput) {
       onChild: (child) => { ctx.onChild && ctx.onChild(child); },
       onUsage: (u) => { ctx.onUsage && ctx.onUsage(step.id, step.agent, u); },
     });
+  } catch (e) {
+    // 适配器抛错(如 spawn 命令不存在):转成失败结果而非上抛,否则本步卡在 running 且整个 plan 中断、独立分支跟着废
+    const msg = '执行器异常: ' + ((e && e.message) || String(e));
+    ctx.onLog(step.id, '✗ ' + msg);
+    res = { output: msg, success: false };
   } finally { s.release(); }
   const m = ctx.askMode && (res.output || '').match(/NEED_DECISION:\s*(.+)/);
   if (m) res.needDecision = m[1].trim();

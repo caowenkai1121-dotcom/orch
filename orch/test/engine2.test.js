@@ -29,6 +29,22 @@ test('连续调度:独立快分支不被慢兄弟拖住(deps一满足即启动)'
   assert.ok(done.indexOf('a2') < done.indexOf('b1'), '连续调度下 a2 应在慢 b1 之前完成,实际顺序: ' + done.join(','));
 });
 
+test('适配器抛错:该步标失败(非卡running),独立分支仍完成', async () => {
+  const boom = { async run() { throw new Error('spawn xyz ENOENT'); } };
+  const okA = { async run() { return { output: 'done', success: true }; } };
+  const statuses = {};
+  const c = ctx({ boom, ok: okA }, { onStatus: (sid, st) => { statuses[sid] = st; } });
+  const done = await runPlan({ steps: [
+    { id: 'bad', agent: 'boom', prompt: 'p', deps: [] },
+    { id: 'good', agent: 'ok', prompt: 'p', deps: [] },
+  ] }, c);
+  assert.equal(statuses.bad, 'failed');       // 抛错步→失败,不是卡 running
+  assert.equal(done.bad.success, false);
+  assert.match(done.bad.output, /ENOENT/);    // 错误被捕获为产出(可经 failReason 展示)
+  assert.equal(statuses.good, 'done');        // 独立分支不受影响
+  assert.equal(done.good.success, true);
+});
+
 test('取消后不再起新 step', async () => {
   let ran = 0;
   const a = { async run() { ran++; return { output: '', success: true }; } };
