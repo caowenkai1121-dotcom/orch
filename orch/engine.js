@@ -49,6 +49,14 @@ function readFindings(dir) {
   } catch (e) { return ''; }
 }
 
+// 交接提取:员工被要求以【交接备忘】结尾(产出清单/关键信息/默认假设)。取最后一次备忘到结尾,
+// 给下游干净聚焦的信号而非混入大量思考散文的原始尾切;未写备忘则兜底尾切。丢弃的前置细节下游可读盘补全。
+function handoff(out) {
+  const s = String(out || '');
+  const i = s.lastIndexOf('【交接备忘】');
+  return i >= 0 ? s.slice(i, i + 1800) : s.slice(-2500);
+}
+
 async function runStep(step, ctx, prevOutput) {
   const adapter = ctx.adapters[step.agent];
   if (!adapter) throw new Error(`未知 agent: ${step.agent}`);
@@ -156,8 +164,8 @@ async function runPlan(plan, ctx) {
     // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘;上游失败则标注,下游谨慎使用/自行补全
     const tag = (d) => (done[d] && done[d].success === false) ? '(⚠ 此步失败,产出可能不完整,请核实或自行补全)' : '';
     const prev = s.deps.length === 1
-      ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + (done[s.deps[0]]?.output || ''))
-      : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');
+      ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + handoff(done[s.deps[0]]?.output))
+      : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + handoff(done[d].output)) : '').filter(Boolean).join('\n\n');
     const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
     if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
     done[s.id] = r;

@@ -29,6 +29,24 @@ test('连续调度:独立快分支不被慢兄弟拖住(deps一满足即启动)'
   assert.ok(done.indexOf('a2') < done.indexOf('b1'), '连续调度下 a2 应在慢 b1 之前完成,实际顺序: ' + done.join(','));
 });
 
+test('交接提取【交接备忘】过滤前置噪声,无备忘时兜底尾切', async () => {
+  const NOISE = 'X思考散文Y'.repeat(80);
+  const upMemo = { async run() { return { output: NOISE + '\n【交接备忘】\n①建了 index.html ②接口 /api/x', success: true }; } };
+  let dp = '';
+  const down = { async run({ prompt }) { dp = prompt; return { output: 'ok', success: true }; } };
+  await runPlan({ steps: [{ id: 'a', agent: 'u', prompt: 'p', deps: [] }, { id: 'b', agent: 'd', prompt: '{prev}', deps: ['a'] }] },
+    ctx({ u: upMemo, d: down }));
+  assert.match(dp, /①建了 index.html/);          // 备忘注入下游
+  assert.ok(!dp.includes(NOISE));                 // 前置噪声被过滤
+
+  const upNoMemo = { async run() { return { output: 'ABCDEFG尾部内容', success: true }; } };
+  let dp2 = '';
+  const down2 = { async run({ prompt }) { dp2 = prompt; return { output: 'ok', success: true }; } };
+  await runPlan({ steps: [{ id: 'a', agent: 'u', prompt: 'p', deps: [] }, { id: 'b', agent: 'd', prompt: '{prev}', deps: ['a'] }] },
+    ctx({ u: upNoMemo, d: down2 }));
+  assert.match(dp2, /尾部内容/);                   // 无备忘 → 兜底尾切仍带上游内容
+});
+
 test('适配器抛错:该步标失败(非卡running),独立分支仍完成', async () => {
   const boom = { async run() { throw new Error('spawn xyz ENOENT'); } };
   const okA = { async run() { return { output: 'done', success: true }; } };
