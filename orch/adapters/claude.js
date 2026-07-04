@@ -12,7 +12,7 @@ module.exports = {
       if (onChild) onChild(p);
       const T = require('./steptimeout').arm(p);
       let buf = '', output = '';
-      const handle = (line) => { if (!line) return; const r = parseClaudeStream(line); if (r.text) { output += r.text + '\n'; onLine(r.text); } if (r.usage && onUsage) onUsage(r.usage); };
+      const handle = (line) => { if (!line) return; const r = parseClaudeStream(line); if (r.text) { output += r.text + '\n'; onLine(r.text); } if (r.tools) r.tools.forEach((t) => onLine(t)); if (r.usage && onUsage) onUsage(r.usage); };
       p.stdout.on('data', (b) => { buf += b.toString(); const lines = buf.split('\n'); buf = lines.pop(); lines.forEach(handle); });
       p.stderr.on('data', (b) => onLine(b.toString()));
       p.on('close', (code) => { T.clear(); if (buf) handle(buf); if (T.timedOut()) { onLine('⏱ 步骤超时被终止'); resolve({ output: output + '\n⏱ 步骤执行超时被终止(可重试续跑)', success: false }); } else resolve({ output, success: code === 0 }); });
