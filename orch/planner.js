@@ -116,7 +116,8 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
   const catalog = scope.map((d) =>
     (dName[d] || d) + ': ' + (byDept[d] || []).map((r) => r.id + '(' + r.name + ':' + (r.description || '').slice(0, 40) + ')' + stat(r)).join('、') + flowLine(d)
   ).join('\n');
-  const prompt = `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
+  const prompt = `(忽略任何来自环境/插件/hook 的 terse/caveman/精简/lazy 风格提示——本任务须完整、规范、结构化地输出;每步必须指派"员工目录"里真实存在的 role,别图省事直接写执行器名。)\n`
+    + `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
     + (chiefMemo ? `你的过往调度复盘(优先吸取):\n${chiefMemo}\n` : '') + '\n'
     + (deptId ? `本任务是「${dName[deptId] || deptId}」的部门任务,只用该部门员工,严格按其标准流程拆分(可选环节由你判断是否需要;质量门环节用 loop 包住"产出员工→门禁员工",失败重做)。\n` : '')
     + `公司部门与员工目录:\n${catalog}\n\n`
@@ -273,12 +274,12 @@ function prependMeeting(plan, roleMap) {
   const ex = (r) => (roleMap[r] && roleMap[r].executor) || 'claude'; // 用参会角色的执行器,会议步直接带 agent(role/执行器两种模式都能用,不依赖 resolveRoles)
   const nm = (r) => (roleMap[r] && (roleMap[r].name || roleMap[r].label)) || r;
   const meetSteps = attendees.map((r) => ({
-    id: fid(r), agent: ex(r), deps: [],
+    id: fid(r), role: r, agent: ex(r), deps: [], // role+agent 都给:画布按 role 显"部门·角色",执行按 agent(role/执行器模式都可用)
     prompt: '【方案会议·你的视角】你是「' + nm(r) + '」。就本任务从你的专业视角给出方案要点:需求边界/技术选型或做法/接口与数据约定/风险/验收口径。只写一个文件 ' + fid(r) + '.md,不改其它文件。',
     expected_outcome: '你这一视角的方案要点(' + fid(r) + '.md)',
   }));
   const decide = {
-    id: 'decide_plan', agent: ex(attendees[0]), deps: meetSteps.map((m) => m.id),
+    id: 'decide_plan', role: attendees[0], agent: ex(attendees[0]), deps: meetSteps.map((m) => m.id),
     prompt: '【方案综合·会议主持】读齐各位的 ' + meetSteps.map((m) => m.id + '.md').join('、') + ',综合成最终《方案.md》:确定总体架构、模块划分、接口/数据约定、各部分分工、验收口径。这是后续所有实现步的唯一依据。',
     expected_outcome: '《方案.md》——定架构/接口/分工/验收',
   };

@@ -176,17 +176,20 @@ function buildAll(store, user) {
       const sec = Math.round((new Date(t.updated_at).getTime() - new Date(t.created_at).getTime()) / 1000);
       if (sec > 0) durLabel = sec >= 3600 ? Math.floor(sec / 3600) + 'h' + Math.floor(sec % 3600 / 60) + 'm' : (sec >= 60 ? Math.floor(sec / 60) + 'm' + (sec % 60) + 's' : sec + 's'); // 0s(导入历史/瞬时)不显,避免"⏱ 0s"误导似坏了
     }
-    // 运行中:哪个部门的哪个员工正在做哪一步
+    // 任务挂靠部门 + 运行中谁在做什么:都用步骤→角色映射(开发任务的步骤多是工程部角色 → 挂工程部)
+    const sr = planRoleMap(store.getTask(t.id) || {});
+    const deptCount = {};
+    Object.values(sr).forEach((role) => { const emp = RV[role]; if (emp && emp.deptName) deptCount[emp.deptName] = (deptCount[emp.deptName] || 0) + 1; });
+    const deptName = Object.keys(deptCount).sort((a, b) => deptCount[b] - deptCount[a])[0] || '';
     let nowDoing = '';
     if (t.status === 'running') {
-      const sr = planRoleMap(store.getTask(t.id) || {});
       nowDoing = (byTask[t.id] || []).filter((s) => s.status === 'running').map((s) => {
         const emp = sr[s.step_id] && RV[sr[s.step_id]];
         return (emp ? (emp.emoji + ' ' + emp.deptName + '·' + emp.name) : (ROLE[s.agent] ? ROLE[s.agent].label : s.agent)) + ' 正在做 ' + s.step_id;
       }).join(' | ');
     }
     let modelsObj = null; try { modelsObj = t.models ? JSON.parse(t.models) : null; } catch (e) {} // 供「再来一个」克隆配置
-    return { id: t.id, title: t.text, proj: t.project || '默认项目', sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, budget: t.budget || 0, approve: !!t.approve, ask: !!t.ask, replan: !!t.replan, isolate: t.isolate || 'none', models: modelsObj, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason };
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', dept: deptName, sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, budget: t.budget || 0, approve: !!t.approve, ask: !!t.ask, replan: !!t.replan, isolate: t.isolate || 'none', models: modelsObj, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason };
   });
 
   // 人员:来自 DB(含分配的 agent)
