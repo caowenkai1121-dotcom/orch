@@ -52,6 +52,11 @@ function open(file) {
       input_tokens INTEGER, output_tokens INTEGER, cost REAL, ts TEXT);
     CREATE TABLE IF NOT EXISTS sessions(
       token TEXT PRIMARY KEY, user_id TEXT, created_at TEXT);
+    -- 高频按 task_id 过滤/聚合的表加索引:events(getEvents/agentAvgSeconds/pendingRetry/harvest)、usage(taskUsage/usageByTask)、steps、logs
+    CREATE INDEX IF NOT EXISTS idx_events_task_type ON events(task_id, type);
+    CREATE INDEX IF NOT EXISTS idx_usage_task ON usage(task_id);
+    CREATE INDEX IF NOT EXISTS idx_steps_task ON steps(task_id);
+    CREATE INDEX IF NOT EXISTS idx_logs_task ON logs(task_id, step_id);
   `);
   // 迁移:给旧库补列
   const ensureCol = (t, c, type) => { const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r) => r.name); if (!cols.includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${type}`); };
