@@ -431,9 +431,11 @@ class Maestro extends MaestroBase {
     v.execDownTitle = downExec.length ? ('这些执行器未检测到(可能未装或未登录 CLI),相关任务会失败:' + downExec.join('、') + '。到 Agent 团队页「↻ 重测」。') : '';
     // 需关注:失败/待审批/待输入的任务(无人值守操作者优先处理)
     const attMeta = { failed: { label: '失败', bg: '#FBE9E7', c: '#B4541E', hint: '可重试' }, awaiting: { label: '待审批', bg: '#FEF3D6', c: '#8a6d00', hint: '批准/编辑计划' }, awaiting_input: { label: '待输入', bg: '#FBE9E7', c: '#B4541E', hint: '员工在等你回答' }, paused: { label: '已暂停', bg: '#FEF3D6', c: '#8a6d00', hint: '发消息/点继续恢复(预算暂停需先提上限)' } };
-    v.attention = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: (t.sk === 'failed' && t.failReason) ? t.failReason : attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
-    v.hasAttention = v.attention.length > 0;
-    v.attentionN = v.attention.length;
+    const attAll = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: (t.sk === 'failed' && t.failReason) ? t.failReason : attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
+    v.attention = attAll.slice(0, 8);                 // 封顶 8 条,防无人值守堆积把仪表盘顶下去
+    v.attentionMore = attAll.length > 8 ? ('…还有 ' + (attAll.length - 8) + ' 个,去任务页查看') : '';
+    v.hasAttention = attAll.length > 0;
+    v.attentionN = attAll.length;                     // 头部计数仍显真实总数
     // 今日成本明细(按执行器)
     v.costByAgent = ((this.live.usage && this.live.usage.byAgent) || []).filter((x) => x.cost > 0 || x.calls > 0).slice(0, 6);
     v.hasCostBreak = v.costByAgent.length > 0;
