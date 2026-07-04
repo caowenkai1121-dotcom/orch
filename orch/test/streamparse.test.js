@@ -9,6 +9,15 @@ test('审查修复:shArg 在 POSIX 单引号杜绝命令替换,Windows 保持 JS
   assert.equal(shArg('x', 'win32'), '"x"');                                       // Windows 保持原行为
 });
 
+test('审查修复:claude 只读档 --disallowedTools 放在 prompt 之后(变参不吞 prompt)', () => {
+  const { buildArgs } = require('../adapters/claude');
+  const a = buildArgs({ prompt: 'THEPROMPT', permission: 'read' });
+  const di = a.indexOf('--disallowedTools'), pi = a.findIndex((x) => String(x).includes('THEPROMPT'));
+  assert.ok(pi >= 0, 'prompt 应在 args 中');
+  assert.ok(di > pi, 'prompt 必须在 --disallowedTools 之前(否则变参吞 prompt), args=' + JSON.stringify(a));
+  assert.equal(buildArgs({ prompt: 'x' }).indexOf('--disallowedTools'), -1); // 非只读档无此标志
+});
+
 test('审查修复:parse 崩(裸 null 行)在 jsonl handle 被兜底,不掀翻进程', () => {
   // parseClaudeStream/parseCodexStream 对 JSON.parse("null")=null 读属性会抛;jsonl.handle 现包 try/catch。
   const { runJsonl } = require('../adapters/jsonl'); // 仅确认可 require;handle 的 try/catch 见 jsonl.js
