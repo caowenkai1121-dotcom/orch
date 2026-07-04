@@ -97,6 +97,14 @@ test('审查修复:sanitizeDeps 递归清理 loop body(去重id+剔自依赖)', 
   assert.deepEqual(loop.body.find((b) => b.id === 'impl').deps, []); // 自依赖剔除
 });
 
+test('审查修复:refineBrief 剥除 metaDir 绝对路径(防细化把中性cwd当工作目录、交付物落错目录)', async () => {
+  const { refineBrief } = require('../planner');
+  const { metaDir } = require('../workspace');
+  const claude = { async run() { return { output: '在 ' + metaDir() + '\\out.txt 创建文件,单文件零依赖', success: true }; } };
+  const b = await refineBrief('做个文件', claude);
+  assert.ok(!b.includes(metaDir()), 'brief 不应残留 metaDir 绝对路径(否则执行步会写到 metaDir)');
+});
+
 test('审查修复:fill 全部替换 {task} 且不解释 $ 特殊序列', () => {
   const out = fill([{ id: 'a', prompt: '为「{task}」实现,并给「{task}」写测试' }], '价格$&优惠');
   assert.equal(out[0].prompt, '为「价格$&优惠」实现,并给「价格$&优惠」写测试'); // 两处都替、$&字面保留

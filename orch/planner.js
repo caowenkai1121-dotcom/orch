@@ -78,9 +78,11 @@ async function fromLLM(text, claude, agentIds, orchestration, feedback) {
 async function refineBrief(text, claude) {
   const p = '你是资深产品经理+架构师。把下面用户的简短需求扩写成一份高质量、可直接执行的开发任务说明(brief),'
     + '包含:明确目标;核心功能点(具体到可交付);页面/模块结构;技术选型(优先零依赖或 CDN、单文件优先);验收要点。'
-    + '要具体可落地,不空话,不反问。直接输出 brief 正文(不超过 300 字)。\n\n用户需求: ' + text;
+    + '要具体可落地,不空话,不反问。只用相对文件名描述产出,严禁写任何绝对路径或对工作目录的假设(执行时会在正确的工作目录运行)。' // 防细化时把本调用的中性 cwd(metaDir)当成工作目录写进 brief,害得执行步把交付物落到 metaDir
+    + '直接输出 brief 正文(不超过 300 字)。\n\n用户需求: ' + text;
   const { output } = await claude.run({ prompt: p, workdir: metaDir(), onLine: () => {} });
-  const b = (output || '').trim();
+  let b = (output || '').trim();
+  if (b) b = b.split(metaDir()).join('.'); // 兜底:即使 LLM 仍吐出 metaDir 绝对路径也剥成相对,不让它污染执行步
   return b ? (text + '\n\n【需求细化】\n' + b).slice(0, 3500) : text;
 }
 
