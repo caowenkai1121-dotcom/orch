@@ -124,7 +124,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。纯审查/分析且确定不改文件的步可加 "permission":"read" 在只读沙箱运行(会改文件的步不要加)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
-    + `调度要求:0)先判复杂度:【简单任务】(单文件/脚本/小改动/单一明确产出)1-2步直接做,不开会不强加质量门;【复杂任务】(多模块/前后端/多角色协作/需架构决策)先安排"方案设计"阶段——挑2-4个相关角色(如产品经理理需求边界、架构师定技术选型与接口、设计师定视觉、测试定验收口径)各自并行输出本视角方案要点(deps 都为空、纯写 md 文档不改代码,加 "permission":"read",各写一个如 meet_arch.md 的文件),再一个"方案综合"步(deps=全部讨论步、主导角色综合各方)产出《方案.md》定架构/模块划分/接口/分工/验收;后续实现步 deps 指向它、按《方案.md》做(即便需求已清晰,复杂任务也先把"怎么做"设计定下来再动手)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 clarify_req/design_ui/impl_login/test_auth),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让流水线能看出每个角色何时做什么,别把多件事塞进一步(简单任务仍保持1-2步,别为拆而拆);2)只挑真正需要的员工,部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
+    + `调度要求:0)先判复杂度:【简单任务】(单文件/脚本/小改动/单一明确产出)1-2步直接做,不强加质量门;【复杂任务】(多模块/前后端/多角色协作)按模块/功能点细分成多步(会自动在前面插入"方案会议"阶段,你只需专注把实现步拆细拆清,别自己加会议步)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 clarify_req/design_ui/impl_login/test_auth),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让流水线能看出每个角色何时做什么,别把多件事塞进一步(简单任务仍保持1-2步,别为拆而拆);2)只挑真正需要的员工,部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
@@ -257,6 +257,36 @@ function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
   });
 }
 
+// 用户需求:复杂任务先开"方案会议"(代码强制,不靠 LLM 自觉)。计划够复杂(≥4步且≥2不同角色)则前置:
+// 每个参会角色并行写本视角方案要点 md → 一个"方案综合"步产出《方案.md》→ 原实现步的根全部改为依赖综合步、按方案做。
+// 让编排画布清楚看到"先开会定方案、再各角色分头实现"。简单任务(<4步或角色单一)不开会,直接做。
+function prependMeeting(plan, roleMap) {
+  if (!plan || !Array.isArray(plan.steps) || plan.steps.length < 4) return plan; // 简单任务不开会
+  const ids = Object.keys(roleMap || {});
+  if (ids.length < 2) return plan; // 无员工目录(执行器模式),不开会
+  // 参会角色从员工目录挑:优先设计/规划类(架构/产品/评审/测试/负责人),不足则补其它——不依赖 LLM 是否在实现步用了 role
+  const want = ['architect', 'product', 'reviewer', 'lead', 'qa', 'test', 'design', 'prototyper', 'manager', 'engineer'];
+  const score = (id) => want.reduce((n, w) => n + (String(id).toLowerCase().includes(w) ? 1 : 0), 0);
+  const attendees = ids.slice().sort((a, b) => score(b) - score(a)).slice(0, 3);
+  if (attendees.length < 2) return plan;
+  const fid = (r) => 'meet_' + String(r).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').slice(0, 24);
+  const ex = (r) => (roleMap[r] && roleMap[r].executor) || 'claude'; // 用参会角色的执行器,会议步直接带 agent(role/执行器两种模式都能用,不依赖 resolveRoles)
+  const nm = (r) => (roleMap[r] && (roleMap[r].name || roleMap[r].label)) || r;
+  const meetSteps = attendees.map((r) => ({
+    id: fid(r), agent: ex(r), deps: [],
+    prompt: '【方案会议·你的视角】你是「' + nm(r) + '」。就本任务从你的专业视角给出方案要点:需求边界/技术选型或做法/接口与数据约定/风险/验收口径。只写一个文件 ' + fid(r) + '.md,不改其它文件。',
+    expected_outcome: '你这一视角的方案要点(' + fid(r) + '.md)',
+  }));
+  const decide = {
+    id: 'decide_plan', agent: ex(attendees[0]), deps: meetSteps.map((m) => m.id),
+    prompt: '【方案综合·会议主持】读齐各位的 ' + meetSteps.map((m) => m.id + '.md').join('、') + ',综合成最终《方案.md》:确定总体架构、模块划分、接口/数据约定、各部分分工、验收口径。这是后续所有实现步的唯一依据。',
+    expected_outcome: '《方案.md》——定架构/接口/分工/验收',
+  };
+  plan.steps.forEach((s) => { if (!Array.isArray(s.deps) || !s.deps.length) s.deps = ['decide_plan']; }); // 原实现步的根改为依赖会议结论
+  plan.steps = [...meetSteps, decide, ...plan.steps];
+  return plan;
+}
+
 // agents=所选执行器;roles/depts=员工目录;dept=部门任务;deptPools=部门执行器池;orchestration=文字编排;refine=需求细化
 async function makePlan(text, opts) {
   const { mode, agents, roles, depts, dept, deptPools, explicit, orchestration, refine, templatesDir, onChild } = opts;
@@ -295,6 +325,7 @@ async function makePlan(text, opts) {
         const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
         try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds) && !lintPlan(p2, true).length) p = p2; } catch (e) {}
       }
+      prependMeeting(p, roleMap); // 复杂计划前置"方案会议":讨论步→方案综合→实现步依赖它(代码强制,画布可见先开会再实现)
       // 接受条件:每步是合法 role,或 LLM 夹带的裸合法 agent(容忍夹带,resolveRoles 会把裸 agent coerce 到部门执行器池);非法 role 仍视为失败→降级
       const rmOk = (s) => s.type === 'loop' ? (Array.isArray(s.body) && s.body.length && s.body.every(rmOk)) : (roleIds.includes(s.role) || (!s.role && allowed.includes(s.agent)));
       if (p.steps.every(rmOk)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; } // 解析:role→executor、裸 agent→coerce 到池(防 broken 自动发现 agent 混入)
@@ -307,7 +338,7 @@ async function makePlan(text, opts) {
       let p = await fromLLM(brief, claude, allowed, orch);
       const lint = lintPlan(p, false); // #9 执行器模式同样体检:坏计划带问题回喂重拆一次
       if (lint.length) { try { const p2 = await fromLLM(brief, claude, allowed, orch, lint.join('；')); if (validate(p2, allowed) && !lintPlan(p2, false).length) p = p2; } catch (e) {} }
-      if (validate(p, allowed)) return mark(sanitizeDeps(p));
+      if (validate(p, allowed)) { prependMeeting(p, roleMap); return mark(sanitizeDeps(p)); } // 执行器模式也前置方案会议(复杂计划)
     } catch (e) {}
   }
   // 4) 显式模板模式且含 claude+codex → 走模板
@@ -320,7 +351,7 @@ async function makePlan(text, opts) {
       let p = await fromLLM(brief, claude, allowed);
       const lint = lintPlan(p, false); // #9 执行器模式体检 + 回喂
       if (lint.length) { try { const p2 = await fromLLM(brief, claude, allowed, undefined, lint.join('；')); if (validate(p2, allowed) && !lintPlan(p2, false).length) p = p2; } catch (e) {} }
-      if (validate(p, allowed)) return mark(sanitizeDeps(p));
+      if (validate(p, allowed)) { prependMeeting(p, roleMap); return mark(sanitizeDeps(p)); } // 执行器模式也前置方案会议(复杂计划)
     } catch (e) {}
   }
   // 6) 兜底
@@ -328,4 +359,4 @@ async function makePlan(text, opts) {
   return mark({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] });
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan, extractJson, fill };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan, extractJson, fill, prependMeeting };
