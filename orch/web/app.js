@@ -684,6 +684,8 @@ class Maestro extends MaestroBase {
       del: () => { const c = { ...(this.state.epCut || {}) }; c[s.id] = 1; this.setState({ epCut: c }); },
     }));
     v.taskCost = curT ? ('$' + (curT.cost || 0).toFixed(3) + ' · ' + (curT.tokens || 0) + ' tok' + (curT.budget > 0 ? ' · 上限 $' + curT.budget : '')) : '—';
+    v.taskCanMod = canMod;
+    v.editBudget = () => this.editBudget();
     // #1 决策回答
     v.canAnswer = !!(curT && curT.sk === 'awaiting_input' && canMod);
     v.question = curT ? (curT.question || '') : '';
@@ -1202,6 +1204,15 @@ class Maestro extends MaestroBase {
     if (/permission|denied|EACCES|EPERM/i.test(s)) return '💡 权限问题。检查产出目录写权限或执行器配置。';
     if (/ENOENT|network|ECONN|fetch failed|getaddrinfo/i.test(s)) return '💡 网络/文件访问失败,通常是临时问题,重试即可。';
     return '💡 点「重试失败步骤」续跑(已完成步骤不重跑),员工会看到上次失败原因换思路。';
+  }
+  editBudget() {
+    const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id);
+    if (!t) return;
+    const v = window.prompt('设置该任务成本上限($,0 或留空=不限):', t.budget > 0 ? String(t.budget) : '');
+    if (v === null) return; // 取消
+    const b = Number(v) || 0;
+    fetch('/task/' + id + '/budget', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ budget: b }) })
+      .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('💰 成本上限已设为 ' + (b > 0 ? '$' + b : '不限')); this.fetchAll(); } else this.toast('✗ ' + (d.error || '失败')); }).catch(() => {});
   }
   retryAll(n) {
     if (!n || !window.confirm('重试 ' + n + ' 个失败任务?已完成步骤不重跑。')) return;

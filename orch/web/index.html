@@ -439,7 +439,7 @@
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">接力步骤</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskRounds }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">参与 Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskAgentN }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">状态</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ task.sLabel }}</div></div>
-          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">成本</div><div style="font-size:15px;font-weight:700;margin-top:6px;font-family:'JetBrains Mono',monospace;">{{ taskCost }}</div></div>
+          <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">成本<sc-if value="{{ taskCanMod }}"> · <span onClick="{{ editBudget }}" style="cursor:pointer;color:#4F8BE8;">调整上限</span></sc-if></div><div style="font-size:15px;font-weight:700;margin-top:6px;font-family:'JetBrains Mono',monospace;">{{ taskCost }}</div></div>
         </div>
 
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:13px;padding:14px 16px;margin-bottom:16px;">
