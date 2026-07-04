@@ -946,7 +946,7 @@ class Maestro extends MaestroBase {
   resetHook() { fetch('/api/me/hook/reset', { method: 'POST' }).then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
   notifyTask(m) { // 桌面通知:任务结束/需要人
     if (m.type !== 'task') return;
-    const MAP = { done: '✅ 任务完成', failed: '❌ 任务失败', awaiting_input: '⚠ 任务等你决策', awaiting: '⏸ 任务待审批' };
+    const MAP = { done: '✅ 任务完成', failed: '❌ 任务失败', awaiting_input: '⚠ 任务等你决策', awaiting: '⏸ 任务待审批', paused: '⏸ 任务已暂停(如达成本上限,提额后恢复)' };
     const title = MAP[m.data]; if (!title) return;
     try {
       if (window.Notification && Notification.permission === 'granted' && document.hidden) {
