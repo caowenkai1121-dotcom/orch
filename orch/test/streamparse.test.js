@@ -45,3 +45,11 @@ test('#6b codex --json:非 JSON(MCP错误日志)/无关事件忽略', () => {
   assert.deepEqual(parseCodexStream('2026-... ERROR rmcp::transport worker quit'), {});
   assert.deepEqual(parseCodexStream(JSON.stringify({ type: 'turn.started' })), {});
 });
+test('#6a codex:命令/文件事件 → 🔧 实时活动(item.started,剥 powershell 包装)', () => {
+  const cmd = JSON.stringify({ type: 'item.started', item: { type: 'command_execution', command: 'powershell.exe -Command "echo done"' } });
+  assert.deepEqual(parseCodexStream(cmd).tools, ['🔧 运行 echo done']);
+  const fc = JSON.stringify({ type: 'item.started', item: { type: 'file_change', changes: [{ path: 'C:/x/hi.txt', kind: 'add' }, { path: 'a/b.js', kind: 'modify' }] } });
+  assert.deepEqual(parseCodexStream(fc).tools, ['🔧 改文件 +hi.txt ~b.js']);
+  // item.completed 的命令/文件不重复出 tools(避免与 started 重复计)
+  assert.deepEqual(parseCodexStream(JSON.stringify({ type: 'item.completed', item: { type: 'command_execution', command: 'x', exit_code: 0 } })), {});
+});

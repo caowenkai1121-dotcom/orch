@@ -30,7 +30,21 @@ function parseClaudeStream(line) {
 // 夹杂的 MCP 错误日志等非 JSON 行忽略。
 function parseCodexStream(line) {
   let j; try { j = JSON.parse(line); } catch (e) { return {}; } // 非 JSON(如 rmcp ERROR 日志)忽略
-  if (j.type === 'item.completed' && j.item && j.item.type === 'agent_message') return { text: j.item.text || '' };
+  const it = j.item;
+  if (j.type === 'item.completed' && it && it.type === 'agent_message') return { text: it.text || '' };
+  // #6a codex 工具活动:命令/文件事件 → 🔧 实时行(在 item.started 上给"正在做"感;仅进 onLine 不入语义 output)
+  if (j.type === 'item.started' && it) {
+    if (it.type === 'command_execution') {
+      let c = (it.command || '').replace(/\s+/g, ' ').trim();
+      const m = c.match(/-Command\s+["']?(.+?)["']?$/i); if (m) c = m[1]; // 剥 powershell 包装取真实命令
+      if (c.length > 90) c = c.slice(0, 90) + '…';
+      return { tools: ['🔧 运行 ' + c] };
+    }
+    if (it.type === 'file_change') {
+      const ps = (it.changes || []).map((ch) => (ch.kind === 'add' ? '+' : ch.kind === 'delete' ? '-' : '~') + String(ch.path || '').split(/[\\/]/).pop()).join(' ');
+      return { tools: ['🔧 改文件 ' + ps] };
+    }
+  }
   if (j.type === 'turn.completed' && j.usage) {
     const u = j.usage;
     // output_tokens 已含 reasoning(OpenAI/codex 语义:reasoning_output_tokens 是 output 的明细子项,非额外量),不再相加避免重复计费。
