@@ -2,6 +2,17 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { open } = require('../store');
 
+test('审查修复:auto-id 防碰撞——删中间记录后新增同名不静默覆盖', () => {
+  const s = open(':memory:');
+  const a = s.addAgent({ name: 'Foo' }); // foo-1
+  const b = s.addAgent({ name: 'Foo' }); // foo-2
+  assert.notEqual(a, b);
+  s.deleteAgent(a);                       // 删 foo-1(COUNT 回退)
+  const c = s.addAgent({ name: 'Foo' }); // 旧逻辑 COUNT+1=foo-2 覆盖 b;新逻辑 bump 到空闲
+  assert.notEqual(c, b);                                       // c 不覆盖现存的 b
+  assert.ok(s.listAgents().find((x) => x.id === b), 'b 应仍在'); // b 未被覆盖
+});
+
 test('建任务并取回', () => {
   const s = open(':memory:');
   const id = s.createTask('做登录');

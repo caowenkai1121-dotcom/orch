@@ -75,6 +75,8 @@ function open(file) {
   ensureCol('roles', 'empty_count', 'INTEGER');
   ensureCol('people', 'hook_token', 'TEXT');
   ensureCol('tasks', 'replan', 'INTEGER'); // #12 动态重规划 opt-in
+  // 自增 id 防碰撞:原 COUNT(*)+1 在删除中间记录后会重算出已存在的 id,配合 INSERT OR REPLACE 静默覆盖另一条记录(数据丢失)。逐个 bump 到空闲。
+  const freeAutoId = (table, base) => { let n = db.prepare('SELECT COUNT(*) n FROM ' + table).get().n + 1, id = base + '-' + n; while (db.prepare('SELECT 1 FROM ' + table + ' WHERE id=?').get(id)) id = base + '-' + (++n); return id; };
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
@@ -208,7 +210,7 @@ function open(file) {
     },
     listAgents() { return db.prepare('SELECT * FROM agents').all(); },
     addAgent(d) {
-      const id = d.id || (String(d.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent') + '-' + (db.prepare('SELECT COUNT(*) n FROM agents').get().n + 1);
+      const id = d.id || freeAutoId('agents', String(d.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent');
       db.prepare('INSERT OR REPLACE INTO agents(id,name,command,args,model,caps,color,avatar,dept,pricing,image,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
         .run(id, d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli');
       return id;
@@ -216,7 +218,7 @@ function open(file) {
     listPeople() { return db.prepare('SELECT * FROM people').all(); },
     getPerson(id) { return db.prepare('SELECT * FROM people WHERE id=?').get(id); },
     addPerson(d) {
-      const id = d.id || 'p-' + (db.prepare('SELECT COUNT(*) n FROM people').get().n + 1);
+      const id = d.id || freeAutoId('people', 'p');
       db.prepare('INSERT OR REPLACE INTO people(id,name,email,role,color,av,password,admin) VALUES(?,?,?,?,?,?,?,?)')
         .run(id, d.name || id, d.email || '', d.role || '成员', d.color || '#E0922E', (d.name || '人').slice(0, 1).toUpperCase(), hashPw(d.password || 'admin'), d.admin ? 1 : 0);
       return id;
@@ -230,7 +232,7 @@ function open(file) {
       db.prepare('UPDATE people SET hook_token=? WHERE id=?').run(t, id);
       return t;
     },
-    resetHookToken(id) { db.prepare('UPDATE people SET hook_token=? WHERE id=?').run(crypto.randomBytes(16).toString('hex'), id); return this.getPerson(id).hook_token; },
+    resetHookToken(id) { const t = crypto.randomBytes(16).toString('hex'); db.prepare('UPDATE people SET hook_token=? WHERE id=?').run(t, id); return t; }, // 直接返回新 token,不再 getPerson(id).hook_token(id 不存在会抛)
     personByHookToken(tok) { return tok ? db.prepare('SELECT * FROM people WHERE hook_token=?').get(tok) : null; },
     verifyLogin(name, pw) { const p = db.prepare('SELECT * FROM people WHERE name=?').get(name); return (p && p.password === hashPw(pw)) ? p : null; },
     // 会话:落库,进程重启不掉线(单机本地工具);30 天过期,读时惰性清理
@@ -246,7 +248,7 @@ function open(file) {
     // 部门
     listDepts() { return db.prepare('SELECT * FROM departments ORDER BY created_at').all(); },
     addDept(d) {
-      const id = d.id || (String(d.name || 'dept').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'dept') + '-' + (db.prepare('SELECT COUNT(*) n FROM departments').get().n + 1);
+      const id = d.id || freeAutoId('departments', String(d.name || 'dept').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'dept');
       db.prepare('INSERT OR REPLACE INTO departments(id,name,glyph,color,created_at) VALUES(?,?,?,?,?)').run(id, d.name || id, d.glyph || '·', d.color || '#7C6FD9', new Date().toISOString());
       return id;
     },
@@ -267,7 +269,7 @@ function open(file) {
     // 组织级绩效:员工步骤有落盘=done+1,空转=empty+1
     addRoleStat(id, produced) { db.prepare('UPDATE roles SET ' + (produced ? 'done_count=COALESCE(done_count,0)+1' : 'empty_count=COALESCE(empty_count,0)+1') + ' WHERE id=?').run(id); },
     addRole(d) {
-      const id = d.id || (String(d.name || 'role').toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-') || 'role') + '-' + (db.prepare('SELECT COUNT(*) n FROM roles').get().n + 1);
+      const id = d.id || freeAutoId('roles', String(d.name || 'role').toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-') || 'role');
       db.prepare('INSERT OR REPLACE INTO roles(id,dept,name,emoji,description,prompt,executor) VALUES(?,?,?,?,?,?,?)')
         .run(id, d.dept || 'engineering', d.name || id, d.emoji || '🧑‍💼', d.description || '', d.prompt || '', d.executor || 'claude');
       return id;
@@ -312,8 +314,7 @@ function open(file) {
     },
     setAgentDept(agentId, deptId) { db.prepare('UPDATE agents SET dept=? WHERE id=?').run(deptId, agentId); },
     addProject(d) {
-      const base = (String(d.name || 'proj').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proj');
-      const id = d.id || base + '-' + (db.prepare('SELECT COUNT(*) n FROM projects').get().n + 1);
+      const id = d.id || freeAutoId('projects', String(d.name || 'proj').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proj');
       db.prepare('INSERT OR REPLACE INTO projects(id,name,client,created_at,owner) VALUES(?,?,?,?,?)').run(id, d.name || id, d.client || '', new Date().toISOString(), d.owner || null);
       return id;
     },
