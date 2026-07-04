@@ -24,4 +24,17 @@ function parseClaudeStream(line) {
   }
   return {};
 }
-module.exports = { parseClaudeStream };
+// 解析 codex exec --json 的一行 JSONL 事件(#6b 真实 token 替代 char/4 估算)。
+// 真实事件:{"type":"item.completed","item":{"type":"agent_message","text":...}} = 最终文本;
+// {"type":"turn.completed","usage":{"input_tokens","output_tokens","reasoning_output_tokens"}} = 真实用量。
+// 夹杂的 MCP 错误日志等非 JSON 行忽略。
+function parseCodexStream(line) {
+  let j; try { j = JSON.parse(line); } catch (e) { return {}; } // 非 JSON(如 rmcp ERROR 日志)忽略
+  if (j.type === 'item.completed' && j.item && j.item.type === 'agent_message') return { text: j.item.text || '' };
+  if (j.type === 'turn.completed' && j.usage) {
+    const u = j.usage;
+    return { usage: { input: u.input_tokens || 0, output: (u.output_tokens || 0) + (u.reasoning_output_tokens || 0) } }; // reasoning 计入 output(按 output 费率计费)
+  }
+  return {};
+}
+module.exports = { parseClaudeStream, parseCodexStream };

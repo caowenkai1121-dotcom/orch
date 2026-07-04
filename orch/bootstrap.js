@@ -49,6 +49,7 @@ function buildAdapters(store) {
   const m = { echo: require('./adapters/echo') };
   store.listAgents().forEach((a) => { m[a.id] = generic.make(a); });
   m.claude = require('./adapters/claude'); // claude 用 stream-json 专用适配器
+  if (m.codex) m.codex = require('./adapters/codex'); // codex 用 --json 专用适配器(真实 token/成本,替代 char/4 估算)
   return m;
 }
 

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseClaudeStream } = require('../adapters/streamparse');
+const { parseClaudeStream, parseCodexStream } = require('../adapters/streamparse');
 
 test('提取 assistant 文本', () => {
   const line = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '写好了 index.html' }] } });
@@ -31,4 +31,17 @@ test('#6a 纯工具事件无 text 时只回 tools', () => {
   const r = parseClaudeStream(line);
   assert.equal(r.text, undefined);
   assert.deepEqual(r.tools, ['🔧 Edit index.html']);
+});
+
+test('#6b codex --json:agent_message → 最终文本', () => {
+  const line = JSON.stringify({ type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'OK 完成' } });
+  assert.equal(parseCodexStream(line).text, 'OK 完成');
+});
+test('#6b codex --json:turn.completed → 真实用量(reasoning 计入 output)', () => {
+  const line = JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 22477, output_tokens: 49, reasoning_output_tokens: 42 } });
+  assert.deepEqual(parseCodexStream(line).usage, { input: 22477, output: 91 }); // 49+42,替代 char/4 估算
+});
+test('#6b codex --json:非 JSON(MCP错误日志)/无关事件忽略', () => {
+  assert.deepEqual(parseCodexStream('2026-... ERROR rmcp::transport worker quit'), {});
+  assert.deepEqual(parseCodexStream(JSON.stringify({ type: 'turn.started' })), {});
 });
