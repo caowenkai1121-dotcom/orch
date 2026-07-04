@@ -106,16 +106,20 @@ async function runStep(step, ctx, prevOutput) {
   let prompt = (ctx.preamble || AUTONOMY) + briefTxt + outcomeTxt + readTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
   ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)
   const s = sem(); await s.acquire();
-  // 会话化:用户中途发的指令,注入到下一个真正启动的步骤
-  const notes = ctx.takeNotes ? ctx.takeNotes() : '';
-  if (notes) prompt = '【用户最新指令(优先遵守)】\n' + notes + '\n\n' + prompt;
-  ctx.onStatus(step.id, 'running');
   let res;
-  // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式)
-  const mm = ctx.models && ctx.models[step.agent];
-  const model = (typeof mm === 'string' ? mm : (mm && mm.model)) || null;
-  const effort = (mm && typeof mm === 'object' && mm.effort) || null;
+  // try 从 acquire 之后即开始:onStatus('running')/store 写入等若抛,finally 也必释放槽位(否则模块级共享 SEM permit 泄漏→累积到上限全局死锁)
   try {
+    // 拿到槽位后、spawn 前复检取消:排队期间用户可能已点取消,而 cancel 的一次性 killTree 早已跑完;
+    // 此时若仍 spawn,会产生取消之后诞生、够不到的孤儿子进程(违反「取消须杀该任务所有子进程」不变量)。
+    if (ctx.isCancelled && ctx.isCancelled()) { ctx.onStatus(step.id, 'failed'); return { output: '(已取消,未启动)', success: false }; }
+    // 会话化:用户中途发的指令,注入到下一个真正启动的步骤
+    const notes = ctx.takeNotes ? ctx.takeNotes() : '';
+    if (notes) prompt = '【用户最新指令(优先遵守)】\n' + notes + '\n\n' + prompt;
+    ctx.onStatus(step.id, 'running');
+    // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式)
+    const mm = ctx.models && ctx.models[step.agent];
+    const model = (typeof mm === 'string' ? mm : (mm && mm.model)) || null;
+    const effort = (mm && typeof mm === 'object' && mm.effort) || null;
     res = await adapter.run({
       prompt, workdir, model, effort,
       permission: step.permission, // #18 'read'=只读沙箱(审查/分析步)| 缺省 write(现有行为)
@@ -230,7 +234,7 @@ async function runPlan(plan, ctx) {
   }
   if (running.size) await Promise.all(running.values()); // 暂停/取消/决策而跳出时,让在跑步骤收尾
   if (decision && ctx.onDecision) ctx.onDecision(decision.stepId, decision.question);
-  if (replan && ctx.onReplan) ctx.onReplan(replan.stepId, replan.reason);
+  else if (replan && ctx.onReplan) ctx.onReplan(replan.stepId, replan.reason); // 决策优先:同批两者都置时只冒泡决策,replan 步仍 blocked,答完续跑时重跑并重新冒泡(自愈),不静默双发丢一个
   return done;
 }
 

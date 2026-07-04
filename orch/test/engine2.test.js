@@ -16,6 +16,33 @@ test('并发不超过上限', async () => {
   delete process.env.ORCH_CONCURRENCY;
 });
 
+test('审查修复:onStatus running 抛错不泄漏信号量槽位(防累积死锁)', async () => {
+  process.env.ORCH_CONCURRENCY = '1';
+  const ok = { async run() { return { output: 'x', success: true }; } };
+  let threw = false;
+  const done = await runPlan(
+    { steps: [{ id: 's1', agent: 'a', prompt: 'p', deps: [] }, { id: 's2', agent: 'a', prompt: 'p', deps: [] }] },
+    ctx({ a: ok }, { onStatus: (id, st) => { if (id === 's1' && st === 'running' && !threw) { threw = true; throw new Error('boom'); } } })
+  );
+  assert.equal(done.s1.success, false);  // s1 的 running onStatus 抛 → runStep catch 转失败态
+  assert.equal(done.s2.success, true);   // 槽位被 finally 释放,s2 正常拿到(泄漏则此处 acquire 死锁超时)
+  delete process.env.ORCH_CONCURRENCY;
+});
+
+test('审查修复:取消后排队步不再 spawn(防取消后诞生的不可杀孤儿)', async () => {
+  process.env.ORCH_CONCURRENCY = '1';
+  let spawns = 0, cancelled = false;
+  const slow = { async run() { spawns++; cancelled = true; await new Promise((r) => setTimeout(r, 20)); return { output: 'x', success: true }; } };
+  const done = await runPlan(
+    { steps: [{ id: 's1', agent: 'a', prompt: 'p', deps: [] }, { id: 's2', agent: 'a', prompt: 'p', deps: [] }] },
+    ctx({ a: slow }, { isCancelled: () => cancelled })
+  );
+  assert.equal(spawns, 1);                        // s1 spawn 后置 cancelled;s2 acquire 后复检取消 → 不 spawn
+  assert.equal(done.s2.success, false);
+  assert.match(done.s2.output, /已取消|未启动/); // 排队步取消未启动,不产生 cancel 之后的孤儿
+  delete process.env.ORCH_CONCURRENCY;
+});
+
 test('连续调度:独立快分支不被慢兄弟拖住(deps一满足即启动)', async () => {
   const done = [];
   const mk = (ms) => ({ async run({ prompt }) { await new Promise((r) => setTimeout(r, ms)); const id = prompt.match(/\bID:(\w+)/)[1]; done.push(id); return { output: '', success: true }; } });

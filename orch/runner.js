@@ -381,7 +381,7 @@ async function execute(taskId, plan, deps, opts) {
       if (status === 'running') { stepStart[stepId] = Date.now(); active.add(stepId); if (active.size > 1) active.forEach((id) => concurrentSteps.add(id)); } // 记开工时刻(供 mtime 归属)+ 标记并发重叠
       if (status === 'done' || status === 'failed') active.delete(stepId);
       if (status === 'done') {
-        const n = countRecentFiles(task.dir, stepStart[stepId] || 0); // 按 mtime 数本步产出(不受并行步 git add -A 污染)
+        const n = stepStart[stepId] ? countRecentFiles(task.dir, stepStart[stepId]) : 0; // 按 mtime 数本步产出(不受并行步 git add -A 污染);跳过步无 running→无 stepStart→计0,不误数全目录污染绩效
         if (gitOk) commitStep(task.dir, '步骤 ' + stepId + ' 完成'); // 仍每步 commit 供改动审查(计数不再取其暂存数)
         if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n });
         // 员工绩效(落盘/空转):只读审查步天然无产出不计;并发步不计——共享目录 mtime 无法区分文件是哪步写的,会把兄弟步产出误记给先完成的空转步
