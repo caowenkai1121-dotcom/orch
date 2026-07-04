@@ -3,6 +3,14 @@ const assert = require('node:assert');
 const { open } = require('../store');
 const { runTask, runApproved } = require('../runner');
 
+test('retryFailed 对无plan的失败任务不崩(JSON.parse(null) 兜底)', async () => {
+  const runner = require('../runner');
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('无plan失败任务', '默认项目', 'admin', {}); // 从不规划(如日预算拦截)
+  store.setStep(id, 'blocked', '', 'failed', '预算拦截'); store.setTaskStatus(id, 'failed');
+  await assert.doesNotReject(() => runner.retryFailed(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} }));
+});
+
 test('审批模式:出 plan 后暂停不执行', async () => {
   const store = open(':memory:'); store.seed();
   const id = store.createTask('x', 'p', 'o', { approve: 1 });

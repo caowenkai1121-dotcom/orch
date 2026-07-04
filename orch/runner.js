@@ -97,7 +97,7 @@ function runApproved(taskId, deps, plan) {
 function resumeTask(taskId, deps, stepId, answer) {
   const { store } = deps;
   const t = store.getTask(taskId);
-  let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  let plan = { steps: [] }; try { plan = JSON.parse(t.plan) || { steps: [] }; } catch (e) { plan = { steps: [] }; } // JSON.parse(null)→null,须兜底防 plan.steps 崩(无plan的失败任务)
   const top = new Set((plan.steps || []).map((s) => s.id));
   const seedDone = {};
   store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
@@ -116,7 +116,7 @@ function failNotes(store, taskId) {
 function retryFailed(taskId, deps, initialNote) {
   const { store } = deps;
   const t = store.getTask(taskId);
-  let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  let plan = { steps: [] }; try { plan = JSON.parse(t.plan) || { steps: [] }; } catch (e) { plan = { steps: [] }; } // JSON.parse(null)→null,须兜底防 plan.steps 崩(无plan的失败任务)
   const top = new Set((plan.steps || []).map((s) => s.id)); // 只 seed 顶层步骤(loop 子步骤不算,防完成度误判)
   const seedDone = {};
   store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
@@ -174,7 +174,7 @@ function noteToTask(taskId, runs, text) {
 function rerunStep(taskId, deps, stepId) {
   const { store } = deps;
   const t = store.getTask(taskId);
-  let plan = {}; try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; }
+  let plan = { steps: [] }; try { plan = JSON.parse(t.plan) || { steps: [] }; } catch (e) { plan = { steps: [] }; } // JSON.parse(null)→null,须兜底防 plan.steps 崩(无plan的失败任务)
   const top = new Set((plan.steps || []).map((s) => s.id));
   const seedDone = {};
   store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id) && s.step_id !== stepId) seedDone[s.step_id] = { output: s.output || '', success: true }; });
@@ -220,7 +220,7 @@ async function continueTask(taskId, deps, text) {
   const t = store.getTask(taskId);
   store.setTaskStatus(taskId, 'planning');
   const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(taskId)));
-  let cur = {}; try { cur = JSON.parse(t.plan); } catch (e) { cur = { steps: [] }; }
+  let cur = {}; try { cur = JSON.parse(t.plan) || {}; } catch (e) { cur = { steps: [] }; } // 同上,防 null
   cur.steps = cur.steps || [];
   const context = '【继续开发】当前工作目录已有之前产出的文件,先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
   const fresh = await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined);
