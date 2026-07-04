@@ -96,6 +96,7 @@ async function runStep(step, ctx, prevOutput) {
   try {
     res = await adapter.run({
       prompt, workdir, model, effort,
+      permission: step.permission, // #18 'read'=只读沙箱(审查/分析步)| 缺省 write(现有行为)
       onLine: (line) => ctx.onLog(step.id, line),
       onChild: (child) => { ctx.onChild && ctx.onChild(child); },
       onUsage: (u) => { ctx.onUsage && ctx.onUsage(step.id, step.agent, u); },

@@ -2,9 +2,10 @@ const { spawn } = require('child_process');
 const { parseClaudeStream } = require('./streamparse');
 
 module.exports = {
-  run({ prompt, workdir, model, effort, onLine, onChild, onUsage }) {
+  run({ prompt, workdir, model, effort, permission, onLine, onChild, onUsage }) {
     return new Promise((resolve) => {
       const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+      if (permission === 'read') args.push('--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit,Bash'); // #18 只读档:禁改写/执行工具(仍绕权限提示,不卡),审查/分析步用
       if (model) args.push('--model', model);   // 如 claude-fable-5 / claude-opus-4-8
       if (effort) args.push('--effort', effort); // low/medium/high/xhigh/max
       args.push(JSON.stringify(prompt));
