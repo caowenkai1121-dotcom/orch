@@ -104,6 +104,7 @@ async function runStep(step, ctx, prevOutput) {
 // 质量门判定:门禁员工输出明确 FAIL = 不通过。执行器退出码 0 不代表质量过关。
 function gateFailed(out) {
   const s = String(out || '');
+  if (/^PASS\b/i.test(s.trimStart())) return false; // 轮17 契约:门禁以判词开头,首词 PASS 即放行,压过下方全文邻近正则(免"结果无FAIL"等合规PASS被误退)
   if (/(判定|结论|verdict|结果)[^\n]{0,6}FAIL/i.test(s) || /❌\s*FAIL/.test(s)) return true;
   // 按首个出现的判定词决定(轮17 强制门禁以 PASS/FAIL 开头):FAIL 先出现或只有 FAIL → 不通过
   const fi = s.search(/\bFAIL\b/), pi = s.search(/\bPASS\b/);

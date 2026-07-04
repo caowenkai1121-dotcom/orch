@@ -169,6 +169,7 @@ test('质量门检测:按首个判定词,FAIL在前判失败', async () => {
     ['PASS: 全部通过,无 FAIL 项', false],          // PASS 在前 → 通过
     ['FAIL 不合格', true],
     ['PASS 合格', false],
+    ['PASS。上游产出完整,结果无FAIL问题。', false], // 首词PASS即放行,不被"结果无FAIL"邻近正则误退
     ['一切正常', false],                            // 无判定词 → 通过
   ];
   for (const [gateOut, shouldRework] of outs) {
