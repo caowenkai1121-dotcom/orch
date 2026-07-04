@@ -41,20 +41,27 @@ test('#9 lintPlan 捕获结构错:重复id/缺指派/loop缺body/空', () => {
   assert.deepEqual(lintPlan({ steps: [{ id: 'a', agent: 'claude', deps: [] }, { id: 'b', agent: 'claude', deps: ['a'] }] }), []); // 健康→无问题
 });
 
-test('#9 员工模式:结构坏(重复id)计划带问题回喂 planner 重拆一次', async () => {
+test('提速:员工模式首版可接受(role合法)直接用,不花昂贵回喂;重复id交 sanitizeDeps 去重', async () => {
+  let call = 0;
+  const claude = { async run() { call++; return { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]},{"id":"a","role":"r1","prompt":"q","deps":[]}]}', success: true }; } };
+  const roles = [{ id: 'r1', dept: 'dev', name: 'Dev', description: '', prompt: '角色', executor: 'claude' }];
+  const plan = await makePlan('做个东西', { mode: 'llm', agents: ['claude'], roles, depts: [], refine: false, templatesDir: TPL, claude });
+  assert.equal(call, 1);                                        // 首版 role 合法(rmOk 通过)→ 跳过一次昂贵 LLM 回喂
+  assert.equal(plan.steps.filter((s) => s.id === 'a').length, 1); // 重复 id 由 sanitizeDeps 去重
+});
+
+test('#9 员工模式:非法role坏计划仍带问题回喂重拆一次(rmOk失败)', async () => {
   let call = 0;
   const claude = { async run() {
     call++;
     return call === 1
-      ? { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]},{"id":"a","role":"r1","prompt":"q","deps":[]}]}', success: true } // 重复 id a
+      ? { output: '{"steps":[{"id":"a","role":"完全不存在xyz","prompt":"p","deps":[]}]}', success: true } // 非法 role → rmOk 失败
       : { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]},{"id":"b","role":"r1","prompt":"q","deps":["a"]}]}', success: true }; // 干净
   } };
   const roles = [{ id: 'r1', dept: 'dev', name: 'Dev', description: '', prompt: '角色', executor: 'claude' }];
   const plan = await makePlan('做个东西', { mode: 'llm', agents: ['claude'], roles, depts: [], refine: false, templatesDir: TPL, claude });
-  assert.equal(call, 2);                                   // 坏计划触发一次回喂重拆
-  assert.equal(plan.steps.length, 2);
-  const ids = plan.steps.map((s) => s.id);
-  assert.deepEqual([...new Set(ids)].sort(), ['a', 'b']);   // 采用了无重复 id 的重拆结果
+  assert.equal(call, 2);                                        // 非法 role 触发回喂重拆
+  assert.deepEqual([...new Set(plan.steps.map((s) => s.id))].sort(), ['a', 'b']);
 });
 
 test('#9 执行器模式:结构坏(重复id)计划带问题回喂 fromLLM 重拆一次', async () => {

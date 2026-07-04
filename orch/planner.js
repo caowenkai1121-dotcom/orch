@@ -317,17 +317,19 @@ async function makePlan(text, opts) {
   if (roleIds.length && claude && mode !== 'template') {
     try {
       let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo);
-      if (!validateRoles(p, roleIds)) coerceRoles(p.steps, roleIds);
-      // #9 非法员工 + 结构问题(重复id/缺指派/loop缺body)任一存在 → 带具体问题回喂重拆一次(而非静默降级)
-      const bad = validateRoles(p, roleIds) ? [] : badRoles(p, roleIds);
-      const lint = lintPlan(p, true);
-      if (bad.length || lint.length) {
-        const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
-        try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds) && !lintPlan(p2, true).length) p = p2; } catch (e) {}
+      // 接受条件:每步是合法 role,或 LLM 夹带的裸合法 agent(容忍夹带,resolveRoles 会把裸 agent coerce 到部门执行器池);非法 role 仍视为失败
+      const rmOk = (s) => s.type === 'loop' ? (Array.isArray(s.body) && s.body.length && s.body.every(rmOk)) : (roleIds.includes(s.role) || (!s.role && allowed.includes(s.agent)));
+      // 提速:首版计划已可接受(结构合法)就直接用,不再花一次昂贵 LLM 回喂重拆;仅当首版不可接受(非法员工/缺指派/loop缺body)才带问题回喂一次
+      if (!p.steps.every(rmOk)) {
+        if (!validateRoles(p, roleIds)) coerceRoles(p.steps, roleIds);
+        const bad = validateRoles(p, roleIds) ? [] : badRoles(p, roleIds);
+        const lint = lintPlan(p, true);
+        if (bad.length || lint.length) {
+          const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
+          try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb); coerceRoles(p2.steps, roleIds); if (p2.steps.every(rmOk)) p = p2; } catch (e) {}
+        }
       }
       prependMeeting(p, roleMap); // 复杂计划前置"方案会议":讨论步→方案综合→实现步依赖它(代码强制,画布可见先开会再实现)
-      // 接受条件:每步是合法 role,或 LLM 夹带的裸合法 agent(容忍夹带,resolveRoles 会把裸 agent coerce 到部门执行器池);非法 role 仍视为失败→降级
-      const rmOk = (s) => s.type === 'loop' ? (Array.isArray(s.body) && s.body.length && s.body.every(rmOk)) : (roleIds.includes(s.role) || (!s.role && allowed.includes(s.agent)));
       if (p.steps.every(rmOk)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; } // 解析:role→executor、裸 agent→coerce 到池(防 broken 自动发现 agent 混入)
     } catch (e) { /* 落到执行器模式 */ }
     empModeFell = true; // 员工模式进了但没成功返回 → 下面回退即降级
