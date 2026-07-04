@@ -210,8 +210,9 @@ function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
 // agents=所选执行器;roles/depts=员工目录;dept=部门任务;deptPools=部门执行器池;orchestration=文字编排;refine=需求细化
 async function makePlan(text, opts) {
   const { mode, agents, roles, depts, dept, deptPools, explicit, orchestration, refine, templatesDir, onChild } = opts;
-  // 包装 claude 注入 onChild:规划期的 LLM 子进程也注册到运行态,支持取消(否则卡住只能等超时)
-  const claude = (onChild && opts.claude) ? { run: (o) => opts.claude.run(Object.assign({}, o, { onChild })) } : opts.claude;
+  // 包装 claude:①注入 onChild(规划期 LLM 子进程注册运行态,支持取消)②过并发信号量(规划/细化调用也受 ORCH_CONCURRENCY 约束,防突发 fork 风暴)
+  const base = opts.claude;
+  const claude = base ? { run: async (o) => { const s = require('./engine').sem(); await s.acquire(); try { return await base.run(onChild ? Object.assign({}, o, { onChild }) : o); } finally { s.release(); } } } : base;
   const allowed = (agents && agents.length) ? agents : ['claude'];
   let brief = text;
   // 需求细化只对"短/含糊"的需求做(长需求已足够详细,省一次 LLM 调用与延迟)

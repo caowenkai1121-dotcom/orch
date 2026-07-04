@@ -149,7 +149,8 @@ async function harvestExperience(taskId, deps) {
     + '\n\n输出 JSON:{"employees":{"<员工id>":"一条≤60字可复用经验(成功套路或踩过的坑,具体不空话;若该员工产出文件为0要点明别只描述不落盘)"},"chief":"一条≤80字调度复盘(步骤划分/指派/质量门下次怎么改进)"}。'
     + '只为值得记的员工写经验(没有就省略该员工),只输出 JSON。';
   try {
-    const { output } = await adapters.claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
+    const s = require('./engine').sem(); await s.acquire(); // 复盘 LLM 也过并发信号量
+    let output; try { ({ output } = await adapters.claude.run({ prompt, workdir: metaDir(), onLine: () => {} })); } finally { s.release(); }
     const j = JSON.parse((output.match(/\{[\s\S]*\}/) || ['{}'])[0]);
     const names = [];
     Object.entries(j.employees || {}).forEach(([rid, line]) => { store.appendRoleMemo(rid, line); const r = store.getRole && store.getRole(rid); names.push(r ? r.name : rid); });

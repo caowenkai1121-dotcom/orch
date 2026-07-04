@@ -187,4 +187,4 @@ async function runPlan(plan, ctx) {
   return done;
 }
 
-module.exports = { runPlan, AUTONOMY, ASK };
+module.exports = { runPlan, AUTONOMY, ASK, sem };
