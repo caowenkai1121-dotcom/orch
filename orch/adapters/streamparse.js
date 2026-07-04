@@ -7,7 +7,8 @@ function parseClaudeStream(line) {
   }
   if (j.type === 'result') {
     const u = j.usage || {};
-    return { usage: { input: u.input_tokens || 0, output: u.output_tokens || 0, cost: j.total_cost_usd || 0 }, text: typeof j.result === 'string' ? undefined : undefined };
+    // result 事件只取 usage/cost;正文已由 assistant 事件流式采集,不重复取 j.result
+    return { usage: { input: u.input_tokens || 0, output: u.output_tokens || 0, cost: j.total_cost_usd || 0 } };
   }
   return {};
 }
