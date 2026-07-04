@@ -11,6 +11,20 @@ test('retryFailed 对无plan的失败任务不崩(JSON.parse(null) 兜底)', asy
   await assert.doesNotReject(() => runner.retryFailed(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} }));
 });
 
+test('复盘注入员工已有经验(避免生成重复)', async () => {
+  const store = open(':memory:'); store.seed();
+  const rid = store.listRoles().find((r) => r.dept !== '__system').id;
+  store.appendRoleMemo(rid, '旧经验先建mock数据');
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [{ id: 's1', role: rid, agent: 'claude', prompt: 'p', deps: [] }] });
+  store.setStep(id, 's1', 'claude', 'done', '做完了'); store.setTaskStatus(id, 'done');
+  let seen = '';
+  const claude = { async run({ prompt }) { seen = prompt; return { output: '{"employees":{}}' }; } };
+  await require('../runner').harvestExperience(id, { store, adapters: { claude } });
+  assert.match(seen, /旧经验先建mock数据/);   // 已有经验被注入复盘 prompt
+  assert.match(seen, /避免与之语义重复/);       // 去重指令在
+});
+
 test('审批模式:出 plan 后暂停不执行', async () => {
   const store = open(':memory:'); store.seed();
   const id = store.createTask('x', 'p', 'o', { approve: 1 });
