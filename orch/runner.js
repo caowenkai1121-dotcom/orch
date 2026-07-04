@@ -228,6 +228,7 @@ async function continueTask(taskId, deps, text) {
   const context = '【继续开发】当前工作目录已有之前产出的文件,先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
   const fresh = await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined);
   if (rec && rec.cancelled) return; // 规划期间被取消
+  if (fresh && fresh.degraded && store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⚠ 本轮继续开发的员工/部门规划未成,已回退单执行器直做(产出可能不如团队协作)。'); // 与 runTask 一致
   const pfx = 'c' + ((t.steps || []).length + 1) + '_'; // 新一轮步骤 id 前缀,防与旧步骤冲突
   const ids = new Set();
   const collectIds = (arr) => (arr || []).forEach((s) => { ids.add(s.id); if (s.body) collectIds(s.body); });
