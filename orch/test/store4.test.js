@@ -2,6 +2,19 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const { open } = require('../store');
 
+test('searchContent 命中用户对话,不误伤系统消息', () => {
+  const s = open(':memory:'); s.seed();
+  const id = s.createTask('任务甲', 'P', 'admin');
+  s.addTaskMsg(id, 'user', '这里提到关键词ZZQ的用户意图');
+  const id2 = s.createTask('任务乙', 'P', 'admin');
+  s.addTaskMsg(id2, 'system', '系统样板也含关键词ZZQ');
+  const hits = s.searchContent('关键词ZZQ', 30);
+  const ids = hits.map((h) => h.id);
+  assert.ok(ids.includes(id));    // 用户对话命中
+  assert.ok(!ids.includes(id2));  // 系统消息不命中(who='user' 过滤)
+  assert.ok(hits.find((h) => h.id === id).snip.includes('💬')); // 带对话片段
+});
+
 test('setTaskBudget 调整成本上限(解封预算暂停任务)', () => {
   const s = open(':memory:'); s.seed();
   const id = s.createTask('t', 'p', 'o', { budget: 0.5 });

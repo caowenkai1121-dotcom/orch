@@ -159,15 +159,17 @@ function open(file) {
     getLogs(taskId) {
       return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);
     },
-    // 内容搜索:任务需求 + 各步产出里匹配关键词,返回匹配任务(带命中片段)
+    // 内容搜索:任务需求 + 各步产出 + 用户对话里匹配关键词,返回匹配任务(带命中片段)
     searchContent(q, limit) {
-      const like = '%' + q + '%';
-      const rows = db.prepare('SELECT DISTINCT t.id, t.text, t.project, t.owner, t.status FROM tasks t LEFT JOIN steps s ON s.task_id=t.id WHERE t.text LIKE ? OR s.output LIKE ? ORDER BY t.id DESC LIMIT ?').all(like, like, limit || 30);
+      const like = '%' + q + '%'; const ql = q.toLowerCase();
+      // 用户对话用 EXISTS 子查询(避免 steps×messages 笛卡尔膨胀);限 who='user' 聚焦用户意图/决策,避开系统样板噪声
+      const rows = db.prepare("SELECT DISTINCT t.id, t.text, t.project, t.owner, t.status FROM tasks t LEFT JOIN steps s ON s.task_id=t.id WHERE t.text LIKE ? OR s.output LIKE ? OR EXISTS(SELECT 1 FROM task_messages m WHERE m.task_id=t.id AND m.who='user' AND m.text LIKE ?) ORDER BY t.id DESC LIMIT ?").all(like, like, like, limit || 30);
       return rows.map((t) => {
         let snip = '';
-        if (!String(t.text || '').toLowerCase().includes(q.toLowerCase())) {
+        if (!String(t.text || '').toLowerCase().includes(ql)) {
           const st = db.prepare('SELECT output FROM steps WHERE task_id=? AND output LIKE ? LIMIT 1').get(t.id, like);
-          if (st && st.output) { const i = st.output.toLowerCase().indexOf(q.toLowerCase()); snip = st.output.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); }
+          if (st && st.output) { const i = st.output.toLowerCase().indexOf(ql); snip = st.output.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); }
+          if (!snip) { const mm = db.prepare("SELECT text FROM task_messages WHERE task_id=? AND who='user' AND text LIKE ? LIMIT 1").get(t.id, like); if (mm && mm.text) { const i = mm.text.toLowerCase().indexOf(ql); snip = '💬 ' + mm.text.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); } }
         }
         return { id: t.id, text: t.text, project: t.project, owner: t.owner, status: t.status, snip };
       });
