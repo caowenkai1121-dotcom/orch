@@ -1,23 +1,14 @@
-const { spawn } = require('child_process');
+const { runJsonl } = require('./jsonl');
 const { parseClaudeStream } = require('./streamparse');
 
+// claude -p --output-format stream-json:文本+tool_use+真实 usage/cost 由 parseClaudeStream 解析,公共运行时走 jsonl 骨架。
 module.exports = {
   run({ prompt, workdir, model, effort, permission, onLine, onChild, onUsage }) {
-    return new Promise((resolve) => {
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
-      if (permission === 'read') args.push('--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit,Bash'); // #18 只读档:禁改写/执行工具(仍绕权限提示,不卡),审查/分析步用
-      if (model) args.push('--model', model);   // 如 claude-fable-5 / claude-opus-4-8
-      if (effort) args.push('--effort', effort); // low/medium/high/xhigh/max
-      args.push(JSON.stringify(prompt));
-      const p = spawn('claude', args, { cwd: workdir || process.cwd(), shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
-      if (onChild) onChild(p);
-      const T = require('./steptimeout').arm(p);
-      let buf = '', output = '';
-      const handle = (line) => { if (!line) return; const r = parseClaudeStream(line); if (r.text) { output += r.text + '\n'; onLine(r.text); } if (r.tools) r.tools.forEach((t) => onLine(t)); if (r.usage && onUsage) onUsage(r.usage); };
-      p.stdout.on('data', (b) => { buf += b.toString(); const lines = buf.split('\n'); buf = lines.pop(); lines.forEach(handle); });
-      p.stderr.on('data', (b) => onLine(b.toString()));
-      p.on('close', (code) => { T.clear(); if (buf) handle(buf); if (T.timedOut()) { onLine('⏱ 步骤超时被终止'); resolve({ output: output + '\n⏱ 步骤执行超时被终止(可重试续跑)', success: false }); } else resolve({ output, success: code === 0 }); });
-      p.on('error', (e) => { onLine(String(e)); resolve({ output: String(e), success: false }); });
-    });
+    const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+    if (permission === 'read') args.push('--disallowedTools', 'Edit,Write,MultiEdit,NotebookEdit,Bash'); // #18 只读档:禁改写/执行工具(仍绕权限提示,不卡)
+    if (model) args.push('--model', model);   // 如 claude-fable-5 / claude-opus-4-8
+    if (effort) args.push('--effort', effort); // low/medium/high/xhigh/max
+    args.push(JSON.stringify(prompt));
+    return runJsonl({ cmd: 'claude', args, workdir, parse: parseClaudeStream, onLine, onChild, onUsage });
   },
 };
