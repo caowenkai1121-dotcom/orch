@@ -281,3 +281,29 @@ test('#5 expected_outcome 注入本步简报,gate 继承实现步契约', async 
   assert.match(implP, /预期产出[\s\S]*login\.html/); // 契约注入实现步自身
   assert.match(gateP, /login\.html/);                // gate 无自带契约 → 继承实现步作验收标准
 });
+
+test('#12 replanMode: NEED_REPLAN 冒泡触发 onReplan,发信号步不计done,下游不跑', async () => {
+  let ran = 0, got = null;
+  const diverge = { async run() { return { output: '发现架构不对\nNEED_REPLAN: 需改用SSR架构', success: true }; } };
+  const down = { async run() { ran++; return { output: '', success: true }; } };
+  const done = await runPlan(
+    { steps: [{ id: 'a', agent: 'x', prompt: 'p', deps: [] }, { id: 'b', agent: 'y', prompt: 'p', deps: ['a'] }] },
+    ctx({ x: diverge, y: down }, { replanMode: true, onReplan: (sid, reason) => { got = { sid, reason }; } })
+  );
+  assert.equal(ran, 0);              // 下游 b 不跑
+  assert.ok(got && got.sid === 'a');
+  assert.match(got.reason, /SSR/);
+  assert.ok(!done.a);               // 发信号步不计 done
+});
+
+test('#12 replanMode 关闭时 NEED_REPLAN 当普通文本,不触发', async () => {
+  let ran = 0;
+  const a = { async run() { return { output: 'NEED_REPLAN: xx', success: true }; } };
+  const down = { async run() { ran++; return { output: '', success: true }; } };
+  const done = await runPlan(
+    { steps: [{ id: 'a', agent: 'x', prompt: 'p', deps: [] }, { id: 'b', agent: 'y', prompt: 'p', deps: ['a'] }] },
+    ctx({ x: a, y: down }) // 无 replanMode
+  );
+  assert.equal(ran, 1);            // 未开启 → a 正常完成,b 照跑
+  assert.ok(done.a && done.a.success);
+});

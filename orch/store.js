@@ -54,6 +54,8 @@ function open(file) {
       token TEXT PRIMARY KEY, user_id TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS project_knowledge(
       project TEXT PRIMARY KEY, knowledge TEXT);
+    CREATE TABLE IF NOT EXISTS plan_versions(
+      id INTEGER PRIMARY KEY, task_id INTEGER, version INTEGER, plan TEXT, reason TEXT, created_at TEXT);
     -- 高频按 task_id 过滤/聚合的表加索引:events(getEvents/agentAvgSeconds/pendingRetry/harvest)、usage(taskUsage/usageByTask)、steps、logs
     CREATE INDEX IF NOT EXISTS idx_events_task_type ON events(task_id, type);
     CREATE INDEX IF NOT EXISTS idx_usage_task ON usage(task_id);
@@ -72,12 +74,13 @@ function open(file) {
   ensureCol('roles', 'done_count', 'INTEGER');
   ensureCol('roles', 'empty_count', 'INTEGER');
   ensureCol('people', 'hook_token', 'TEXT');
+  ensureCol('tasks', 'replan', 'INTEGER'); // #12 动态重规划 opt-in
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
       const o = opts || {};
-      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,parent,models,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', o.ask ? 1 : 0, o.parent || null, o.models ? JSON.stringify(o.models) : null, now, now).lastInsertRowid;
+      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,replan,parent,models,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', o.ask ? 1 : 0, o.replan ? 1 : 0, o.parent || null, o.models ? JSON.stringify(o.models) : null, now, now).lastInsertRowid;
     },
     addApp(d) {
       return db.prepare('INSERT INTO apps(name,task_id,dir,entry,created_at) VALUES(?,?,?,?,?)')
@@ -107,13 +110,21 @@ function open(file) {
     setTaskBudget(id, budget) { db.prepare('UPDATE tasks SET budget=? WHERE id=?').run(Number(budget) || 0, id); }, // 调整成本上限(0=不限),用于解封预算暂停任务
     deleteTask(id) { // 级联清任务及其全部关联数据
       db.prepare('DELETE FROM tasks WHERE id=?').run(id);
-      ['steps', 'logs', 'events', 'usage', 'task_messages'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
+      ['steps', 'logs', 'events', 'usage', 'task_messages', 'plan_versions'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
       db.prepare('DELETE FROM apps WHERE task_id=?').run(id); // 已发布应用也移除
     },
     setTaskDecision(id, stepId, question) { db.prepare('UPDATE tasks SET blocked_step=?, question=? WHERE id=?').run(stepId, question, id); },
     clearTaskDecision(id) { db.prepare('UPDATE tasks SET blocked_step=NULL, question=NULL WHERE id=?').run(id); },
     setStepOutput(taskId, stepId, output) { db.prepare('UPDATE steps SET output=? WHERE task_id=? AND step_id=?').run(output, taskId, stepId); },
     doneSteps(taskId) { return db.prepare("SELECT step_id, output FROM steps WHERE task_id=? AND status='done'").all(taskId); },
+    // #13 计划版本化:每次动态重规划前快照旧计划,可回滚
+    savePlanVersion(taskId, plan, reason) {
+      const v = (db.prepare('SELECT MAX(version) m FROM plan_versions WHERE task_id=?').get(taskId).m || 0) + 1;
+      db.prepare('INSERT INTO plan_versions(task_id,version,plan,reason,created_at) VALUES(?,?,?,?,?)').run(taskId, v, JSON.stringify(plan || {}), reason || '', new Date().toISOString());
+      return v;
+    },
+    listPlanVersions(taskId) { return db.prepare('SELECT id,version,reason,created_at FROM plan_versions WHERE task_id=? ORDER BY version').all(taskId); },
+    getPlanVersion(taskId, version) { return db.prepare('SELECT * FROM plan_versions WHERE task_id=? AND version=?').get(taskId, version); },
     setPlan(id, plan) {
       db.prepare('UPDATE tasks SET plan=? WHERE id=?').run(JSON.stringify(plan), id);
     },

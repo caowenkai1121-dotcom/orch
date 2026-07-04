@@ -1,4 +1,4 @@
-const { runPlan, AUTONOMY, ASK } = require('./engine');
+const { runPlan, AUTONOMY, ASK, REPLAN } = require('./engine');
 const { metaDir } = require('./workspace'); // 复盘 LLM 的中性 cwd,隔离误写
 const fs = require('fs');
 const path = require('path');
@@ -260,6 +260,55 @@ async function continueTask(taskId, deps, text) {
   return execute(taskId, merged, deps, { seedDone });
 }
 
+// #12 动态重规划:某步发 NEED_REPLAN(实现现实偏离原计划)→ 保留已完成步,就剩余工作重新拆解接进活 DAG。
+// 复用 continueTask 的拼接(前缀新步 id 防冲突 + seedDone 续跑);改计划前快照旧计划(#13 可回滚);每任务上限3次防死循环。
+async function replanRemaining(taskId, deps, plan, done, divergedStepId, reason) {
+  const { store, runs, onEvent } = deps;
+  const finishFail = (msg) => { store.setTaskStatus(taskId, 'failed'); if (store.addTaskMsg) store.addTaskMsg(taskId, 'system', msg); if (store.addEvent) store.addEvent(taskId, 'task', 'failed'); emit(onEvent, taskId, null, 'task', 'failed'); };
+  if (!deps.makePlan) return finishFail('⚠ 收到重规划信号,但当前执行路径无规划器,无法自动重规划。请「继续开发」或「重试失败步骤」。');
+  const t = store.getTask(taskId);
+  const n = store.getEvents(taskId).filter((e) => e.type === 'replan').length;
+  if (n >= 3) return finishFail('⚠ 已达动态重规划上限(3次),停止以防失控。请人工介入(继续开发/重新规划)。');
+  let oldPlan = {}; try { oldPlan = JSON.parse(t.plan) || {}; } catch (e) {}
+  const ver = store.savePlanVersion(taskId, oldPlan, 'replan@' + divergedStepId + ': ' + String(reason).slice(0, 200)); // #13 快照旧计划
+  store.addEvent(taskId, 'replan', { step: divergedStepId, reason: String(reason).slice(0, 200), version: ver });
+  store.setTaskStatus(taskId, 'planning');
+  emit(onEvent, taskId, null, 'task', 'planning');
+  const rec = runs && runs.get(taskId);
+  // 保留已成功完成的顶层步 + 其交接摘要(喂 replan LLM)
+  const okIds = new Set(Object.keys(done).filter((id) => done[id] && done[id].success));
+  const keep = (plan.steps || []).filter((s) => okIds.has(s.id));
+  const doneSummary = keep.map((s) => s.id + ': ' + String((done[s.id] && done[s.id].output) || '').replace(/\s+/g, ' ').slice(-200)).join('\n');
+  const context = '【重规划】原任务已完成部分步骤,但执行到「' + divergedStepId + '」时发现实现现实与原计划不符,需就剩余工作重新规划。\n'
+    + '原任务目标: ' + (t.text || '') + '\n'
+    + (doneSummary ? '已完成步骤(交接摘要,产出已在工作目录与 findings.md):\n' + doneSummary + '\n' : '')
+    + '偏离原因: ' + reason + '\n'
+    + '请只对【达成原目标所需的剩余工作】重新拆解成新步骤:先查看现有产出文件,在其基础上扩展/修正(不从零重写),不要重复已完成的步骤。';
+  let fresh;
+  try { fresh = await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined); }
+  catch (e) { return finishFail('⚠ 重规划失败:' + ((e && e.message) || e) + '。请人工介入。'); }
+  if (rec && rec.cancelled) return;
+  const pfx = 'r' + (n + 1) + '_'; // 重规划轮次前缀,防与已完成步 id 冲突
+  const ids = new Set(); const collectIds = (arr) => (arr || []).forEach((s) => { ids.add(s.id); if (s.body) collectIds(s.body); }); collectIds(fresh.steps);
+  const rw = (s) => { const o = Object.assign({}, s, { id: pfx + s.id }); if (o.deps) o.deps = o.deps.filter((d) => ids.has(d)).map((d) => pfx + d); if (o.body) o.body = o.body.map(rw); return o; };
+  const newSteps = (fresh.steps || []).map(rw);
+  if (!newSteps.length) return finishFail('⚠ 重规划未产出新步骤,停止。请人工介入。');
+  const merged = { task: t.text, steps: keep.concat(newSteps) };
+  store.setPlan(taskId, merged);
+  if (store.addTaskMsg) store.addTaskMsg(taskId, 'system', '🔄 已就剩余工作重规划(第 ' + (n + 1) + '/3 次,旧计划存为 v' + ver + '):保留 ' + keep.length + ' 个已完成步,新增 ' + newSteps.length + ' 步。原因:' + reason);
+  // 审批门复用:approve 任务停在待审批等人批准新计划,否则自主续跑
+  if (t.approve) {
+    store.setTaskStatus(taskId, 'awaiting');
+    if (store.addEvent) store.addEvent(taskId, 'task', 'awaiting');
+    emit(onEvent, taskId, null, 'task', 'awaiting');
+    return;
+  }
+  const top = new Set(merged.steps.map((s) => s.id));
+  const seedDone = {};
+  store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  return execute(taskId, merged, deps, { seedDone });
+}
+
 async function execute(taskId, plan, deps, opts) {
   const { store, adapters, workspace, onEvent, runs } = deps;
   const fresh = { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] };
@@ -291,10 +340,12 @@ async function execute(taskId, plan, deps, opts) {
   const overDailyBudget = () => { const c = Number(process.env.ORCH_DAILY_BUDGET) || 0; return c > 0 && (store.usageToday().cost || 0) >= c; };
   let models = null; try { models = task.models ? JSON.parse(task.models) : null; } catch (e) {} // 用户选的大模型:{执行器id:模型}
   let pending = null;
+  let pendingReplan = null; // #12 某步发 NEED_REPLAN → runPlan 收尾后触发重规划
   const ctx = {
     adapters, workspace, brief, models,
-    preamble: task.ask ? ASK : AUTONOMY,
+    preamble: (task.ask ? ASK : AUTONOMY) + (task.replan ? REPLAN : ''),
     askMode: !!task.ask,
+    replanMode: !!task.replan,
     seedDone: opts.seedDone || null,
     answers: opts.answers || null,
     isCancelled: () => rec.cancelled,
@@ -314,6 +365,7 @@ async function execute(taskId, plan, deps, opts) {
       writePlanFile(taskId, store, task.dir); // 产出摘要进 task_plan.md
     },
     onDecision: (stepId, q) => { pending = { stepId, q }; },
+    onReplan: (stepId, reason) => { pendingReplan = { stepId, reason }; },
     onLog: (stepId, line) => { store.addLog(taskId, stepId, line); emit(onEvent, taskId, stepId, 'log', line, agentOf[stepId]); },
     onStatus: (stepId, status) => {
       store.setStep(taskId, stepId, agentOf[stepId] || '', status, null);
@@ -351,6 +403,7 @@ async function execute(taskId, plan, deps, opts) {
       emit(onEvent, taskId, null, 'task', 'awaiting_input');
       return;
     }
+    if (pendingReplan) return replanRemaining(taskId, deps, plan, done, pendingReplan.stepId, pendingReplan.reason); // #12 就剩余工作重规划并续跑
     const seeded = opts.seedDone || {};
     // 空计划且无已完成步骤 → 从未真正规划/执行(如被成本护栏拦下的 NULL-plan 任务);[].every()===true 会假判 done,须拦
     const noWork = (plan.steps || []).length === 0 && Object.keys(seeded).length === 0;
@@ -384,4 +437,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep, countRecentFiles, pauseTask, skipStep, noteToTask, rerunStep };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep, countRecentFiles, pauseTask, skipStep, noteToTask, rerunStep, replanRemaining };

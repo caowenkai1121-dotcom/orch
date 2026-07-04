@@ -18,6 +18,9 @@ function sem() { const n = Math.max(1, parseInt(process.env.ORCH_CONCURRENCY || 
 const ASK = '[自动编排] 你在编排器中自动执行。优先自行采用最合理默认直接做完。'
   + '仅当确实无法合理默认、必须由人拍板时,在输出最后单独一行 `NEED_DECISION: <一句话问题>` 然后停止(不要瞎猜);其余一律直接产出,禁止提问。\n\n任务:\n';
 
+// 可重规划模式:允许 agent 在实现现实与原计划结构性不符时输出 NEED_REPLAN,触发就剩余工作重新规划
+const REPLAN = '\n[可重规划] 若你发现实现现实与原计划的结构性假设严重不符(所需架构/前置方向与计划不同,继续按原计划做已无意义),在输出最后单独一行 `NEED_REPLAN: <一句话为何偏离>` 然后停止,系统会就剩余工作重新规划;仅在真正结构性偏离时用,常规问题与小偏差照常自行完成,不要滥用。';
+
 // 工作目录文件速览(给员工的现场感知,最多40个)
 function dirBrief(dir) {
   try {
@@ -105,7 +108,9 @@ async function runStep(step, ctx, prevOutput) {
   } finally { s.release(); }
   const m = ctx.askMode && (res.output || '').match(/NEED_DECISION:\s*(.+)/);
   if (m) res.needDecision = m[1].trim();
-  ctx.onStatus(step.id, res.needDecision ? 'blocked' : (res.success ? 'done' : 'failed'));
+  const rp = ctx.replanMode && (res.output || '').match(/NEED_REPLAN:\s*(.+)/);
+  if (rp) res.needReplan = rp[1].trim();
+  ctx.onStatus(step.id, (res.needDecision || res.needReplan) ? 'blocked' : (res.success ? 'done' : 'failed'));
   if (ctx.onResult) ctx.onResult(step.id, res.output); // #2 存产出摘要(须在 onStatus 后,免被 setStep 的 null 覆盖)
   return res;
 }
@@ -135,7 +140,7 @@ async function runLoop(step, ctx, prevOutput) {
     let gateOk = true;
     for (const body of step.body) {
       last = await runStep(body, ctx, last.output);
-      if (last.needDecision) return last; // 需人决策:向上冒泡,停
+      if (last.needDecision || last.needReplan) return last; // 需人决策/重规划:向上冒泡,停
       if (!last.success) { gateOk = false; break; } // 本轮某步失败,跳出去重来
       if (body.id === gateId && gateFailed(last.output)) { // 质量门判 FAIL:本轮不通过,重做
         gateOk = false;
@@ -161,6 +166,7 @@ async function runPlan(plan, ctx) {
   const started = new Set(Object.keys(done));
   const running = new Map(); // 在跑步骤 id → Promise(结束后落 done[id])
   let decision = null;
+  let replan = null; // #12 有步骤发 NEED_REPLAN → 停止起新步,冒泡触发重规划
   const held = new Set(); // #1 命名锁:同任务各步共享目录,声明同名 lock 的并发步互斥,防内容互相覆盖
   const locksOf = (s) => Array.isArray(s.locks) ? s.locks : (s.lock ? [s.lock] : []);
   const lockFree = (s) => locksOf(s).every((l) => !held.has(l));
@@ -175,10 +181,11 @@ async function runPlan(plan, ctx) {
       : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + handoff(done[d].output)) : '').filter(Boolean).join('\n\n');
     const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
     if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
+    if (r && r.needReplan) { replan = { stepId: s.id, reason: r.needReplan }; return; } // 需重规划:不计 done,冒泡
     done[s.id] = r;
   };
   while (Object.keys(done).length < plan.steps.length) {
-    if (decision) break;                               // 有步骤需人决策:不再起新步
+    if (decision || replan) break;                     // 有步骤需人决策/重规划:不再起新步
     if (ctx.isCancelled && ctx.isCancelled()) break;   // 取消:不再起新步
     if (ctx.isPaused && ctx.isPaused()) break;         // 暂停:在跑步骤收尾后不起新步
     if (ctx.overBudget && ctx.overBudget()) break;     // 超成本上限:收尾在跑步骤,不再起新步(防无人值守烧钱失控)
@@ -193,7 +200,8 @@ async function runPlan(plan, ctx) {
   }
   if (running.size) await Promise.all(running.values()); // 暂停/取消/决策而跳出时,让在跑步骤收尾
   if (decision && ctx.onDecision) ctx.onDecision(decision.stepId, decision.question);
+  if (replan && ctx.onReplan) ctx.onReplan(replan.stepId, replan.reason);
   return done;
 }
 
-module.exports = { runPlan, AUTONOMY, ASK, sem };
+module.exports = { runPlan, AUTONOMY, ASK, REPLAN, sem };

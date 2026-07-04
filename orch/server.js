@@ -138,7 +138,7 @@ app.post('/api/grant', (req, res) => {
 function createAndRunTask(ownerName, body) {
   const project = body.project || '默认项目';
   const models = body.models && typeof body.models === 'object' ? body.models : null; // {执行器id:{model,effort}}
-  const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve: body.approve, isolate: body.isolate, ask: body.ask, models });
+  const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve: body.approve, isolate: body.isolate, ask: body.ask, replan: body.replan, models });
   const ws = taskWorkspace(store.getTask(id));
   store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
   // 全局日成本总护栏(无人值守防失控):今日累计花费已达上限则建任务但不执行,标失败可重试
