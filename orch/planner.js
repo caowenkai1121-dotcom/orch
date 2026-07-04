@@ -225,6 +225,8 @@ async function makePlan(text, opts) {
   const roleMap = {}; deptRoles.forEach((r) => { roleMap[r.id] = r; });
   const roleIds = Object.keys(roleMap);
 
+  let empModeFell = false; // 员工模式该走却没成功 → 后续回退标记为"降级"(丢了团队协作)
+  const mark = (p) => (empModeFell && p ? Object.assign(p, { degraded: true }) : p);
   // 1) 用户显式只选一个执行器 + 无编排 + 非部门任务 → 该执行器单步直做(保持既有行为)
   if (explicit && allowed.length === 1 && !orch && !dept) {
     return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
@@ -241,22 +243,23 @@ async function makePlan(text, opts) {
       }
       if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; }
     } catch (e) { /* 落到执行器模式 */ }
+    empModeFell = true; // 员工模式进了但没成功返回 → 下面回退即降级
   }
   // 3) 有文字编排 → 按编排(执行器模式)
   if (orch && claude) {
-    try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return sanitizeDeps(p); } catch (e) {}
+    try { const p = await fromLLM(brief, claude, allowed, orch); if (validate(p, allowed)) return mark(sanitizeDeps(p)); } catch (e) {}
   }
   // 4) 显式模板模式且含 claude+codex → 走模板
   if (mode === 'template' && allowed.includes('claude') && allowed.includes('codex')) {
-    const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl;
+    const tpl = fromTemplate(brief, templatesDir); if (tpl) return mark(tpl);
   }
   // 5) 多执行器 → LLM 拆
   if (claude && allowed.length > 1) {
-    try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return sanitizeDeps(p); } catch (e) {}
+    try { const p = await fromLLM(brief, claude, allowed); if (validate(p, allowed)) return mark(sanitizeDeps(p)); } catch (e) {}
   }
   // 6) 兜底
-  if (allowed.includes('claude') && allowed.includes('codex')) { const tpl = fromTemplate(brief, templatesDir); if (tpl) return tpl; }
-  return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
+  if (allowed.includes('claude') && allowed.includes('codex')) { const tpl = fromTemplate(brief, templatesDir); if (tpl) return mark(tpl); }
+  return mark({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] });
 }
 
 module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps };

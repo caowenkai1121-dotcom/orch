@@ -107,6 +107,15 @@ test('调度复盘按相关性优选(>6条时过滤无关)', async () => {
   assert.ok(zc <= 5, '应过滤部分无关调度复盘,实际保留 ZZ 条数=' + zc);
 });
 
+test('员工模式规划失败回退→plan 标记 degraded', async () => {
+  const roles = [{ id: 'engineering-frontend-developer', dept: 'engineering', name: 'x', description: '', prompt: '你是X', memo: '', executor: 'claude' }];
+  // LLM 总返回无法纠正的非法 role → 员工模式失败 → 回退执行器/单步模式
+  const fakeClaude = { async run() { return { output: '{"steps":[{"id":"a","role":"完全不存在的岗位xyz","prompt":"p","deps":[]}]}', success: true }; } };
+  const plan = await makePlan('做个页面', { agents: ['claude', 'codex'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(plan.degraded, true);           // 回退被标记
+  assert.ok(Array.isArray(plan.steps) && plan.steps.length); // 仍给出可执行兜底计划
+});
+
 test('计划自愈:非法role就近纠正,仍非法带反馈重拆', async () => {
   const { coerceRoles, badRoles } = require('../planner');
   const ids = ['engineering-frontend-developer', 'testing-api-tester'];

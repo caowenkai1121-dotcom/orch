@@ -74,7 +74,7 @@ async function runTask(taskId, deps) {
   const plan = await makePlan(task.text, rec ? (c) => rec.children.add(c) : undefined);
   if (rec && rec.cancelled) return; // 规划期间被取消:不继续
   store.setPlan(taskId, plan);
-  store.setPlan(taskId, plan);
+  if (plan && plan.degraded && store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⚠ 员工/部门模式规划未成,已回退到单执行器直做(产出可能不如团队协作;方向没问题可等结果,否则「重新规划」再试)。');
   if (store.addEvent) store.addEvent(taskId, 'plan', { steps: (plan.steps || []).length });
   emit(onEvent, taskId, null, 'plan', plan);
   if (task.approve) {
