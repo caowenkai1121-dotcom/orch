@@ -453,6 +453,7 @@ class Maestro extends MaestroBase {
     v.orchLog = (this.state.activity || []).slice(0, 8).map((e) => ({ time: e.time, c: e.c, a: e.a, txt: e.t }));
     // 弹窗 + 表单提交
     v.newTask = () => this.newTask();
+    v.runDoctor = () => this.runDoctor();
     v.newAgent = () => this.newAgent();
     v.newPerson = () => this.newPerson();
     v.closeModal = () => this.closeModal();
@@ -925,6 +926,15 @@ class Maestro extends MaestroBase {
   delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
   // —— 产出改动(diff) ——
   fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { d = Array.isArray(d) ? d : []; this.live.diffs = d; this.live.diffsFor = id; if (!this.state.diffSha && d.length && this.state.taskId === id) this.openDiff(d[0].sha); else this.scheduleRender(); }).catch(() => {}); }
+  // —— #15 健康自检(doctor)——
+  runDoctor() {
+    fetch('/api/doctor').then((r) => r.ok ? r.json() : { issues: [] }).then((d) => {
+      const iss = d.issues || [];
+      if (!iss.length) { this.toast('🩺 健康自检:未发现问题'); return; }
+      if (!window.confirm('🩺 健康自检发现 ' + iss.length + ' 个问题:\n' + iss.map((i) => '· ' + i.detail).join('\n') + '\n\n执行清理?(僵尸任务→标失败可重试;孤儿 worktree→移除目录+分支)')) return;
+      fetch('/api/doctor/repair', { method: 'POST' }).then((r) => r.json()).then((rr) => { this.toast('🩺 已修复 ' + (rr.fixed || 0) + ' 项'); this.fetchAll(); }).catch(() => this.toast('✗ 修复失败'));
+    }).catch(() => this.toast('✗ 自检失败'));
+  }
   // —— #12 计划版本 ——
   fetchVersions(id) { fetch('/api/plan-versions/' + id).then((r) => r.ok ? r.json() : []).then((d) => { this.live.versions = Array.isArray(d) ? d : []; this.live.versionsFor = id; this.scheduleRender(); }).catch(() => {}); }
   restoreVersion(version) {

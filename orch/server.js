@@ -4,7 +4,7 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 const { open } = require('./store');
 const { makePlan } = require('./planner');
-const { makeWorkspace, taskDir, worktreeDir } = require('./workspace');
+const { makeWorkspace, taskDir, worktreeDir, reapWorktree, listWorktreeIds } = require('./workspace');
 const { runTask } = require('./runner');
 const api = require('./api');
 const boot = require('./bootstrap');
@@ -440,10 +440,10 @@ app.post('/task/:id/replan', (req, res) => {
 app.post('/api/tasks/cleanup', (req, res) => {
   const statuses = Array.isArray(req.body && req.body.statuses) && req.body.statuses.length ? req.body.statuses : ['failed', 'cancelled'];
   const safe = statuses.filter((s) => ['failed', 'cancelled', 'done'].includes(s)); // 只允许清终态,不清运行中
-  const del = store.listTasks().filter((t) => safe.includes(t.status) && owns(req.user, t)).map((t) => t.id);
-  del.forEach((id) => store.deleteTask(id));
+  const delTasks = store.listTasks().filter((t) => safe.includes(t.status) && owns(req.user, t));
+  delTasks.forEach((t) => { store.deleteTask(t.id); if (t.isolate === 'worktree') { try { reapWorktree(ROOT, t.id); } catch (e) {} } }); // #15 同时回收 worktree,防孤儿
   broadcastRaw({ type: 'task' });
-  res.json({ ok: true, n: del.length });
+  res.json({ ok: true, n: delTasks.length });
 });
 
 // 批量重试:重跑本人所有失败任务(限额恢复/临时故障后一键恢复);已完成步骤不重跑
@@ -460,8 +460,26 @@ app.delete('/task/:id', (req, res) => {
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能删除,请先停止' });
   store.deleteTask(id);
+  if (t.isolate === 'worktree') { try { reapWorktree(ROOT, id); } catch (e) {} } // #15 删任务同时回收 worktree+分支,防孤儿累积
   broadcastRaw({ type: 'task' });
   res.json({ ok: true });
+});
+
+// #15 doctor:状态对账自检(参考 PlanWeave doctor)——扫僵尸任务/孤儿 worktree,只报告;repair 才动手
+app.get('/api/doctor', adminOnly, (req, res) => {
+  const issues = [];
+  const tasks = store.listTasks(); const taskIds = new Set(tasks.map((t) => t.id));
+  tasks.forEach((t) => { if ((t.status === 'running' || t.status === 'planning') && !runs.has(t.id)) issues.push({ kind: 'zombie_task', id: t.id, detail: '任务 ' + t.id + '「' + (t.text || '').slice(0, 24) + '」状态=' + t.status + ' 但无在跑进程(僵尸)' }); });
+  try { listWorktreeIds(ROOT).forEach((id) => { if (!taskIds.has(id)) issues.push({ kind: 'orphan_worktree', id, detail: 'worktrees/task-' + id + ' 对应任务已删除(孤儿目录+分支)' }); }); } catch (e) {}
+  res.json({ ok: issues.length === 0, issues });
+});
+app.post('/api/doctor/repair', adminOnly, (req, res) => {
+  let fixed = 0;
+  const tasks = store.listTasks(); const taskIds = new Set(tasks.map((t) => t.id));
+  tasks.forEach((t) => { if ((t.status === 'running' || t.status === 'planning') && !runs.has(t.id)) { store.setTaskStatus(t.id, 'failed'); store.addEvent(t.id, 'task', 'failed'); store.addTaskMsg(t.id, 'system', '🩺 健康自检:僵尸任务(无在跑进程)已标记失败,可「重试失败步骤」续跑。'); fixed++; } });
+  try { listWorktreeIds(ROOT).forEach((id) => { if (!taskIds.has(id) && reapWorktree(ROOT, id)) fixed++; }); } catch (e) {}
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true, fixed });
 });
 
 // 重试失败步骤:已完成的不重跑(限额/临时故障恢复后续跑)

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const { makeWorkspace, metaDir } = require('../workspace');
+const { makeWorkspace, metaDir, listWorktreeIds, reapWorktree } = require('../workspace');
 
 test('metaDir:中性 scratch 目录,存在且不在 orch 源码目录内', () => {
   const d = metaDir();
@@ -15,4 +15,25 @@ test('共享工作区:所有步骤返回同一根目录', () => {
   const ws = makeWorkspace('/some/root');
   assert.equal(ws.make('dev'), '/some/root');
   assert.equal(ws.make('test'), '/some/root');
+});
+
+test('#15 doctor:listWorktreeIds 列出 worktrees/task-N 的任务 id', () => {
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'orch-wt-'));
+  fs.mkdirSync(path.join(root, 'worktrees', 'task-3'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'worktrees', 'task-7'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'worktrees', 'misc'), { recursive: true }); // 非 task-N → 忽略
+  assert.deepEqual(listWorktreeIds(root).sort((a, b) => a - b), [3, 7]);
+  assert.deepEqual(listWorktreeIds(path.join(root, 'nope')), []); // 无 worktrees 目录 → 空
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('#15 doctor:reapWorktree 非 git worktree 时回退 rmSync 删目录', () => {
+  const root = fs.mkdtempSync(path.join(require('os').tmpdir(), 'orch-reap-'));
+  const dir = path.join(root, 'worktrees', 'task-9');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'x.txt'), 'y');
+  assert.equal(reapWorktree(root, 9), true);        // git worktree remove 失败(非仓)→ 回退 rmSync
+  assert.ok(!fs.existsSync(dir));                    // 目录已移除
+  assert.equal(reapWorktree(root, 99), false);       // 不存在的 → false
+  fs.rmSync(root, { recursive: true, force: true });
 });

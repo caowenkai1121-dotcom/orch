@@ -55,6 +55,28 @@ function dockerArgs(mountDir, image, cmd, args) {
   return ['run', '--rm', '-v', mountDir + ':/work', '-w', '/work', image, cmd, ...args];
 }
 
+// #15 doctor:回收某任务的 git worktree(删任务/清孤儿时)——移除 worktree 目录 + 对应分支;best-effort
+function reapWorktree(root, id) {
+  const dir = path.join(root, 'worktrees', 'task-' + id);
+  let removed = false;
+  try {
+    if (fs.existsSync(dir)) {
+      try { execSync('git worktree remove --force "' + dir + '"', { cwd: root, stdio: 'ignore' }); removed = true; }
+      catch (e) { try { fs.rmSync(dir, { recursive: true, force: true }); removed = true; } catch (x) {} }
+    }
+    try { execSync('git branch -D orch/task-' + id, { cwd: root, stdio: 'ignore' }); } catch (e) {} // 分支可能已随 worktree 移除或不存在
+  } catch (e) {}
+  return removed;
+}
+// 列出 worktrees/ 下所有 orch worktree 的任务 id(供 doctor 找孤儿)
+function listWorktreeIds(root) {
+  try {
+    const wt = path.join(root, 'worktrees');
+    if (!fs.existsSync(wt)) return [];
+    return fs.readdirSync(wt).map((n) => { const m = n.match(/^task-(\d+)$/); return m ? Number(m[1]) : null; }).filter((x) => x != null);
+  } catch (e) { return []; }
+}
+
 // 元 LLM 调用(规划/需求细化/复盘)的中性工作目录:隔离在临时目录,防思考型 agent(skip-permissions)
 // 万一误写文件时污染/损坏 orch 自身源码。这些调用只需一个有效 cwd,不需要目录内容。
 let _metaDir = null;
@@ -65,4 +87,4 @@ function metaDir() {
   return _metaDir;
 }
 
-module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir };
+module.exports = { makeWorkspace, slug, taskDir, worktreeDir, dockerArgs, metaDir, reapWorktree, listWorktreeIds };
