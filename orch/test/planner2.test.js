@@ -97,6 +97,19 @@ test('审查修复:sanitizeDeps 递归清理 loop body(去重id+剔自依赖)', 
   assert.deepEqual(loop.body.find((b) => b.id === 'impl').deps, []); // 自依赖剔除
 });
 
+test('审查修复:role模式裸agent越出部门执行器池被coerce(防未验证/broken自动发现agent混入)', () => {
+  const { resolveRoles } = require('../planner');
+  const steps = [{ id: 'v', agent: 'gemini', deps: [] }];                    // LLM 未给 role、直接吐裸 agent gemini(不在池)
+  resolveRoles(steps, {}, ['claude', 'codex', 'gemini'], { engineering: ['claude', 'codex'] }, 't', []);
+  assert.ok(['claude', 'codex'].includes(steps[0].agent), 'gemini 应被 coerce 到池内,实际=' + steps[0].agent);
+  const ok = [{ id: 'a', agent: 'codex', deps: [] }];                        // 池内裸 agent 不动
+  resolveRoles(ok, {}, ['claude', 'codex', 'gemini'], { engineering: ['claude', 'codex'] }, 't', []);
+  assert.equal(ok[0].agent, 'codex');
+  const noPool = [{ id: 'g', agent: 'gemini', deps: [] }];                   // 无部门池→不限制(向后兼容)
+  resolveRoles(noPool, {}, ['claude', 'codex', 'gemini'], {}, 't', []);
+  assert.equal(noPool[0].agent, 'gemini');
+});
+
 test('审查修复:refineBrief 剥除 metaDir 绝对路径(防细化把中性cwd当工作目录、交付物落错目录)', async () => {
   const { refineBrief } = require('../planner');
   const { metaDir } = require('../workspace');

@@ -236,9 +236,14 @@ function flowPosition(depts, roleMap, r) {
 
 // 把员工解析进步骤:角色提示词前置 + 绑定执行器(约束在 allowed 与部门执行器池内)
 function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
+  // role 模式合法执行器 = 各部门执行器池并集(∩allowed);LLM 有时不给 role 而直接吐裸 agent,
+  // 若该 agent 越出角色池(如自动发现但未纳入任何池的 gemini/qwen,可能 args 不对而失败)则 coerce 回池内,与有 role 的步同规则,防未验证 agent 混入 role 模式。
+  const poolUnion = [];
+  Object.keys(deptPools || {}).forEach((d) => (deptPools[d] || []).forEach((a) => { if (allowed.indexOf(a) >= 0 && poolUnion.indexOf(a) < 0) poolUnion.push(a); }));
+  const roleAllowed = poolUnion.length ? poolUnion : allowed;
   (steps || []).forEach((s) => {
     if (s.body) { resolveRoles(s.body, roleMap, allowed, deptPools, taskText, depts); return; }
-    if (!s.role) return;
+    if (!s.role) { if (s.agent && roleAllowed.indexOf(s.agent) < 0) s.agent = roleAllowed[0]; return; }
     const r = roleMap[s.role];
     if (!r) { s.agent = s.agent || allowed[0]; return; }
     // 该员工所属部门若设了执行器池,只能用池内执行器
