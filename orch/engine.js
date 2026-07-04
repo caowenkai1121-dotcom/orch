@@ -116,6 +116,8 @@ async function runLoop(step, ctx, prevOutput) {
   const max = Math.min(Math.max(1, step.max || 3), 5); // LLM 没给兜底 3;封顶 5 防失控重试烧钱
   const gateId = step.body.length ? step.body[step.body.length - 1].id : null; // 约定:body 末步为质量门
   if (gateId && step.body.length > 1) step.body[step.body.length - 1].isGate = true; // 标记门禁步,让员工按 PASS/FAIL 格式输出
+  const gateEnforced = gateId && step.body.length > 1 && step.until === 'pass'; // 真质量门 loop(非门禁 loop 保持原语义)
+  let passed = false;
   for (let i = 0; i < max; i++) {
     let gateOk = true;
     for (const body of step.body) {
@@ -130,9 +132,12 @@ async function runLoop(step, ctx, prevOutput) {
         break;
       }
     }
-    if (step.until === 'pass' && last.success && gateOk) break; // 全步通过且质量门放行
+    if (step.until === 'pass' && last.success && gateOk) { passed = true; break; } // 全步通过且质量门放行
   }
-  ctx.onStatus(step.id, last.success ? 'done' : 'failed');
+  // 门禁 loop 耗尽 max 仍未放行 → 如实 failed(原先只看门禁员工进程退出码,连续 FAIL 也假判 done,门禁形同虚设)
+  const ok = last.success && (gateEnforced ? passed : true);
+  last.success = ok;
+  ctx.onStatus(step.id, ok ? 'done' : 'failed');
   return last;
 }
 

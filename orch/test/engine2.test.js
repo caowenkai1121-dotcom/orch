@@ -119,8 +119,18 @@ test('质量门:一直FAIL则到max停,不无限循环', async () => {
   const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 2, deps: [], body: [
     { id: 'impl', agent: 'i', prompt: 'p', deps: [] }, { id: 'gate', agent: 'g', prompt: 'p', deps: [] },
   ] }] };
-  await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  const done = await runPlan(plan, { adapters: { i: impl, g: gate }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
   assert.equal(gc, 2);  // max=2 轮后停
+  assert.equal(done.q.success, false); // 门禁一直 FAIL 到 max → loop 如实判失败(不再靠门禁进程退出码假绿)
+});
+
+test('质量门:非门禁 loop(单步)保持 last.success 原语义', async () => {
+  const { runPlan } = require('../engine');
+  let n = 0;
+  const a = { async run() { return { output: 'ok', success: n++ > 0 }; } }; // 首轮失败,次轮成功
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 3, deps: [], body: [{ id: 'build', agent: 'a', prompt: 'p', deps: [] }] }] };
+  const done = await runPlan(plan, { adapters: { a }, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} });
+  assert.equal(done.q.success, true); // body.length<=1 非门禁,重试到成功即 done
 });
 
 test('质量门:门禁步注入PASS/FAIL格式要求', async () => {
