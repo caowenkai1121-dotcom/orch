@@ -38,6 +38,17 @@ test('全局日成本上限也覆盖执行路径(retry),消息为全局', async 
   assert.ok(store.getTaskMsgs(id).some((m) => /全局日成本上限/.test(m.text)));
 });
 
+test('残留纠偏指令终态诚实告知(无步骤消费)', async () => {
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [{ id: 's1', agent: 'echo', prompt: 'p', deps: [] }] });
+  store.setStep(id, 's1', 'echo', 'done', 'ok'); // 已完成 → retryFailed 全 seed,无步骤会消费 notes
+  const runs = new Map(); runs.set(id, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: ['改成蓝色主题'] });
+  await require('../runner').retryFailed(id, { store, adapters: { echo: { async run() { return { output: '', success: true }; } } }, workspace: { make: () => '.' }, runs, onEvent: () => {} });
+  assert.equal(store.getTask(id).status, 'done');
+  assert.ok(store.getTaskMsgs(id).some((m) => /指令未生效/.test(m.text))); // 未消费的 note 被诚实告知
+});
+
 test('复盘:失败复盘过后升级到done允许补一次(学修复经验)', async () => {
   const store = open(':memory:'); store.seed();
   const rid = store.listRoles().find((r) => r.dept !== '__system').id;
