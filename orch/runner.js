@@ -201,8 +201,12 @@ function scheduleAutoRetry(taskId, deps) {
     if (target <= new Date()) target.setDate(target.getDate() + 1);
     delay = target.getTime() - Date.now();
   }
-  store.addEvent(taskId, 'auto_retry', { inMin: Math.round(delay / 60000) });
-  store.addLog(taskId, '', '⏳ 检测到执行器限额,已排定 ' + Math.round(delay / 60000) + ' 分钟后自动重试失败步骤(第 ' + (n + 1) + '/2 次,期间也可手动重试)。');
+  const mins = Math.round(delay / 60000);
+  const at = new Date(Date.now() + delay); const hhmm = ('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2);
+  store.addEvent(taskId, 'auto_retry', { inMin: mins });
+  store.addLog(taskId, '', '⏳ 检测到执行器限额,已排定 ' + mins + ' 分钟后自动重试失败步骤(第 ' + (n + 1) + '/2 次,期间也可手动重试)。');
+  // 同时在任务对话可见(不只埋在步骤日志),让操作者一眼知系统会自愈
+  if (store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⏳ 执行器限额,已排定约 ' + mins + ' 分钟后(~' + hhmm + ')自动重试失败步骤(第 ' + (n + 1) + '/2 次),期间也可手动重试。');
   const tm = setTimeout(() => {
     try { const cur = store.getTask(taskId); if (cur && cur.status === 'failed') retryFailed(taskId, deps); } catch (e) {}
   }, delay);

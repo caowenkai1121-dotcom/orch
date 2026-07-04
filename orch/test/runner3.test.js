@@ -72,6 +72,7 @@ test('限额自动重试:排定事件+提示日志,非限额失败不排', () =>
   runner.scheduleAutoRetry(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} });
   const evs = store.getEvents(id).filter((e) => e.type === 'auto_retry');
   assert.equal(evs.length, 1);
+  assert.ok(store.getTaskMsgs(id).some((m) => m.who === 'system' && /自动重试/.test(m.text))); // 任务对话可见提示
   // 第3次不再排
   store.addEvent(id, 'auto_retry', {}); // 手动补到2
   runner.scheduleAutoRetry(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} });
