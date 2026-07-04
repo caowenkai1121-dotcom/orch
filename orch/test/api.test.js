@@ -130,6 +130,24 @@ test('plan 展开普通步骤和 loop body 并覆盖真实步骤状态', () => {
   assert.deepEqual(fix.deps, ['dev']); // loop 展开:body[0] 继承 loop 的依赖(画布连线不断)
 });
 
+test('#8 why-not:未就绪步给出为何未推进(已完成/排队槽位/等上游)', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('Ship', 'CRM'));
+  store.setPlan(id, { steps: [
+    { id: 'a', agent: 'claude', deps: [] },
+    { id: 'b', agent: 'claude', deps: ['a'] },
+    { id: 'c', agent: 'claude', deps: ['b'] },
+  ] });
+  store.setStep(id, 'a', 'claude', 'done', 'ok');    // a 完成
+  store.setStep(id, 'b', 'claude', 'waiting', null); // b 依赖已满足但在排队等槽位
+  const plan = api.plan(store, id);
+  const by = (x) => plan.find((p) => p.title === x);
+  assert.equal(by('a').blockReason, '');                 // 已完成:无阻塞原因
+  assert.match(by('b').blockReason, /排队等执行器槽位/);   // 依赖满足但并发满 → 排队
+  assert.match(by('c').blockReason, /等待上游完成.*b/);    // 上游 b 未完成
+});
+
 test('agentLog 只返回指定 agent 的真实日志', () => {
   const { store } = makeStore();
 

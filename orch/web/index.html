@@ -315,6 +315,7 @@
                       <div style="flex:1;min-width:0;font-size:11px;color:{{ nd.subc }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ nd.agent }}</div>
                       <sc-if value="{{ nd.skTxt }}"><span style="flex:none;font-size:10px;font-weight:700;color:{{ nd.skC }};background:{{ nd.skBg }};padding:1px 7px;border-radius:6px;">{{ nd.skTxt }}</span></sc-if>
                     </div>
+                    <sc-if value="{{ nd.blockReason }}"><div title="{{ nd.blockReason }}" style="margin-top:6px;font-size:10.5px;color:#B08800;background:#FBF4DE;border-radius:6px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">⏳ {{ nd.blockReason }}</div></sc-if>
                   </div>
                 </div>
               </sc-for>

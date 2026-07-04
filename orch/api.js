@@ -298,7 +298,17 @@ function plan(store, id) {
       s.body.forEach((b, i) => push(b, i ? '回退环' : '', i === 0 ? remap(s.deps) : [s.body[i - 1].id]));
     } else push(s, '', remap(s.deps));
   });
-  (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) e.sk = stepSk(st.status); });
+  (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) { e.sk = stepSk(st.status); e.rawStatus = st.status; } });
+  // #8 why-not:为未开始(queued)的步算"为何未就绪",供画布节点显示——等哪个上游 / 排队等槽位 / 任务被门挡
+  const doneTitles = new Set(out.filter((o) => o.sk === 'done').map((o) => o.title));
+  const taskGate = t.status === 'awaiting' ? '任务待审批,批准后才开始' : t.status === 'awaiting_input' ? '任务待你回答后继续' : t.status === 'paused' ? '任务已暂停' : '';
+  out.forEach((o) => {
+    if (o.sk !== 'queued') { o.blockReason = ''; return; }
+    const unmet = (o.deps || []).filter((d) => !doneTitles.has(d));
+    if (unmet.length) o.blockReason = '等待上游完成:' + unmet.join('、');
+    else if (o.rawStatus === 'waiting') o.blockReason = '排队等执行器槽位(并发已达上限)';
+    else o.blockReason = taskGate || '就绪,待调度';
+  });
   return out;
 }
 
