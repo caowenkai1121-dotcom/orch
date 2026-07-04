@@ -24,6 +24,19 @@ test('#6a 提取 tool_use → 可读工具行(不并入 text)', () => {
   assert.equal(r.text, '开始改');                        // 文本照旧
   assert.deepEqual(r.tools, ['🔧 Read src/app.js', '🔧 Bash npm test']); // 工具单列,不混入 text
 });
+test('#6a claude:thinking 块 → 💭 预览(仅进 tools/onLine,不入 text/output)', () => {
+  const line = JSON.stringify({ type: 'assistant', message: { content: [
+    { type: 'thinking', thinking: '我先算 3 个质数相乘 2*3*5=30', signature: 'sig' },
+    { type: 'text', text: '答案是 30' },
+  ] } });
+  const r = parseClaudeStream(line);
+  assert.equal(r.text, '答案是 30');                       // 正文照旧
+  assert.ok(r.tools.some((x) => /💭.*质数/.test(x)));       // 思考 → 💭 预览
+  // 空 thinking 不出预览
+  const empty = parseClaudeStream(JSON.stringify({ type: 'assistant', message: { content: [{ type: 'thinking', thinking: '', signature: 's' }] } }));
+  assert.equal(empty.tools, undefined);
+});
+
 test('#6a 纯工具事件无 text 时只回 tools', () => {
   const line = JSON.stringify({ type: 'assistant', message: { content: [
     { type: 'tool_use', name: 'Edit', input: { file_path: 'index.html' } },

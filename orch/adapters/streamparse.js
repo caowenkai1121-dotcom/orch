@@ -12,6 +12,7 @@ function parseClaudeStream(line) {
   if (j.type === 'assistant' && j.message && Array.isArray(j.message.content)) {
     const t = j.message.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
     const tools = j.message.content.filter((c) => c.type === 'tool_use').map((c) => toolBrief(c.name, c.input)); // #6a 工具调用→实时可见
+    j.message.content.filter((c) => c.type === 'thinking' && c.thinking).forEach((c) => tools.push('💭 ' + c.thinking.replace(/\s+/g, ' ').trim().slice(0, 120))); // #6a 思考块预览(截断防噪),与工具同走 onLine 实时流
     const out = {};
     if (t) out.text = t;
     if (tools.length) out.tools = tools; // 仅进 onLine(实时流),不并入语义 output,免污染 handoff/gate/NEED_DECISION 判定
