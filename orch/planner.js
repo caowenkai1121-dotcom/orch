@@ -296,7 +296,8 @@ async function makePlan(text, opts) {
   const allowed = (agents && agents.length) ? agents : ['claude'];
   let brief = text;
   // 需求细化只对"短/含糊"的需求做(长需求已足够详细,省一次 LLM 调用与延迟)
-  const needRefine = refine && claude && (text || '').length < 160;
+  // 细化仅针对"短且笼统"的需求(如"做个网站");已列多个需求点(≥2个、/,/;分隔)的任务本就够具体,跳过细化省一次昂贵 LLM 调用(提速规划)
+  const needRefine = refine && claude && (text || '').length < 160 && ((text || '').match(/[、,，;；]/g) || []).length < 2;
   if (needRefine) { try { brief = await refineBrief(text, claude); } catch (e) {} }
   const orch = (orchestration || '').trim();
   const chief = (roles || []).find((r) => r.id === 'chief-orchestrator'); // 总调度经验行

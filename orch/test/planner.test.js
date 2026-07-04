@@ -218,6 +218,10 @@ test('需求细化启发式:长需求跳过refine,短需求细化', async () => 
   const longText = '开发一个电商后台管理系统'.repeat(15); // 180 字 >160
   await makePlan(longText, { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude: fakeClaude });
   assert.equal(refineCalled, 0);
+  // 提速:短但已列多个需求点(≥2分隔符) → 也跳过细化(本就够具体)
+  refineCalled = 0;
+  await makePlan('记账应用:收支记录、分类、月度统计、预算提醒', { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude: fakeClaude });
+  assert.equal(refineCalled, 0);
 });
 
 test('sanitizeDeps 归一化畸形 steps(防execute崩)', () => {
