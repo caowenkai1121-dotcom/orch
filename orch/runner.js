@@ -324,6 +324,7 @@ async function execute(taskId, plan, deps, opts) {
   store.setTaskStatus(taskId, 'running');
 
   const agentOf = {}; const roleOf = {}; const permOf = {}; const stepStart = {}; // stepStart:本步 running 时刻,用于按 mtime 归属产出
+  const active = new Set(); const concurrentSteps = new Set(); // active=当前 running 的步;concurrentSteps=曾与他步并发的步(共享目录 mtime 无法区分谁写的→不计绩效)
   const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else { agentOf[s.id] = s.agent; if (s.role) roleOf[s.id] = s.role; if (s.permission) permOf[s.id] = s.permission; } });
   collect(plan.steps || []);
 
@@ -377,12 +378,14 @@ async function execute(taskId, plan, deps, opts) {
       if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status });
       emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]);
       writePlanFile(taskId, store, task.dir);
-      if (status === 'running') stepStart[stepId] = Date.now(); // 记开工时刻(供 mtime 归属)
+      if (status === 'running') { stepStart[stepId] = Date.now(); active.add(stepId); if (active.size > 1) active.forEach((id) => concurrentSteps.add(id)); } // 记开工时刻(供 mtime 归属)+ 标记并发重叠
+      if (status === 'done' || status === 'failed') active.delete(stepId);
       if (status === 'done') {
         const n = countRecentFiles(task.dir, stepStart[stepId] || 0); // 按 mtime 数本步产出(不受并行步 git add -A 污染)
         if (gitOk) commitStep(task.dir, '步骤 ' + stepId + ' 完成'); // 仍每步 commit 供改动审查(计数不再取其暂存数)
         if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n });
-        if (roleOf[stepId] && store.addRoleStat && permOf[stepId] !== 'read') store.addRoleStat(roleOf[stepId], n > 0); // 员工绩效(落盘/空转);只读审查步天然无产出,不计避免污染绩效
+        // 员工绩效(落盘/空转):只读审查步天然无产出不计;并发步不计——共享目录 mtime 无法区分文件是哪步写的,会把兄弟步产出误记给先完成的空转步
+        if (roleOf[stepId] && store.addRoleStat && permOf[stepId] !== 'read' && !concurrentSteps.has(stepId)) store.addRoleStat(roleOf[stepId], n > 0);
       }
     },
   };
@@ -443,6 +446,7 @@ async function execute(taskId, plan, deps, opts) {
     if (rec && rec.notes && rec.notes.length) {
       const cur = store.getTask(taskId);
       if (cur && (cur.status === 'done' || cur.status === 'failed')) { store.addTaskMsg(taskId, 'system', '⚠ 你发的指令未生效——任务已无后续步骤可注入。点「继续开发」把它作为新一轮需求重述执行。'); rec.notes.length = 0; } // 清空:replan 续跑时内外层 execute 复用同一 rec,防外层 finally 再告警一条重复消息
+      else if (cur && cur.status === 'paused') { store.addTaskMsg(taskId, 'system', '⚠ 暂停前你发的指令未被任何步骤消费(rec 随暂停丢弃)。恢复任务时请重发,以注入后续步骤。'); rec.notes.length = 0; } // 修:paused 分支原静默吞掉未消费指令
     }
     if (runs) runs.delete(taskId);
   }

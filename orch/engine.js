@@ -195,17 +195,24 @@ async function runPlan(plan, ctx) {
   const lockFree = (s) => locksOf(s).every((l) => !held.has(l));
   const ready = (s) => s.deps.every((d) => done[d]);
   const launch = async (s) => {
-    if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
-    if (ctx.skip && ctx.skip.has(s.id)) { done[s.id] = { output: '(用户跳过此步)', success: true }; ctx.onStatus(s.id, 'done'); return; } // 用户跳过
-    // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘;上游失败则标注,下游谨慎使用/自行补全
-    const tag = (d) => (done[d] && done[d].success === false) ? '(⚠ 此步失败,产出可能不完整,请核实或自行补全)' : '';
-    const prev = s.deps.length === 1
-      ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + handoff(done[s.deps[0]]?.output))
-      : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + handoff(done[d].output)) : '').filter(Boolean).join('\n\n');
-    const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
-    if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
-    if (r && r.needReplan) { replan = { stepId: s.id, reason: r.needReplan }; return; } // 需重规划:不计 done,冒泡
-    done[s.id] = r;
+    try {
+      if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
+      if (ctx.skip && ctx.skip.has(s.id)) { done[s.id] = { output: '(用户跳过此步)', success: true }; ctx.onStatus(s.id, 'done'); return; } // 用户跳过
+      // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘;上游失败则标注,下游谨慎使用/自行补全
+      const tag = (d) => (done[d] && done[d].success === false) ? '(⚠ 此步失败,产出可能不完整,请核实或自行补全)' : '';
+      const prev = s.deps.length === 1
+        ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + handoff(done[s.deps[0]]?.output))
+        : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + handoff(done[d].output)) : '').filter(Boolean).join('\n\n');
+      const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
+      if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
+      if (r && r.needReplan) { replan = { stepId: s.id, reason: r.needReplan }; return; } // 需重规划:不计 done,冒泡
+      done[s.id] = r;
+    } catch (e) {
+      // runStep 前置段(workspace.make/brief/onStatus/prompt 等,在其自身 try 之外)或其它抛错:转失败态正常 resolve。
+      // 否则 launch reject → Promise.race 掀翻无 try 的 runPlan → 跳过在跑步收尾(224 的 Promise.all)→ 并发子进程成不可杀孤儿。
+      try { ctx.onStatus(s.id, 'failed'); } catch (x) {}
+      done[s.id] = { output: '步骤异常: ' + ((e && e.message) || String(e)), success: false };
+    }
   };
   while (Object.keys(done).length < plan.steps.length) {
     if (decision || replan) break;                     // 有步骤需人决策/重规划:不再起新步

@@ -63,6 +63,19 @@ test('适配器抛错:该步标失败(非卡running),独立分支仍完成', asy
   assert.equal(done.good.success, true);
 });
 
+test('审查修复:runStep 前置段抛错(如缺 prompt)不掀翻 runPlan,并发兄弟步照常完成', async () => {
+  const ok = { async run() { return { output: 'done', success: true }; } };
+  const statuses = {};
+  const done = await runPlan(
+    { steps: [{ id: 'bad', agent: 'x', deps: [] }, { id: 'good', agent: 'x', prompt: 'p', deps: [] }] }, // bad 无 prompt → runStep 的 step.prompt.indexOf 抛
+    ctx({ x: ok }, { onStatus: (sid, st) => { statuses[sid] = st; } })
+  );
+  assert.equal(done.bad.success, false);       // 前置段抛错转失败态,不上抛掀翻 runPlan
+  assert.match(done.bad.output, /异常/);
+  assert.equal(statuses.bad, 'failed');
+  assert.equal(done.good.success, true);       // 并发兄弟步不受影响、正常完成
+});
+
 test('取消后不再起新 step', async () => {
   let ran = 0;
   const a = { async run() { ran++; return { output: '', success: true }; } };
