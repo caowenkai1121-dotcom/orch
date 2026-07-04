@@ -56,11 +56,11 @@ function buildAdapters(store) {
 // 自动发现已安装的 CLI 智能体(claude/codex 已 seed;这里补 hermes/gemini/aider 等)。用户无需手动添加 CLI agent。
 function cmdExists(cmd) { try { require('child_process').execSync((process.platform === 'win32' ? 'where ' : 'command -v ') + cmd, { stdio: 'ignore' }); return true; } catch (e) { return false; } }
 const KNOWN_CLI = [
-  { id: 'hermes', name: 'Hermes', command: 'hermes', args: ['-p'], model: 'hermes CLI', caps: ['代码生成'], color: '#2FAE9E', avatar: 'H', dept: 'dev' },
-  { id: 'gemini', name: 'Gemini', command: 'gemini', args: ['-p', '--yolo'], model: 'gemini CLI', caps: ['代码生成'], color: '#E0922E', avatar: 'G', dept: 'dev' },
-  { id: 'aider', name: 'Aider', command: 'aider', args: ['--yes-always'], model: 'aider CLI', caps: ['代码修改'], color: '#E06A63', avatar: 'A', dept: 'dev' },
-  { id: 'qwen', name: 'Qwen', command: 'qwen', args: ['-p'], model: 'qwen CLI', caps: ['代码生成'], color: '#9B59B6', avatar: 'Q', dept: 'dev' },
-  { id: 'cursor-agent', name: 'Cursor Agent', command: 'cursor-agent', args: [], model: 'cursor CLI', caps: ['代码生成'], color: '#3C3933', avatar: 'Cu', dept: 'dev' },
+  { id: 'hermes', name: 'Hermes', command: 'hermes', args: ['-p'], model: 'hermes CLI', caps: ['代码生成'], color: '#2FAE9E', avatar: 'H', dept: 'engineering' },
+  { id: 'gemini', name: 'Gemini', command: 'gemini', args: ['-p', '--yolo'], model: 'gemini CLI', caps: ['代码生成'], color: '#E0922E', avatar: 'G', dept: 'engineering' },
+  { id: 'aider', name: 'Aider', command: 'aider', args: ['--yes-always'], model: 'aider CLI', caps: ['代码修改'], color: '#E06A63', avatar: 'A', dept: 'engineering' },
+  { id: 'qwen', name: 'Qwen', command: 'qwen', args: ['-p'], model: 'qwen CLI', caps: ['代码生成'], color: '#9B59B6', avatar: 'Q', dept: 'engineering' },
+  { id: 'cursor-agent', name: 'Cursor Agent', command: 'cursor-agent', args: [], model: 'cursor CLI', caps: ['代码生成'], color: '#3C3933', avatar: 'Cu', dept: 'engineering' },
 ];
 function scanAgents(store) {
   const have = new Set(store.listAgents().map((a) => a.id));

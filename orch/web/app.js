@@ -204,7 +204,7 @@ class MaestroBase extends RT.Component {
     const act = this.state.actionTxt[a.id] || a.action;
     return { ...a, color:t.color, soft:t.soft, avatar:t.av, typeLabel:t.label, sLabel:sm.label, sC:sm.c, sBg:sm.bg, sDot:sm.dot, pct: p + '%', action: act, open: () => this.go('agent', { agentId: a.id }) };
   }
-  decMini(id) { const a = this.AGENTS.find(x => x.id === id); const t = this.TYPES[a.type]; return { color: t.color, avatar: t.av }; }
+  decMini(id) { const a = (this.AGENTS || []).find(x => x.id === id); const t = a && this.TYPES[a.type]; return { color: (t && t.color) || (a && a.color) || '#C9C5BB', avatar: (t && t.av) || (a && a.avatar) || '·' }; } // 兜底:非内置 agent(gemini/qwen/自建)type 不在 TYPES,不再崩(否则整页白屏)
   deptColor(id) { const d = this.DEPTS.find(x => x.id === id); return d ? d.color : '#C9C5BB'; }
   deptName(id) { const d = this.DEPTS.find(x => x.id === id); return d ? d.name : id; }
 
@@ -327,7 +327,12 @@ function mdInline(s) {
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, txt, url) => {
+      // 校验协议(仅 http/https/mailto,挡 javascript: 等)+ 属性转义引号(挡 " onmouseover=... 注入),防 md 预览 iframe 存储型 XSS
+      const u = String(url).trim();
+      if (!/^(https?:|mailto:)/i.test(u)) return txt; // 非白名单协议 → 降级为纯文本
+      return '<a href="' + u.replace(/"/g, '&quot;').replace(/</g, '&lt;') + '" target="_blank" rel="noopener noreferrer">' + txt + '</a>';
+    });
 }
 function md2html(md) {
   const lines = String(md).replace(/\r\n/g, '\n').split('\n');
@@ -1043,7 +1048,7 @@ class Maestro extends MaestroBase {
         try { if (window.Notification && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
       }).catch(() => this.setState({ loginErr: '网络错误' }));
   }
-  logout() { fetch('/logout', { method: 'POST' }).then(() => { this.state.me = null; this.setState({ modal: null, needLogin: true, screen: 'dash' }); }).catch(() => {}); }
+  logout() { fetch('/logout', { method: 'POST' }).then(() => { this.state.me = null; this.setState({ modal: null, needLogin: true, screen: 'dashboard' }); }).catch(() => {}); } // 'dash'→'dashboard':否则重登后主区空白(无 dash 屏)
   openAccount() { this.setState({ modal: 'account' }); }
   changePw() {
     const pw = (document.getElementById('ac-pw') || {}).value || '';

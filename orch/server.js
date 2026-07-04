@@ -74,7 +74,7 @@ app.get('/task/:id/logs', (req, res) => { if (!canSeeTask(req.user, store.getTas
 app.get('/api/all', (req, res) => res.json({ ...api.buildAll(store, req.user), activity: activity.slice(0, 18) }));
 app.get('/api/relay/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.relay(store, Number(req.params.id))); });
 app.get('/api/plan/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.plan(store, Number(req.params.id))); });
-app.get('/api/agentlog/:id', (req, res) => res.json(api.agentLog(store, req.params.id)));
+app.get('/api/agentlog/:id', adminOnly, (req, res) => res.json(api.agentLog(store, req.params.id))); // 按执行器跨全部任务聚合日志→无法单任务鉴权,收口为 adminOnly(防普通用户越权读他人任务日志)
 // 执行器健康(缓存;?refresh=1 重测)
 app.get('/api/health', (req, res) => { if (req.query.refresh) health = boot.checkHealth(store); res.json(health); });
 
@@ -441,7 +441,7 @@ app.post('/api/tasks/cleanup', (req, res) => {
   const statuses = Array.isArray(req.body && req.body.statuses) && req.body.statuses.length ? req.body.statuses : ['failed', 'cancelled'];
   const safe = statuses.filter((s) => ['failed', 'cancelled', 'done'].includes(s)); // 只允许清终态,不清运行中
   const delTasks = store.listTasks().filter((t) => safe.includes(t.status) && owns(req.user, t));
-  delTasks.forEach((t) => { store.deleteTask(t.id); if (t.isolate === 'worktree') { try { reapWorktree(ROOT, t.id); } catch (e) {} } }); // #15 同时回收 worktree,防孤儿
+  delTasks.forEach((t) => { store.deleteTask(t.id); reapTaskDir(t); }); // 同时回收 worktree/data 产出目录,防孤儿 + 防重启复活
   broadcastRaw({ type: 'task' });
   res.json({ ok: true, n: delTasks.length });
 });
@@ -460,10 +460,17 @@ app.delete('/task/:id', (req, res) => {
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能删除,请先停止' });
   store.deleteTask(id);
-  if (t.isolate === 'worktree') { try { reapWorktree(ROOT, id); } catch (e) {} } // #15 删任务同时回收 worktree+分支,防孤儿累积
+  reapTaskDir(t); // 回收 worktree 或非worktree产出目录:防孤儿累积 + 防重启被 importDataDir 复活删除的任务
   broadcastRaw({ type: 'task' });
   res.json({ ok: true });
 });
+// 删任务后回收其磁盘目录:worktree→reapWorktree;非worktree→删 data/ 下的产出目录(限 ROOT/data 内,防误删)
+function reapTaskDir(t) {
+  try {
+    if (t.isolate === 'worktree') reapWorktree(ROOT, t.id);
+    else if (t.dir) { const d = path.resolve(t.dir); if (d.startsWith(path.resolve(ROOT, 'data') + path.sep)) fs.rmSync(d, { recursive: true, force: true }); }
+  } catch (e) {}
+}
 
 // #15 doctor:状态对账自检(参考 PlanWeave doctor)——扫僵尸任务/孤儿 worktree,只报告;repair 才动手
 app.get('/api/doctor', adminOnly, (req, res) => {
