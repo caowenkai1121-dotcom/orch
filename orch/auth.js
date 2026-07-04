@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 function parseCookie(h) {
   const o = {};
-  (h || '').split(';').forEach((p) => { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); });
+  (h || '').split(';').forEach((p) => { const i = p.indexOf('='); if (i > 0) { const raw = p.slice(i + 1).trim(); let v; try { v = decodeURIComponent(raw); } catch (e) { v = raw; } o[p.slice(0, i).trim()] = v; } }); // decodeURIComponent 遇畸形 %编码会抛→兜底原值,防一个坏 cookie 让每个请求 500
   return o;
 }
 function login(store, name, pw) {

@@ -7,6 +7,12 @@ const { open } = require('../store');
 
 function mem() { const s = open(':memory:'); s.seed(); return s; }
 
+test('审查修复:parseCookie 遇畸形 %编码不崩,仍取到 orch_sess(防一个坏cookie整站500)', () => {
+  const { tokenFromReq } = require('../auth');
+  assert.equal(tokenFromReq({ headers: { cookie: 'junk=%; orch_sess=abc123' } }), 'abc123'); // 坏 cookie 兜底不抛
+  assert.equal(tokenFromReq({ headers: {} }), undefined);
+});
+
 test('会话落库,重开同一库仍有效(进程重启不掉线)', () => {
   const f = path.join(os.tmpdir(), 'orch-sess-' + process.pid + '.db');
   try { fs.unlinkSync(f); } catch (e) {}

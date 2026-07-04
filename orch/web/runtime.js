@@ -75,17 +75,17 @@
       if (name === 'onclick') {
         // handler 存节点属性,监听器读当前值;morph 会同步,避免列表重排后点错
         el._onclick = resolve(strip(val), scopes);
-        el.addEventListener('click', dispatchClick);
+        el.addEventListener('click', dispatchClick); el._clickBound = true;
       } else if (name === 'onkeydown') {
         el._onkeydown = resolve(strip(val), scopes);
-        el.addEventListener('keydown', dispatchKey);
+        el.addEventListener('keydown', dispatchKey); el._keyBound = true;
       } else if (name === 'style-hover') {
         el._hover = val;
         el.addEventListener('mouseenter', enterHover);
         el.addEventListener('mouseleave', leaveHover);
       } else if (name === 'ref') {
         const fn = resolve(strip(val), scopes);
-        if (typeof fn === 'function') refs.push(() => fn(el));
+        if (typeof fn === 'function') el._refFn = fn; // 存节点上;morph 后对 DOM 里真实节点执行(见 runRef/morphNode),不再对游离 frag 节点执行
       } else if (name.indexOf('hint-') === 0) {
         // 忽略 design-canvas 的占位提示属性
       } else {
@@ -96,6 +96,8 @@
     target.appendChild(el);
   }
 
+  // 对真实挂载的节点(及子树)执行 ref 回调:morph 复用旧节点、丢弃 frag 新节点,ref 必须作用在 DOM 里的真节点上
+  function runRef(node) { if (node.nodeType === 1) { if (node._refFn) node._refFn(node); for (const c of node.childNodes) runRef(c); } }
   // 最小 DOM morph:按位置对齐,原地改文本/属性,结构不同才替换。
   // 保留旧节点 → 不抖动;旧节点上首渲染挂的 click/hover 监听器为稳定闭包,继续可用。
   function morph(oldP, newP) {
@@ -105,7 +107,7 @@
     for (let i = 0; i < n; i++) {
       const o = oldKids[i], nw = newKids[i];
       if (!nw) { if (o) oldP.removeChild(o); continue; }
-      if (!o) { oldP.appendChild(nw); continue; }
+      if (!o) { oldP.appendChild(nw); runRef(nw); continue; } // 新增节点入 DOM → 执行其 ref
       morphNode(o, nw);
     }
   }
@@ -121,11 +123,20 @@
     }
     const na = nw.attributes;
     for (let i = 0; i < na.length; i++) {
-      if (o.getAttribute(na[i].name) !== na[i].value) o.setAttribute(na[i].name, na[i].value);
+      const nm = na[i].name, nv = na[i].value;
+      if (nm === 'style' && o.hasAttribute('data-base')) { // 处于 hover 态:新 base 存 data-base,当前 style 保持 base+hover,别把悬停高亮抹掉
+        if (o.getAttribute('data-base') !== nv) { o.setAttribute('data-base', nv); o.setAttribute('style', nv + ';' + (o._hover || '')); }
+        continue;
+      }
+      if (o.getAttribute(nm) !== nv) o.setAttribute(nm, nv);
     }
     o._onclick = nw._onclick; // 同步最新 handler 到保留的旧节点
     o._onkeydown = nw._onkeydown;
     o._hover = nw._hover;
+    o._refFn = nw._refFn;
+    if (o._onclick && !o._clickBound) { o.addEventListener('click', dispatchClick); o._clickBound = true; } // 无监听器旧节点被对齐到带 onClick 的新节点:补绑,否则点击无反应
+    if (o._onkeydown && !o._keyBound) { o.addEventListener('keydown', dispatchKey); o._keyBound = true; }
+    if (o._refFn) o._refFn(o); // ref 作用在保留的真实节点上(修:原来在游离 frag 节点上,滚动/聚焦等失效)
     morph(o, nw);
   }
 
@@ -143,15 +154,14 @@
     }
     _render() {
       const vals = this.renderVals();
-      const refs = [];
       const frag = document.createDocumentFragment();
-      renderInto([...this._tpl.content.childNodes], frag, [vals], refs);
+      renderInto([...this._tpl.content.childNodes], frag, [vals], []);
       if (!this._root.firstChild) {
         this._root.appendChild(frag); // 首次:直接挂
+        [...this._root.childNodes].forEach(runRef); // 节点即真实,执行 ref
       } else {
-        morph(this._root, frag); // 后续:原地 diff,避免整树重建导致的抖动
+        morph(this._root, frag); // 后续:原地 diff;morph 内对复用/新增节点执行 ref(不再对游离节点)
       }
-      refs.forEach((f) => f());
     }
   }
 
