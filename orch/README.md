@@ -33,6 +33,34 @@ npm start              # 起 http://localhost:3000
 - **↻ 重跑单步**:结束后对任意一步不满意,单独重跑它(其余已完成步骤与交接保留)。
 - **实时输出**:当前运行步骤的输出直接在任务详情滚动显示,不用跳去 Agent 页。
 
+## V4:四外部项目深度融合(轮 153–172)
+
+深度调研 [tolaria](https://github.com/refactoringhq/tolaria) / [agentscope](https://github.com/agentscope-ai/agentscope) / [PlanWeave](https://github.com/GaosCode/PlanWeave) / [emdash](https://github.com/generalaction/emdash),把可移植增量融合进 orch,并对抗式自审加固 + 双 agent 真实端到端验证。
+
+**健壮**
+- **并行步命名锁**(PlanWeave):step 加 `lock`/`locks`,同名锁的并发步互斥串行,根治共享目录内容互相覆盖。
+- **doctor 状态对账**(PlanWeave):新建任务表单旁「🩺 自检」——扫僵尸任务(状态running/planning但无在跑进程)、孤儿 worktree、孤儿产出 data 目录(任务已删的残留),证据支撑地一键清理;删任务同时回收 worktree+分支,防孤儿累积。
+- **渐进权限档**(Tolaria):step 加 `permission:"read"`,审查/分析步在 CLI 原生只读沙箱运行(claude `--disallowedTools` 禁改写、codex `--sandbox read-only`),仍非交互不卡;只读步不计空转绩效。
+- **codex 真实成本**(emdash):codex 走 `--json` 专用适配器,真实 token/成本(实测单任务 input 达 29.8万,替代 char/4 估算)。
+
+**智能**
+- **动态重规划**(AgentScope + PlanWeave):任务勾「遇偏离重规划」后,运行中步骤发现实现现实与原计划结构性不符时输出 `NEED_REPLAN`,引擎就剩余工作重新拆解接进活 DAG;默认关、上限3次、`plan_versions` 版本化可回滚、可走审批门。任务详情「🕑 计划版本」列快照+一键恢复。
+- **expected_outcome 契约**(AgentScope):step 声明预期产出/验收标准,质量门据此判 PASS/FAIL 而非凭感觉。
+- **计划结构体检 + 回喂**(PlanWeave):LLM 出的坏计划(重复id/缺指派/loop缺body)带具体问题回喂重拆一次而非静默降级;sanitizeDeps 兜底去重 id。
+- **上下文压缩**(AgentScope):findings 过大时 LLM 压成缓存摘要,短任务零成本走原截断。
+
+**可观测 / 好用**
+- **逐工具实时活动流**(emdash + Tolaria):claude 的 tool_use 与 codex 的命令/文件事件都 surface 成 `🔧 Read/Write/Bash/运行/改文件` 实时行,coding 步不再只有稀疏文本。
+- **why-not 为何未就绪**(PlanWeave):编排画布每个排队节点标出阻塞原因(等哪个上游/排队等槽位/任务待审批)。
+- **原生上下文文件**(Tolaria):任务级稳定上下文(目标+项目约定)落成 worktree 里的 CLAUDE.md/AGENTS.md,CLI 原生加载;仅写不存在或 orch 自己的文件,绝不覆盖项目/agent 真实文件。
+- **worktree 供给**(emdash):项目根放 `.orch.json` {setup,preserve},冷 worktree 先跑 setup(如 npm ci)+带入依赖/密钥,让隔离 worktree 真能 build/test。
+- **运行期活编辑**(PlanWeave + emdash):暂停/待审批任务上编辑未开始步的指令、删步,保存后恢复生效;已完成步强制保留。
+
+**工程**
+- **共享 JSONL 运行时骨架**(Tolaria):claude/codex 复用 `adapters/jsonl.js`(spawn+行缓冲+生命周期+超时),加新 stream-json agent 只需 args+parse。
+
+> 融合后经 20-agent 对抗式审查修掉 11 个 bug(上下文文件覆盖、replan 取消时序、approve 重跑、codex 计费等),并跑真实 claude/codex 单步任务端到端验证(真实成本+工具流+产出均正常)。
+
 ## V3.3:自主迭代 99–115 轮增量
 
 > 73–98 轮的增量见 git 历史(commit 前缀 `轮N`)。本段汇总 99–115 轮,均带测试/浏览器/端到端验证。
