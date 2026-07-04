@@ -338,7 +338,9 @@ app.get('/output/:id/*splat', (req, res) => {
   if (!t || !t.dir) return res.sendStatus(404);
   const rel = [].concat(req.params.splat || []).join('/'); // Express5 命名通配
   const full = path.resolve(t.dir, rel);
-  if (!full.startsWith(path.resolve(t.dir))) return res.sendStatus(403);
+  const baseR = path.resolve(t.dir);
+  // 必须严格在本任务目录内:startsWith 无分隔符会让 task-1 命中兄弟 task-12(前缀绕过),须补 path.sep
+  if (full !== baseR && !full.startsWith(baseR + path.sep)) return res.sendStatus(403);
   res.sendFile(full);
 });
 
