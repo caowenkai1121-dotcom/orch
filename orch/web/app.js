@@ -363,7 +363,7 @@ function mdDoc(md) {
 class Maestro extends MaestroBase {
   componentDidMount() {
     // 不调 super:跳过 mock 种子与 mock tick。真实数据全部从后端拉。
-    this.live = { relay: {}, plan: {}, activeId: null, counts: {} };
+    this.live = { relay: {}, plan: {}, activeId: null, counts: {}, loaded: false };
     this.AGENTS = []; this.DEPTS = []; this.BOARDS = {}; this.PROJECTS = []; this.TASKS = []; this.PEOPLE = [];
     this.state.activity = []; this.state.log = {}; this.state.console = {}; this.state.modal = null;
     this.state.me = null; this.state.needLogin = false; this.state.loginErr = '';
@@ -424,6 +424,7 @@ class Maestro extends MaestroBase {
     v.toast = this.live.toastMsg || '';
     v.metrics = this.realMetrics();
     v.wsOffline = this.live.wsConnected === false; // 仅显式断开后显示(初始 undefined 不显示)
+    v.notLoaded = !this.live.loaded && !this.state.needLogin; // 冷启动首帧数据未到(且非登录页)→ 顶部进度条
     // 执行器健康:全局拉一次(服务端缓存),顶栏对未就绪执行器告警(无人值守下 claude/codex 未登录是首要失败源)
     if (!this.live.health) { this.live.health = {}; this.fetchHealth(); }
     const downExec = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli' && this.live.health[a.id] && this.live.health[a.id].ok === false).map((a) => a.name);
@@ -1378,6 +1379,7 @@ class Maestro extends MaestroBase {
   fetchAll() {
     return fetch('/api/all').then((r) => { if (r.status === 401) { if (!this.state.needLogin) { this.state.needLogin = true; this.scheduleRender(); } return null; } return r.json(); }).then((d) => {
       if (!d) return;
+      this.live.loaded = true; // 首帧数据到手(401 早返回不置真,留给登录页)
       if (this.state.needLogin) this.state.needLogin = false;
       this.state.me = d.me || null;
       this.AGENTS = d.agents || []; this.DEPTS = d.depts || []; this.BOARDS = d.boards || {};

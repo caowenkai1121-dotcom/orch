@@ -28,6 +28,7 @@
 <div id="root"></div>
 <template id="tpl">
 <div style="display:flex;height:100vh;width:100%;overflow:hidden;background:#F5F4F1;">
+  <sc-if value="{{ notLoaded }}"><div style="position:fixed;top:0;left:0;right:0;height:2px;z-index:9999;background:linear-gradient(90deg,transparent,#1A1814,transparent);background-size:200px 100%;animation:shimmer 1.2s linear infinite;"></div></sc-if>
 
   <aside style="width:246px;flex:none;height:100%;background:#FBFAF8;border-right:1px solid #E9E7E1;display:flex;flex-direction:column;">
     <div style="padding:16px 16px 12px;display:flex;align-items:center;gap:10px;">
