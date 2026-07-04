@@ -33,7 +33,9 @@ function parseCodexStream(line) {
   if (j.type === 'item.completed' && j.item && j.item.type === 'agent_message') return { text: j.item.text || '' };
   if (j.type === 'turn.completed' && j.usage) {
     const u = j.usage;
-    return { usage: { input: u.input_tokens || 0, output: (u.output_tokens || 0) + (u.reasoning_output_tokens || 0) } }; // reasoning 计入 output(按 output 费率计费)
+    // output_tokens 已含 reasoning(OpenAI/codex 语义:reasoning_output_tokens 是 output 的明细子项,非额外量),不再相加避免重复计费。
+    // input_tokens 含 cached_input_tokens 未扣减 → input 成本为粗估(略偏高,方向对预算门保守;精确计需按缓存费率分算)。
+    return { usage: { input: u.input_tokens || 0, output: u.output_tokens || 0 } };
   }
   return {};
 }

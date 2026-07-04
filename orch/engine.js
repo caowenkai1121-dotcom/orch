@@ -101,7 +101,9 @@ async function runStep(step, ctx, prevOutput) {
     + (findings ? '\n\n【团队共享发现 findings.md】(同事此前的决策/踩坑,直接参考,别重复踩)\n' + findings : '') + '\n\n') : '');
   const outcomeTxt = step.expected_outcome ? '\n【本步预期产出/验收标准】' + step.expected_outcome + '\n' : ''; // #5 契约:声明本步做到什么算完成
   const gateTxt = step.isGate ? ('\n\n【质量门·必读】你是本环节质量门,负责审查上游产出是否达标。输出必须以「PASS」或「FAIL」开头,后接一句理由;不达标必须判 FAIL 并列出具体问题(下游会据此退回重做)。不要含糊,不要因为怕麻烦就放行。' + (step.expected_outcome ? '严格据上方【验收标准】判定。' : '')) : '';
-  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + outcomeTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
+  // #18 只读步:抵消 AUTONOMY「无文件=空转失败」的写盘铁律(只读沙箱本就禁写),避免审查 agent 误尝试写盘
+  const readTxt = step.permission === 'read' ? '\n【只读审查步】本步在只读沙箱运行,禁止且无法改写/创建文件;以文本形式直接给出审查结论/发现即可,无需落盘,不算空转。\n' : '';
+  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + outcomeTxt + readTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
   ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)
   const s = sem(); await s.acquire();
   // 会话化:用户中途发的指令,注入到下一个真正启动的步骤

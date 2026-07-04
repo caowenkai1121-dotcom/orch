@@ -946,7 +946,7 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId;
     if (!window.confirm('恢复到计划 v' + version + '?当前计划会先存为新版本(可再回滚),之后用「重试失败步骤/继续开发」推进。')) return;
     fetch('/task/' + id + '/plan-restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ version }) })
-      .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('↩ 已恢复计划 v' + version); this.live.versionsFor = null; this.fetchAll(); } else this.toast('✗ ' + (d.error || '恢复失败')); }).catch(() => this.toast('✗ 恢复失败'));
+      .then((r) => r.json()).then((d) => { if (d.ok) { this.toast('↩ 已恢复计划 v' + version); this.live.versionsFor = null; this.live.rawPlanFor = null; this.fetchAll(); } else this.toast('✗ ' + (d.error || '恢复失败')); }).catch(() => this.toast('✗ 恢复失败'));
   }
   openDiff(sha) {
     const id = this.state.taskId;

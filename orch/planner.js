@@ -189,6 +189,9 @@ function sanitizeDeps(plan) {
   // 用户编辑的计划可能 steps 非数组或含非法项 → 归一化为合法步骤数组(防 execute 崩)
   if (!Array.isArray(plan.steps)) plan.steps = [];
   plan.steps = plan.steps.filter((s) => s && typeof s === 'object' && s.id != null);
+  // 重复 step id 去重(保留首个):runPlan 的 done/started 以 id 键化,重复 id 会静默丢步/互相覆盖、误判完成。
+  // lint 会先尝试回喂重拆,这是最后兜底(也护住 edit-plan 客户端可写路径)。
+  { const seen = new Set(); plan.steps = plan.steps.filter((s) => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }); }
   const steps = plan.steps;
   const ids = new Set(steps.map((s) => s.id));
   steps.forEach((s) => { s.deps = (s.deps || []).filter((d) => d !== s.id && ids.has(d)); });

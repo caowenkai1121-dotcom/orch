@@ -37,9 +37,9 @@ test('#6b codex --json:agent_message → 最终文本', () => {
   const line = JSON.stringify({ type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text: 'OK 完成' } });
   assert.equal(parseCodexStream(line).text, 'OK 完成');
 });
-test('#6b codex --json:turn.completed → 真实用量(reasoning 计入 output)', () => {
+test('#6b codex --json:turn.completed → 真实用量(output_tokens 已含 reasoning,不重复计)', () => {
   const line = JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 22477, output_tokens: 49, reasoning_output_tokens: 42 } });
-  assert.deepEqual(parseCodexStream(line).usage, { input: 22477, output: 91 }); // 49+42,替代 char/4 估算
+  assert.deepEqual(parseCodexStream(line).usage, { input: 22477, output: 49 }); // output_tokens 已含 reasoning,不再 +42
 });
 test('#6b codex --json:非 JSON(MCP错误日志)/无关事件忽略', () => {
   assert.deepEqual(parseCodexStream('2026-... ERROR rmcp::transport worker quit'), {});

@@ -102,7 +102,11 @@ async function runTask(taskId, deps) {
 function runApproved(taskId, deps, plan) {
   deps.store.setPlan(taskId, plan);
   if (deps.store.addEvent) deps.store.addEvent(taskId, 'task', 'approved');
-  return execute(taskId, plan, deps, {});
+  // 已完成步(如 replan 后保留的 keep 步)重新播种,避免批准后把已完成步当未完成重跑(与 resume/retry 一致);初始审批无已完成步则等价空 seedDone
+  const top = new Set((plan.steps || []).map((s) => s.id));
+  const seedDone = {};
+  deps.store.doneSteps(taskId).forEach((s) => { if (top.has(s.step_id)) seedDone[s.step_id] = { output: s.output || '', success: true }; });
+  return execute(taskId, plan, deps, { seedDone });
 }
 
 // 用户回答决策后续跑:跳过已完成步骤,把答案注入被阻塞步骤
@@ -275,6 +279,7 @@ async function replanRemaining(taskId, deps, plan, done, divergedStepId, reason)
   store.setTaskStatus(taskId, 'planning');
   emit(onEvent, taskId, null, 'task', 'planning');
   const rec = runs && runs.get(taskId);
+  if (rec && rec.cancelled) return; // 已取消:不浪费一次 makePlan、不复活
   // 保留已成功完成的顶层步 + 其交接摘要(喂 replan LLM)
   const okIds = new Set(Object.keys(done).filter((id) => done[id] && done[id].success));
   const keep = (plan.steps || []).filter((s) => okIds.has(s.id));
@@ -318,8 +323,8 @@ async function execute(taskId, plan, deps, opts) {
   const task = store.getTask(taskId);
   store.setTaskStatus(taskId, 'running');
 
-  const agentOf = {}; const roleOf = {}; const stepStart = {}; // stepStart:本步 running 时刻,用于按 mtime 归属产出
-  const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else { agentOf[s.id] = s.agent; if (s.role) roleOf[s.id] = s.role; } });
+  const agentOf = {}; const roleOf = {}; const permOf = {}; const stepStart = {}; // stepStart:本步 running 时刻,用于按 mtime 归属产出
+  const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else { agentOf[s.id] = s.agent; if (s.role) roleOf[s.id] = s.role; if (s.permission) permOf[s.id] = s.permission; } });
   collect(plan.steps || []);
 
   // 任务简报:让员工知道全局与自己在流水线中的位置(上游谁/下游谁)
@@ -377,7 +382,7 @@ async function execute(taskId, plan, deps, opts) {
         const n = countRecentFiles(task.dir, stepStart[stepId] || 0); // 按 mtime 数本步产出(不受并行步 git add -A 污染)
         if (gitOk) commitStep(task.dir, '步骤 ' + stepId + ' 完成'); // 仍每步 commit 供改动审查(计数不再取其暂存数)
         if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n });
-        if (roleOf[stepId] && store.addRoleStat) store.addRoleStat(roleOf[stepId], n > 0); // 员工绩效(落盘/空转)
+        if (roleOf[stepId] && store.addRoleStat && permOf[stepId] !== 'read') store.addRoleStat(roleOf[stepId], n > 0); // 员工绩效(落盘/空转);只读审查步天然无产出,不计避免污染绩效
       }
     },
   };
@@ -385,9 +390,17 @@ async function execute(taskId, plan, deps, opts) {
   // 只写任务级稳定内容(总目标+项目约定):同任务各步共享目录且并发,每步动态 brief 仍走 -p,不落文件(否则并发步互相覆盖)。
   try {
     if (task.dir && fs.existsSync(task.dir)) {
-      const ctxMd = '# 项目上下文(orch 自动注入,勿删)\n\n## 总任务目标\n' + (task.text || '') + '\n'
+      const MARK = '# 项目上下文(orch 自动注入,勿删)';
+      const ctxMd = MARK + '\n\n## 总任务目标\n' + (task.text || '') + '\n'
         + (projKnow ? '\n## 本项目约定(同项目所有任务遵守)\n' + projKnow + '\n' : '');
-      for (const fn of ['CLAUDE.md', 'AGENTS.md']) { try { fs.writeFileSync(path.join(task.dir, fn), ctxMd, 'utf8'); } catch (e) {} }
+      // 仅当文件不存在、或已是 orch 注入的同名文件时才写:绝不覆盖项目/agent 已有的真实 CLAUDE.md/AGENTS.md
+      // (worktree 检出会带出仓内已提交的同名文件;某步交付物本身也可能是这两个文件,resume/replan 再进不能覆盖)
+      for (const fn of ['CLAUDE.md', 'AGENTS.md']) {
+        try {
+          const fp = path.join(task.dir, fn);
+          if (!fs.existsSync(fp) || fs.readFileSync(fp, 'utf8').startsWith(MARK)) fs.writeFileSync(fp, ctxMd, 'utf8');
+        } catch (e) {}
+      }
     }
   } catch (e) {}
   writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)
@@ -403,7 +416,9 @@ async function execute(taskId, plan, deps, opts) {
       emit(onEvent, taskId, null, 'task', 'awaiting_input');
       return;
     }
-    if (pendingReplan) return replanRemaining(taskId, deps, plan, done, pendingReplan.stepId, pendingReplan.reason); // #12 就剩余工作重规划并续跑
+    // #12 就剩余工作重规划并续跑。用 await 而非直接 return:让 execute 的 finally(删 runs)推迟到重规划+续跑真正结束——
+    // 否则 finally 在 makePlan 的 await 之前就同步删了 runs 条目,导致重规划数秒窗口内:取消够不到 rec(取消失效+复活+planner孤儿)、doctor 误判僵尸杀活任务。
+    if (pendingReplan) { await replanRemaining(taskId, deps, plan, done, pendingReplan.stepId, pendingReplan.reason); return; }
     const seeded = opts.seedDone || {};
     // 空计划且无已完成步骤 → 从未真正规划/执行(如被成本护栏拦下的 NULL-plan 任务);[].every()===true 会假判 done,须拦
     const noWork = (plan.steps || []).length === 0 && Object.keys(seeded).length === 0;
