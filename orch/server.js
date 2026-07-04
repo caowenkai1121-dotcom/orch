@@ -132,6 +132,20 @@ function createAndRunTask(ownerName, body) {
   const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve: body.approve, isolate: body.isolate, ask: body.ask, models });
   const ws = taskWorkspace(store.getTask(id));
   store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
+  // 全局日成本总护栏(无人值守防失控):今日累计花费已达上限则建任务但不执行,标失败可重试
+  const cap = Number(process.env.ORCH_DAILY_BUDGET) || 0;
+  if (cap > 0) {
+    const spent = store.usageToday().cost || 0;
+    if (spent >= cap) {
+      const msg = '🛑 已达全局日成本上限 $' + cap + '(今日已花 $' + spent.toFixed(3) + '),任务未执行。次日(UTC)重置,或提高 ORCH_DAILY_BUDGET 后「重试失败步骤」。';
+      store.setStep(id, 'blocked', '', 'failed', msg);
+      store.setTaskStatus(id, 'failed');
+      if (store.addEvent) store.addEvent(id, 'task', 'failed');
+      if (store.addTaskMsg) store.addTaskMsg(id, 'system', msg);
+      broadcast({ taskId: id, type: 'task', data: 'failed' });
+      return id;
+    }
+  }
   const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id);
   const explicit = Array.isArray(body.agents) && body.agents.length > 0;
   const sel = explicit ? body.agents.filter((a) => allAgents.includes(a)) : allAgents;
