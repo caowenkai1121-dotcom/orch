@@ -68,6 +68,7 @@ function open(file) {
   ensureCol('people', 'admin', 'INTEGER');
   ensureCol('projects', 'owner', 'TEXT');
   ensureCol('agents', 'kind', 'TEXT');
+  ensureCol('agents', 'enabled', 'INTEGER'); // 启用/停用:null/1=启用,0=停用(停用的不进规划器可选列表)
   ensureCol('departments', 'flow', 'TEXT');
   ensureCol('tasks', 'models', 'TEXT');
   ensureCol('roles', 'memo', 'TEXT');
@@ -315,6 +316,7 @@ function open(file) {
       db.prepare('DELETE FROM person_agents WHERE agent_id=?').run(id);
     },
     setAgentDept(agentId, deptId) { db.prepare('UPDATE agents SET dept=? WHERE id=?').run(deptId, agentId); },
+    setAgentEnabled(id, on) { db.prepare('UPDATE agents SET enabled=? WHERE id=?').run(on ? 1 : 0, id); }, // 停用的 agent 不进规划器可选列表
     addProject(d) {
       const id = d.id || freeAutoId('projects', String(d.name || 'proj').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proj');
       db.prepare('INSERT OR REPLACE INTO projects(id,name,client,created_at,owner) VALUES(?,?,?,?,?)').run(id, d.name || id, d.client || '', new Date().toISOString(), d.owner || null);

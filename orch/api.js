@@ -14,7 +14,7 @@ function roleMap(store) {
   store.listAgents().forEach((a) => {
     let caps = []; try { caps = JSON.parse(a.caps); } catch (e) {}
     let args = []; try { args = JSON.parse(a.args); } catch (e) {}
-    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli' };
+    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli', enabled: a.enabled !== 0 };
   });
   return m;
 }
@@ -93,7 +93,7 @@ function buildAll(store, user) {
       if (emp) empNow = emp.emoji + ' ' + emp.deptName + '·' + emp.name;
     }
     return {
-      id, name: r.label, type: id, dept: r.dept,
+      id, name: r.label, type: id, dept: r.dept, enabled: r.enabled,
       command: r.command, args: r.args, image: r.image, kind: r.kind,
       color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',

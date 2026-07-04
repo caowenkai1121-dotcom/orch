@@ -400,7 +400,10 @@ class Maestro extends MaestroBase {
     const sm = this.statusMeta(a.status);
     const p = this.state.prog[a.id] == null ? a.progress : this.state.prog[a.id];
     const act = this.state.actionTxt[a.id] || a.action;
-    return { ...a, color: a.color, soft: a.soft || ((a.color || '#7C6FD9') + '2b'), avatar: a.avatar, typeLabel: a.model || a.name, sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, pct: (p || 0) + '%', action: act, open: () => this.go('agent', { agentId: a.id }) };
+    const off = a.enabled === false;
+    return { ...a, color: a.color, soft: a.soft || ((a.color || '#7C6FD9') + '2b'), avatar: a.avatar, typeLabel: a.model || a.name, sLabel: sm.label, sC: sm.c, sBg: sm.bg, sDot: sm.dot, pct: (p || 0) + '%', action: act, open: () => this.go('agent', { agentId: a.id }),
+      cardOpacity: off ? '.5' : '1', enLabel: off ? '○ 已停用' : '● 启用中', enBg: off ? '#F1EFEA' : '#E4F4EA', enC: off ? '#8A857C' : '#1F7A46',
+      toggleEnabled: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.toggleAgentEnabled(a.id, off); } };
   }
   decTask(t) { if (!t) return { id: '', title: '暂无任务', proj: '—', sLabel: '', sC: '#6B6760', sBg: '#F1EFEA', sDot: '#C9C4BA', steps: [] }; return super.decTask(t); }
   decP(p) { if (!p) return { id: '', name: '暂无项目', client: '—', pct: '0%', barColor: '#C9C5BB', sBg: '#F1EFEA', sC: '#6B6760', status: '—', deptDots: [], deptChips: [], deptN: 0, agentCount: 0, taskCount: 0, tasks: [], open: () => {} }; return super.decP(p); }
@@ -1318,6 +1321,7 @@ class Maestro extends MaestroBase {
     const lp = this.live.lastProject;
     if (lp && lp !== '默认项目') setTimeout(() => { const el = document.getElementById('nt-proj-sel'); if (el && [...el.options].some((o) => o.value === lp)) el.value = lp; }, 80);
   }
+  toggleAgentEnabled(id, on) { fetch('/api/agents/' + id + '/enabled', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: !!on }) }).then(() => { this.toast(on ? '✓ 已启用' : '⏸ 已停用'); this.fetchAll(); }).catch(() => {}); }
   newAgent() { this.setState({ modal: 'agent', editAgent: null }); }
   editCurAgent() { const a = this.AGENTS.find((x) => x.id === this.state.agentId); if (a) this.setState({ modal: 'agent', editAgent: a }); }
   delCurAgent() { const id = this.state.agentId; if (!id || !window.confirm('删除该 Agent?')) return; fetch('/api/agents/' + id, { method: 'DELETE' }).then(() => { this.setState({ screen: 'agents' }); this.fetchAll(); }).catch(() => {}); }

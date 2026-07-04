@@ -88,6 +88,7 @@ app.post('/api/agents', adminOnly, (req, res) => {
 });
 app.put('/api/agents/:id', adminOnly, (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.delete('/api/agents/:id', adminOnly, (req, res) => { store.deleteAgent(req.params.id); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.post('/api/agents/:id/enabled', adminOnly, (req, res) => { store.setAgentEnabled(req.params.id, !!(req.body && req.body.enabled)); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); }); // 启用/停用:停用的不进规划器可选列表
 app.get('/api/projects', (req, res) => res.json(store.listProjects()));
 app.post('/api/projects', (req, res) => {
   const id = store.addProject({ ...(req.body || {}), owner: req.user.id });
@@ -156,7 +157,7 @@ function createAndRunTask(ownerName, body) {
       return id;
     }
   }
-  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id);
+  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== 0).map((a) => a.id);
   const explicit = Array.isArray(body.agents) && body.agents.length > 0;
   const sel = explicit ? body.agents.filter((a) => allAgents.includes(a)) : allAgents;
   const refine = body.refine === undefined ? true : !!body.refine;
@@ -272,7 +273,7 @@ app.post('/task/:id/continue', (req, res) => {
   res.json({ id });
   require('./runner').continueTask(id, {
     store, adapters, workspace: { make: () => dir }, runs,
-    makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
+    makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== 0).map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
     onEvent: broadcast,
   }, text);
 });
@@ -383,7 +384,7 @@ app.post('/task/:id/message', (req, res) => {
   res.json({ ok: true, mode: 'continue' });
   runnerMod.continueTask(id, {
     store, adapters, workspace: { make: () => (t.dir || ROOT) }, runs,
-    makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
+    makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== 0).map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
     onEvent: broadcast,
   }, text);
 });
@@ -430,7 +431,7 @@ app.post('/task/:id/replan', (req, res) => {
   if (store.addEvent) store.addEvent(id, 'replan', {});
   store.addTaskMsg(id, 'system', '🔄 已推翻原计划,正在按原需求重新拆分。');
   res.json({ ok: true });
-  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli').map((a) => a.id);
+  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== 0).map((a) => a.id);
   runTask(id, {
     store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast,
     makePlan: (text) => makePlan(text, { agents: allAgents, roles: store.listRoles(), depts: store.listDepts(), deptPools: store.allDeptExecutors(), refine: true, templatesDir, claude: adapters.claude }),
