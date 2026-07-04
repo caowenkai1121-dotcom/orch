@@ -8,10 +8,10 @@ function runCli(cmd, args, workdir, onLine, onChild) {
     const T = require('./steptimeout').arm(p);
     const { StringDecoder } = require('string_decoder'); // 跨 chunk 保留半个多字节序列,防中文被 stdout 分片切成乱码
     const dOut = new StringDecoder('utf8'), dErr = new StringDecoder('utf8'); // stdout/stderr 各自解码器(两流字节不能混一个)
-    let output = '';
-    const feed = (s) => { output += s; s.split('\n').filter(Boolean).forEach(onLine); };
+    let output = '', buf = ''; // buf:跨 chunk 行缓冲(仿 jsonl.js),防长输出被 stdout 分片切在行中间发出残行
+    const feed = (s) => { output += s; buf += s; const lines = buf.split('\n'); buf = lines.pop(); lines.filter(Boolean).forEach(onLine); };
     p.stdout.on('data', (b) => feed(dOut.write(b))); p.stderr.on('data', (b) => feed(dErr.write(b)));
-    p.on('close', (code) => { T.clear(); const tail = dOut.end() + dErr.end(); if (tail) feed(tail); if (T.timedOut()) { onLine('⏱ 步骤超时被终止'); resolve({ output: output + '\n⏱ 步骤执行超时被终止(可重试续跑)', success: false }); } else resolve({ output, success: code === 0 }); });
+    p.on('close', (code) => { T.clear(); const tail = dOut.end() + dErr.end(); if (tail) feed(tail); if (buf) onLine(buf); if (T.timedOut()) { onLine('⏱ 步骤超时被终止'); resolve({ output: output + '\n⏱ 步骤执行超时被终止(可重试续跑)', success: false }); } else resolve({ output, success: code === 0 }); });
     p.on('error', (e) => { onLine(String(e)); resolve({ output: String(e), success: false }); });
   });
 }

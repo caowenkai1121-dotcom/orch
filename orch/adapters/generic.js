@@ -1,4 +1,5 @@
 const { runCli } = require('./cli');
+const { shArg } = require('./shquote');
 const { dockerArgs } = require('../workspace');
 const { execSync } = require('child_process');
 function dockerOk() { try { execSync('docker --version', { stdio: 'ignore' }); return true; } catch (e) { return false; } }
@@ -14,10 +15,10 @@ function make(def) {
       const modelArgs = model ? ['--model', model] : []; // 用户选的大模型
       if (effort && def.command === 'codex') modelArgs.push('-c', 'model_reasoning_effort="' + effort + '"'); // codex 思考级别
       const baseArgs = (permission === 'read' && def.command === 'codex') ? codexReadArgs(args) : args; // #18 只读档
-      let cmd = def.command, callArgs = [...baseArgs, ...modelArgs, JSON.stringify(prompt)];
+      let cmd = def.command, callArgs = [...baseArgs, ...modelArgs, shArg(prompt)];
       // 容器隔离(opt-in,仅设了 image 的自定义 agent):Docker 可用则在容器里跑,否则回退本地
       if (def.image) {
-        if (dockerOk()) { callArgs = dockerArgs(workdir, def.image, def.command, [...baseArgs, ...modelArgs, JSON.stringify(prompt)]); cmd = 'docker'; }
+        if (dockerOk()) { callArgs = dockerArgs(workdir, def.image, def.command, [...baseArgs, ...modelArgs, shArg(prompt)]); cmd = 'docker'; }
         else onLine('[warn] Docker 不可用,回退本地执行');
       }
       const res = await runCli(cmd, callArgs, workdir, onLine, onChild);

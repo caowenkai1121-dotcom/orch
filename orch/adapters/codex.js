@@ -1,5 +1,6 @@
 const { runJsonl } = require('./jsonl');
 const { parseCodexStream } = require('./streamparse');
+const { shArg } = require('./shquote');
 
 // codex 定价(与 roles seed 的 codex pricing 一致),$/百万 token。codex --json 只给 token 不给 cost,故据此算。
 const PRICE = { in: 1.25, out: 10 };
@@ -17,7 +18,7 @@ module.exports = {
     else args.push('--dangerously-bypass-approvals-and-sandbox');
     if (model) args.push('--model', model);
     if (effort) args.push('-c', 'model_reasoning_effort="' + effort + '"');
-    args.push(JSON.stringify(prompt));
+    args.push(shArg(prompt));
     return runJsonl({ cmd: 'codex', args, workdir, parse, onLine, onChild, onUsage });
   },
 };

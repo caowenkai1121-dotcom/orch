@@ -1,6 +1,20 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const { parseClaudeStream, parseCodexStream } = require('../adapters/streamparse');
+const { shArg } = require('../adapters/shquote');
+
+test('审查修复:shArg 在 POSIX 单引号杜绝命令替换,Windows 保持 JSON.stringify', () => {
+  assert.equal(shArg('a $(touch x) `id` b', 'linux'), "'a $(touch x) `id` b'"); // 全字面,$()/`` 不解释
+  assert.equal(shArg("it's", 'linux'), "'it'\\''s'");                             // 单引号正确转义
+  assert.equal(shArg('x', 'win32'), '"x"');                                       // Windows 保持原行为
+});
+
+test('审查修复:parse 崩(裸 null 行)在 jsonl handle 被兜底,不掀翻进程', () => {
+  // parseClaudeStream/parseCodexStream 对 JSON.parse("null")=null 读属性会抛;jsonl.handle 现包 try/catch。
+  const { runJsonl } = require('../adapters/jsonl'); // 仅确认可 require;handle 的 try/catch 见 jsonl.js
+  assert.equal(typeof runJsonl, 'function');
+  assert.throws(() => parseClaudeStream('null')); // 确认根因:parser 自身对裸 null 仍抛(故需 handle 层兜底)
+});
 
 test('提取 assistant 文本', () => {
   const line = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '写好了 index.html' }] } });

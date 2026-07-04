@@ -11,7 +11,8 @@ function runJsonl({ cmd, args, workdir, parse, onLine, onChild, onUsage }) {
     let buf = '', output = '';
     const handle = (line) => {
       if (!line) return;
-      const r = parse(line) || {};
+      let r;
+      try { r = parse(line) || {}; } catch (e) { return; } // parser 对畸形/意外形态行(如裸 'null'、字段非预期)抛错不该崩:此处在 stdout data 同步回调内,无上层保护会成 uncaughtException 拖垮整个服务进程
       if (r.text) { output += r.text + '\n'; onLine(r.text); } // 语义正文累计 → 交接/门禁/NEED_DECISION 检测用
       if (r.tools) r.tools.forEach((t) => onLine(t));           // 工具活动仅进实时流,不入 output
       if (r.usage && onUsage) onUsage(r.usage);
