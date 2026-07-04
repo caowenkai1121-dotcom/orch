@@ -19,11 +19,34 @@ function makeWorkspace(rootRepo) {
 
 // git worktree 隔离:每任务独立分支目录(root 须是 git 仓);失败回退普通目录
 const { execSync } = require('child_process');
+// #4 冷 worktree 供给:读 root/.orch.json {setup, preserve};新建 worktree 后把主 checkout 的依赖/密钥带进来再跑 setup,
+// 让隔离 worktree 能真正构建/测试(否则冷 checkout 缺 node_modules/.env,build/test 步必挂)。全程 best-effort,失败不阻断任务。
+function provisionWorktree(root, dir) {
+  try {
+    const cfgP = path.join(root, '.orch.json');
+    if (!fs.existsSync(cfgP)) return;
+    let cfg = {}; try { cfg = JSON.parse(fs.readFileSync(cfgP, 'utf8')) || {}; } catch (e) { return; }
+    // preserve 先于 setup:node_modules 软链省重装,.env 等直接拷。
+    // ponytail: 仅支持字面相对路径,不做 glob;需要 glob 再上。
+    for (const rel of (Array.isArray(cfg.preserve) ? cfg.preserve : [])) {
+      try {
+        const src = path.join(root, rel), dst = path.join(dir, rel);
+        if (!fs.existsSync(src) || fs.existsSync(dst)) continue;
+        fs.mkdirSync(path.dirname(dst), { recursive: true });
+        if (fs.statSync(src).isDirectory()) { try { fs.symlinkSync(src, dst, 'junction'); } catch (e) { fs.cpSync(src, dst, { recursive: true }); } }
+        else fs.copyFileSync(src, dst);
+      } catch (e) {}
+    }
+    if (cfg.setup) { try { execSync(cfg.setup, { cwd: dir, stdio: 'ignore', timeout: 5 * 60 * 1000 }); } catch (e) {} }
+  } catch (e) {}
+}
 function worktreeDir(root, id) {
   const dir = path.join(root, 'worktrees', 'task-' + id);
   if (!fs.existsSync(dir)) {
-    try { execSync('git worktree add -B orch/task-' + id + ' "' + dir + '"', { cwd: root, stdio: 'ignore' }); }
+    let made = false;
+    try { execSync('git worktree add -B orch/task-' + id + ' "' + dir + '"', { cwd: root, stdio: 'ignore' }); made = true; }
     catch (e) { fs.mkdirSync(dir, { recursive: true }); }
+    if (made) provisionWorktree(root, dir); // 仅真正新建 worktree 时供给一次
   }
   return dir;
 }

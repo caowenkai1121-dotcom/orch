@@ -47,11 +47,11 @@ function validate(plan, agentIds) {
   return plan.steps.every(checkStep);
 }
 async function fromLLM(text, claude, agentIds, orchestration) {
-  const prompt = `把下面的开发任务拆成 JSON,字段 steps,每步 {id,agent,prompt,deps}。`
+  const prompt = `把下面的开发任务拆成 JSON,字段 steps,每步 {id,agent,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出"。`
     + `agent 只能取这些 id 之一: ${agentIds.join(', ')}。`
     + (orchestration ? `严格按用户给出的编排来分步与指派 agent:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max,deps,body:[...]} 表示"实现→验证,失败重试"。`
-    + `多个无依赖的步骤会并行。`
+    + `多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。`
     + `要求:每步必须自包含、可直接执行,不要假设存在外部设计文档/接口/数据——需要就让该步自己创建(如先建 mock 数据/页面);`
     + `每步 prompt 明确产出物(创建哪些文件),让 agent 直接动手做完,不要反问。`
     + `只输出 JSON,不要解释。任务: ${text}`;
@@ -105,9 +105,9 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (chiefMemo ? `你的过往调度复盘(优先吸取):\n${chiefMemo}\n` : '') + '\n'
     + (deptId ? `本任务是「${dName[deptId] || deptId}」的部门任务,只用该部门员工,严格按其标准流程拆分(可选环节由你判断是否需要;质量门环节用 loop 包住"产出员工→门禁员工",失败重做)。\n` : '')
     + `公司部门与员工目录:\n${catalog}\n\n`
-    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps}。role 必须取员工目录中的员工 id。`
+    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出(质量门据此判定)"。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
-    + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行。`
+    + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
     + `调度要求:0)拆分粒度匹配任务复杂度——简单任务(单文件/脚本/小改动)1-2步即可,不必强加质量门;复杂任务(多模块/需评审)才用质量门loop,别过度拆分浪费;1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分的这些 role 不在员工目录里,请只用目录中真实存在的员工 id 重新拆分:${feedback}` : '')

@@ -26,7 +26,7 @@ function countRecentFiles(dir, sinceMs) {
   let n = 0;
   try {
     if (!dir || !fs.existsSync(dir)) return 0;
-    const skipName = new Set(['.git', 'node_modules', '.playwright-mcp', 'task_plan.md', 'findings.md']);
+    const skipName = new Set(['.git', 'node_modules', '.playwright-mcp', 'task_plan.md', 'findings.md', 'CLAUDE.md', 'AGENTS.md']);
     const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (skipName.has(e.name)) continue; const fp = path.join(d, e.name); if (e.isDirectory()) walk(fp); else { try { if (fs.statSync(fp).mtimeMs >= sinceMs) n++; } catch (x) {} } } };
     walk(dir);
   } catch (e) {}
@@ -329,6 +329,15 @@ async function execute(taskId, plan, deps, opts) {
       }
     },
   };
+  // #3 任务级稳定上下文落成 CLI 原生记忆文件(claude 读 CLAUDE.md,codex/其他读 AGENTS.md),CLI 启动自动加载。
+  // 只写任务级稳定内容(总目标+项目约定):同任务各步共享目录且并发,每步动态 brief 仍走 -p,不落文件(否则并发步互相覆盖)。
+  try {
+    if (task.dir && fs.existsSync(task.dir)) {
+      const ctxMd = '# 项目上下文(orch 自动注入,勿删)\n\n## 总任务目标\n' + (task.text || '') + '\n'
+        + (projKnow ? '\n## 本项目约定(同项目所有任务遵守)\n' + projKnow + '\n' : '');
+      for (const fn of ['CLAUDE.md', 'AGENTS.md']) { try { fs.writeFileSync(path.join(task.dir, fn), ctxMd, 'utf8'); } catch (e) {} }
+    }
+  } catch (e) {}
   writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)
   const gitOk = ensureOutputGit(task.dir); // 产出版本化
   if (gitOk) commitStep(task.dir, '开工基线');

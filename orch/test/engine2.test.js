@@ -240,3 +240,44 @@ test('简报注入findings.md内容(不指望员工主动读)', async () => {
   assert.match(seen, /UNIQUE_FND_9x7/);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('#1 命名锁:共享同名 lock 的并发步互斥,完全串行', async () => {
+  process.env.ORCH_CONCURRENCY = '3';
+  let cur = 0, peak = 0;
+  const slow = { async run() { cur++; peak = Math.max(peak, cur); await new Promise((r) => setTimeout(r, 25)); cur--; return { output: '', success: true }; } };
+  const steps = [
+    { id: 'a', agent: 's', prompt: 'p', deps: [], lock: 'L' },
+    { id: 'b', agent: 's', prompt: 'p', deps: [], lock: 'L' },
+    { id: 'c', agent: 's', prompt: 'p', deps: [], lock: 'L' },
+  ];
+  await runPlan({ steps }, ctx({ s: slow }));
+  assert.equal(peak, 1, '同锁步应完全串行,peak=' + peak);
+  delete process.env.ORCH_CONCURRENCY;
+});
+
+test('#1 命名锁:不同 lock / 无锁步不受影响,仍可并行', async () => {
+  process.env.ORCH_CONCURRENCY = '3';
+  let cur = 0, peak = 0;
+  const slow = { async run() { cur++; peak = Math.max(peak, cur); await new Promise((r) => setTimeout(r, 25)); cur--; return { output: '', success: true }; } };
+  const steps = [
+    { id: 'a', agent: 's', prompt: 'p', deps: [], lock: 'X' },
+    { id: 'b', agent: 's', prompt: 'p', deps: [], lock: 'Y' },
+    { id: 'c', agent: 's', prompt: 'p', deps: [] },
+  ];
+  await runPlan({ steps }, ctx({ s: slow }));
+  assert.ok(peak >= 2, '不同锁/无锁应可并行,peak=' + peak);
+  delete process.env.ORCH_CONCURRENCY;
+});
+
+test('#5 expected_outcome 注入本步简报,gate 继承实现步契约', async () => {
+  let implP = '', gateP = '';
+  const impl = { async run({ prompt }) { implP = prompt; return { output: 'done', success: true }; } };
+  const gate = { async run({ prompt }) { gateP = prompt; return { output: 'PASS', success: true }; } };
+  const plan = { steps: [{ id: 'q', type: 'loop', until: 'pass', max: 2, deps: [], body: [
+    { id: 'impl', agent: 'i', prompt: '实现', deps: [], expected_outcome: '产出 login.html 且能提交' },
+    { id: 'gate', agent: 'g', prompt: '审查', deps: [] },
+  ] }] };
+  await runPlan(plan, ctx({ i: impl, g: gate }));
+  assert.match(implP, /预期产出[\s\S]*login\.html/); // 契约注入实现步自身
+  assert.match(gateP, /login\.html/);                // gate 无自带契约 → 继承实现步作验收标准
+});

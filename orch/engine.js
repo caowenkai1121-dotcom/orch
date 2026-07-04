@@ -76,8 +76,9 @@ async function runStep(step, ctx, prevOutput) {
   const briefTxt = failTxt + ((b || files) ? ('【任务简报】' + b + (files ? '\n工作目录现有文件: ' + files : '')
     + (files.indexOf('task_plan.md') >= 0 ? '\n共享备忘:开工先读 task_plan.md(全局计划/各步进展/错误记录,不要重复已失败的做法)和 findings.md(团队发现);你的重要发现、技术决策(含理由)、踩过的坑,完成前追加写入 findings.md 供下游复用。' : '')
     + (findings ? '\n\n【团队共享发现 findings.md】(同事此前的决策/踩坑,直接参考,别重复踩)\n' + findings : '') + '\n\n') : '');
-  const gateTxt = step.isGate ? '\n\n【质量门·必读】你是本环节质量门,负责审查上游产出是否达标。输出必须以「PASS」或「FAIL」开头,后接一句理由;不达标必须判 FAIL 并列出具体问题(下游会据此退回重做)。不要含糊,不要因为怕麻烦就放行。' : '';
-  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
+  const outcomeTxt = step.expected_outcome ? '\n【本步预期产出/验收标准】' + step.expected_outcome + '\n' : ''; // #5 契约:声明本步做到什么算完成
+  const gateTxt = step.isGate ? ('\n\n【质量门·必读】你是本环节质量门,负责审查上游产出是否达标。输出必须以「PASS」或「FAIL」开头,后接一句理由;不达标必须判 FAIL 并列出具体问题(下游会据此退回重做)。不要含糊,不要因为怕麻烦就放行。' + (step.expected_outcome ? '严格据上方【验收标准】判定。' : '')) : '';
+  let prompt = (ctx.preamble || AUTONOMY) + briefTxt + outcomeTxt + (answer ? ('[用户决策] ' + answer + '\n\n') : '') + base + gateTxt;
   ctx.onStatus(step.id, 'waiting'); // 排队等执行器槽位(并发上限内才真正运行)
   const s = sem(); await s.acquire();
   // 会话化:用户中途发的指令,注入到下一个真正启动的步骤
@@ -124,7 +125,10 @@ async function runLoop(step, ctx, prevOutput) {
   let last = { output: prevOutput || '', success: false };
   const max = Math.min(Math.max(1, step.max || 3), 5); // LLM 没给兜底 3;封顶 5 防失控重试烧钱
   const gateId = step.body.length ? step.body[step.body.length - 1].id : null; // 约定:body 末步为质量门
-  if (gateId && step.body.length > 1) step.body[step.body.length - 1].isGate = true; // 标记门禁步,让员工按 PASS/FAIL 格式输出
+  if (gateId && step.body.length > 1) {
+    const g = step.body[step.body.length - 1]; g.isGate = true; // 标记门禁步,让员工按 PASS/FAIL 格式输出
+    if (!g.expected_outcome) { const impl = step.body.find((b) => b.id !== g.id && b.expected_outcome); if (impl) g.expected_outcome = impl.expected_outcome; } // #5 gate 无自带验收标准则继承实现步预期产出作判定契约
+  }
   const gateEnforced = gateId && step.body.length > 1 && step.until === 'pass'; // 真质量门 loop(非门禁 loop 保持原语义)
   let passed = false;
   for (let i = 0; i < max; i++) {
@@ -157,6 +161,9 @@ async function runPlan(plan, ctx) {
   const started = new Set(Object.keys(done));
   const running = new Map(); // 在跑步骤 id → Promise(结束后落 done[id])
   let decision = null;
+  const held = new Set(); // #1 命名锁:同任务各步共享目录,声明同名 lock 的并发步互斥,防内容互相覆盖
+  const locksOf = (s) => Array.isArray(s.locks) ? s.locks : (s.lock ? [s.lock] : []);
+  const lockFree = (s) => locksOf(s).every((l) => !held.has(l));
   const ready = (s) => s.deps.every((d) => done[d]);
   const launch = async (s) => {
     if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
@@ -176,8 +183,10 @@ async function runPlan(plan, ctx) {
     if (ctx.isPaused && ctx.isPaused()) break;         // 暂停:在跑步骤收尾后不起新步
     if (ctx.overBudget && ctx.overBudget()) break;     // 超成本上限:收尾在跑步骤,不再起新步(防无人值守烧钱失控)
     for (const s of plan.steps.filter((s) => !started.has(s.id) && ready(s))) {
+      if (!lockFree(s)) continue; // #1 锁被占:该步留待持锁步结束后下一轮再启(持锁步在跑→running≥1,不会误判死锁)
       started.add(s.id);
-      running.set(s.id, launch(s).finally(() => running.delete(s.id)));
+      const ls = locksOf(s); ls.forEach((l) => held.add(l));
+      running.set(s.id, launch(s).finally(() => { running.delete(s.id); ls.forEach((l) => held.delete(l)); }));
     }
     if (running.size === 0) break; // 无在跑且无可启动:依赖无法满足,防死循环
     await Promise.race(running.values()); // 任一步骤结束即重评可启动集合
