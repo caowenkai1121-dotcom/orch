@@ -268,6 +268,8 @@ async function execute(taskId, plan, deps, opts) {
       + (down.length ? ',你的产出将交接给: ' + down.join(', ') : ',你是最后一步,交付即收尾') + '。';
   };
 
+  const overTaskBudget = () => task.budget > 0 && (store.taskUsage(taskId).cost || 0) >= task.budget;
+  const overDailyBudget = () => { const c = Number(process.env.ORCH_DAILY_BUDGET) || 0; return c > 0 && (store.usageToday().cost || 0) >= c; };
   let models = null; try { models = task.models ? JSON.parse(task.models) : null; } catch (e) {} // 用户选的大模型:{执行器id:模型}
   let pending = null;
   const ctx = {
@@ -278,7 +280,8 @@ async function execute(taskId, plan, deps, opts) {
     answers: opts.answers || null,
     isCancelled: () => rec.cancelled,
     isPaused: () => rec.paused,
-    overBudget: () => task.budget > 0 && (store.taskUsage(taskId).cost || 0) >= task.budget, // 成本上限(0=不限)
+    // 成本上限(0=不限):任务级 或 全局日级。执行期都查 → retry/continue/resume 及跑中超限都会收尾停(总护栏真正覆盖所有执行路径)
+    overBudget: () => overTaskBudget() || overDailyBudget(),
     skip: rec.skip,
     lastFail: opts.lastFail || null, // 重跑时该步上次的失败输出
     takeNotes: () => { const t = rec.notes.splice(0).join('\n'); return t; }, // 用户中途指令,注入即消费
@@ -322,7 +325,9 @@ async function execute(taskId, plan, deps, opts) {
     if (store.addEvent) store.addEvent(taskId, 'task', final);
     emit(onEvent, taskId, null, 'task', final);
     if (final === 'failed') { try { scheduleAutoRetry(taskId, deps); } catch (e) {} }
-    if (stoppedByBudget) store.addTaskMsg(taskId, 'system', '💰 已达任务成本上限 $' + task.budget + '(实际约 $' + (store.taskUsage(taskId).cost || 0).toFixed(3) + '),未启动的步骤已暂停。提高预算后点「继续」,或发消息恢复。');
+    if (stoppedByBudget) store.addTaskMsg(taskId, 'system', overDailyBudget()
+      ? ('🛑 已达全局日成本上限 $' + (Number(process.env.ORCH_DAILY_BUDGET) || 0) + '(今日已花 $' + (store.usageToday().cost || 0).toFixed(3) + '),未启动步骤已暂停。次日 UTC 重置或调高 ORCH_DAILY_BUDGET 后恢复。')
+      : ('💰 已达任务成本上限 $' + task.budget + '(实际约 $' + (store.taskUsage(taskId).cost || 0).toFixed(3) + '),未启动的步骤已暂停。提高预算后点「继续」,或发消息恢复。'));
     else if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');
     if (final === 'done' || final === 'failed') harvestExperience(taskId, deps).catch(() => {}); // 异步复盘,不阻塞
   } catch (e) {

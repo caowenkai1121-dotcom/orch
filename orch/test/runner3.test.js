@@ -11,6 +11,22 @@ test('retryFailed 对无plan的失败任务不崩(JSON.parse(null) 兜底)', asy
   await assert.doesNotReject(() => runner.retryFailed(id, { store, adapters: {}, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} }));
 });
 
+test('全局日成本上限也覆盖执行路径(retry),消息为全局', async () => {
+  const store = open(':memory:'); store.seed();
+  const id = store.createTask('活', '默认项目', 'admin', {});
+  store.setPlan(id, { steps: [{ id: 's1', agent: 'echo', prompt: 'p', deps: [] }] });
+  store.setStep(id, 's1', 'echo', 'failed', 'x'); store.setTaskStatus(id, 'failed');
+  store.addUsage(id, 'prev', 'claude', { input: 0, output: 0, cost: 5 }); // 今日已花 $5
+  process.env.ORCH_DAILY_BUDGET = '1';
+  let ran = 0;
+  const echo = { async run() { ran++; return { output: '', success: true }; } };
+  await require('../runner').retryFailed(id, { store, adapters: { echo }, workspace: { make: () => '.' }, runs: new Map(), onEvent: () => {} });
+  delete process.env.ORCH_DAILY_BUDGET;
+  assert.equal(ran, 0);                                   // 超全局上限,步骤不执行(非仅新建task才拦)
+  assert.equal(store.getTask(id).status, 'paused');
+  assert.ok(store.getTaskMsgs(id).some((m) => /全局日成本上限/.test(m.text)));
+});
+
 test('复盘注入员工已有经验(避免生成重复)', async () => {
   const store = open(':memory:'); store.seed();
   const rid = store.listRoles().find((r) => r.dept !== '__system').id;
