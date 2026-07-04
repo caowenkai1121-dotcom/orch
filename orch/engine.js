@@ -131,33 +131,38 @@ async function runLoop(step, ctx, prevOutput) {
   return last;
 }
 
-// 拓扑按波次调度:每波把"依赖已完成且未启动"的步骤并发跑完再进下一波。
-// ponytail: 波次内有 barrier,快步骤要等慢步骤;轻量足够,真要流式再改。
+// 连续依赖驱动调度:某步 deps 一满足就立即启动,不等整波跑完 → 独立快分支不再被慢兄弟拖住。
+// 每当有在跑步骤结束就重新评估可启动集合(并发上限由 runStep 内信号量把关)。
 async function runPlan(plan, ctx) {
   const done = Object.assign({}, ctx.seedDone || {}); // 续跑:已完成步骤预置为 done
   const started = new Set(Object.keys(done));
+  const running = new Map(); // 在跑步骤 id → Promise(结束后落 done[id])
   let decision = null;
   const ready = (s) => s.deps.every((d) => done[d]);
+  const launch = async (s) => {
+    if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
+    if (ctx.skip && ctx.skip.has(s.id)) { done[s.id] = { output: '(用户跳过此步)', success: true }; ctx.onStatus(s.id, 'done'); return; } // 用户跳过
+    // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘;上游失败则标注,下游谨慎使用/自行补全
+    const tag = (d) => (done[d] && done[d].success === false) ? '(⚠ 此步失败,产出可能不完整,请核实或自行补全)' : '';
+    const prev = s.deps.length === 1
+      ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + (done[s.deps[0]]?.output || ''))
+      : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');
+    const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
+    if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
+    done[s.id] = r;
+  };
   while (Object.keys(done).length < plan.steps.length) {
-    if (decision) break; // 有步骤需人决策:停止调度
-    const wave = plan.steps.filter((s) => !started.has(s.id) && ready(s));
-    if (wave.length === 0) break; // 依赖无法满足,防死循环
-    if (ctx.isCancelled && ctx.isCancelled()) break; // 取消:不再起新波
-    if (ctx.isPaused && ctx.isPaused()) break;       // 暂停:当前波跑完不起新波
-    await Promise.all(wave.map(async (s) => {
+    if (decision) break;                               // 有步骤需人决策:不再起新步
+    if (ctx.isCancelled && ctx.isCancelled()) break;   // 取消:不再起新步
+    if (ctx.isPaused && ctx.isPaused()) break;         // 暂停:在跑步骤收尾后不起新步
+    for (const s of plan.steps.filter((s) => !started.has(s.id) && ready(s))) {
       started.add(s.id);
-      if (ctx.isCancelled && ctx.isCancelled()) { done[s.id] = { output: '', success: false }; return; }
-      if (ctx.skip && ctx.skip.has(s.id)) { done[s.id] = { output: '(用户跳过此步)', success: true }; ctx.onStatus(s.id, 'done'); return; } // 用户跳过
-      // 交接:合并所有上游依赖的产出(各截尾),下游能看到每位上游同事的交接备忘;上游失败则标注,下游谨慎使用/自行补全
-      const tag = (d) => (done[d] && done[d].success === false) ? '(⚠ 此步失败,产出可能不完整,请核实或自行补全)' : '';
-      const prev = s.deps.length === 1
-        ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + (done[s.deps[0]]?.output || ''))
-        : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + done[d].output.slice(-2500)) : '').filter(Boolean).join('\n\n');
-      const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
-      if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
-      done[s.id] = r;
-    }));
+      running.set(s.id, launch(s).finally(() => running.delete(s.id)));
+    }
+    if (running.size === 0) break; // 无在跑且无可启动:依赖无法满足,防死循环
+    await Promise.race(running.values()); // 任一步骤结束即重评可启动集合
   }
+  if (running.size) await Promise.all(running.values()); // 暂停/取消/决策而跳出时,让在跑步骤收尾
   if (decision && ctx.onDecision) ctx.onDecision(decision.stepId, decision.question);
   return done;
 }

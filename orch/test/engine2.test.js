@@ -16,6 +16,19 @@ test('并发不超过上限', async () => {
   delete process.env.ORCH_CONCURRENCY;
 });
 
+test('连续调度:独立快分支不被慢兄弟拖住(deps一满足即启动)', async () => {
+  const done = [];
+  const mk = (ms) => ({ async run({ prompt }) { await new Promise((r) => setTimeout(r, ms)); const id = prompt.match(/\bID:(\w+)/)[1]; done.push(id); return { output: '', success: true }; } });
+  // a1(快)→a2(快) 与 b1(慢) 无依赖并行。波次模型下 a2 要等整波(含慢 b1)才启动 → a2 最后完成。
+  const plan = { steps: [
+    { id: 'a1', agent: 'f', prompt: 'ID:a1', deps: [] },
+    { id: 'a2', agent: 'f', prompt: 'ID:a2', deps: ['a1'] },
+    { id: 'b1', agent: 's', prompt: 'ID:b1', deps: [] },
+  ] };
+  await runPlan(plan, ctx({ f: mk(5), s: mk(80) }));
+  assert.ok(done.indexOf('a2') < done.indexOf('b1'), '连续调度下 a2 应在慢 b1 之前完成,实际顺序: ' + done.join(','));
+});
+
 test('取消后不再起新 step', async () => {
   let ran = 0;
   const a = { async run() { ran++; return { output: '', success: true }; } };
