@@ -63,6 +63,9 @@ function visibleSet(store, user) {
 function buildAll(store, user) {
   const ROLE = roleMap(store);
   const RV = roleView(store);                  // 员工视图:整个 buildAll 只算一次(87角色),各处复用
+  const projRows = store.listProjects();       // 只查一次,循环内复用
+  const usageMap = store.usageByTask();        // 一趟聚合,消除每任务 taskUsage 的 N+1
+  const uOf = (id) => usageMap.get(id) || { input: 0, output: 0, cost: 0 };
   const vis = visibleSet(store, user);         // null=全部
   const tasks = store.listTasks().filter((t) => !vis || vis.has(t.project || '默认项目') || t.owner === (user && user.name));
   const visIds = new Set(tasks.map((t) => t.id));
@@ -135,9 +138,9 @@ function buildAll(store, user) {
     const allDone = ts.every((t) => t.status === 'done');
     const deptSet = {}; ts.forEach((t) => agentsInTask(t.id).forEach((a) => { deptSet[ROLE[a].dept] = 1; }));
     const agSet = {}; ts.forEach((t) => agentsInTask(t.id).forEach((a) => { agSet[a] = 1; }));
-    const projRow = store.listProjects().find((p) => p.name === name);
+    const projRow = projRows.find((p) => p.name === name);
     const amOwner = !!(user && (user.admin || (projRow && projRow.owner === user.id) || ts.some((t) => t.owner === user.name)));
-    const cost = ts.reduce((a, t) => a + (store.taskUsage(t.id).cost || 0), 0);
+    const cost = ts.reduce((a, t) => a + (uOf(t.id).cost || 0), 0);
     const doneN = ts.filter((t) => t.status === 'done').length;
     const failN = ts.filter((t) => t.status === 'failed').length;
     return {
@@ -150,14 +153,14 @@ function buildAll(store, user) {
   });
 
   // 合并 projects 表里的项目(含无任务的空项目),按可见性过滤
-  store.listProjects().forEach((tp) => {
+  projRows.forEach((tp) => {
     if (projMap[tp.name]) return;
     if (vis && !(tp.owner === (user && user.id) || vis.has(tp.name))) return;
     projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)) });
   });
 
   const tasksVm = tasks.map((t) => {
-    const u = store.taskUsage(t.id);
+    const u = uOf(t.id);
     // 进度:顶层步骤完成数/总数(loop 子步骤不计)
     const tops = (byTask[t.id] || []).filter((s) => (s.step_id || '').indexOf('.') < 0);
     const total = tops.length, doneN = tops.filter((s) => s.status === 'done').length;
