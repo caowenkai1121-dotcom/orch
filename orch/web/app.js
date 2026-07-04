@@ -431,7 +431,7 @@ class Maestro extends MaestroBase {
     v.execDownTitle = downExec.length ? ('这些执行器未检测到(可能未装或未登录 CLI),相关任务会失败:' + downExec.join('、') + '。到 Agent 团队页「↻ 重测」。') : '';
     // 需关注:失败/待审批/待输入的任务(无人值守操作者优先处理)
     const attMeta = { failed: { label: '失败', bg: '#FBE9E7', c: '#B4541E', hint: '可重试' }, awaiting: { label: '待审批', bg: '#FEF3D6', c: '#8a6d00', hint: '批准/编辑计划' }, awaiting_input: { label: '待输入', bg: '#FBE9E7', c: '#B4541E', hint: '员工在等你回答' }, paused: { label: '已暂停', bg: '#FEF3D6', c: '#8a6d00', hint: '发消息/点继续恢复(预算暂停需先提上限)' } };
-    const attAll = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: (t.sk === 'failed' && t.failReason) ? t.failReason : attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
+    const attAll = (this.TASKS || []).filter((t) => attMeta[t.sk]).map((t) => ({ title: t.title, label: attMeta[t.sk].label, bg: attMeta[t.sk].bg, c: attMeta[t.sk].c, hint: (t.sk === 'failed' && t.failReason) ? t.failReason : (t.sk === 'awaiting_input' && t.question) ? t.question.slice(0, 80) : attMeta[t.sk].hint, open: () => this.go('task', { taskId: t.id }) }));
     v.attention = attAll.slice(0, 8);                 // 封顶 8 条,防无人值守堆积把仪表盘顶下去
     v.attentionMore = attAll.length > 8 ? ('…还有 ' + (attAll.length - 8) + ' 个,去任务页查看') : '';
     v.hasAttention = attAll.length > 0;
@@ -954,7 +954,9 @@ class Maestro extends MaestroBase {
       if (window.Notification && Notification.permission === 'granted' && document.hidden) {
         const t = (this.TASKS || []).find((x) => x.id === m.taskId);
         const base = t ? t.title : '任务 ' + m.taskId;
-        const body = (m.data === 'failed' && t && t.failReason) ? (base + '\n✗ ' + t.failReason) : base;
+        const body = (m.data === 'failed' && t && t.failReason) ? (base + '\n✗ ' + t.failReason)
+          : (m.data === 'awaiting_input' && t && t.question) ? (base + '\n❓ ' + t.question.slice(0, 120))
+            : base;
         new Notification(title, { body: body, tag: 'orch-task-' + m.taskId });
       }
     } catch (e) {}
