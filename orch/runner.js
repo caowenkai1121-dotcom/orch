@@ -20,6 +20,18 @@ function ensureOutputGit(dir) {
     return true;
   } catch (e) { return false; }
 }
+// 按 mtime 归属本步真实产出文件数(独立于 git 暂存,免并行步共享目录 git add -A 互相污染绩效)。
+// 排除引擎/团队共享文件(task_plan.md/findings.md 每步被引擎重写,不是某步的 agent 产出)。
+function countRecentFiles(dir, sinceMs) {
+  let n = 0;
+  try {
+    if (!dir || !fs.existsSync(dir)) return 0;
+    const skipName = new Set(['.git', 'node_modules', '.playwright-mcp', 'task_plan.md', 'findings.md']);
+    const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (skipName.has(e.name)) continue; const fp = path.join(d, e.name); if (e.isDirectory()) walk(fp); else { try { if (fs.statSync(fp).mtimeMs >= sinceMs) n++; } catch (x) {} } } };
+    walk(dir);
+  } catch (e) {}
+  return n;
+}
 function commitStep(dir, label) {
   try {
     if (!dir || !fs.existsSync(path.join(dir, '.git'))) return { files: 0 };
@@ -257,7 +269,7 @@ async function execute(taskId, plan, deps, opts) {
   const task = store.getTask(taskId);
   store.setTaskStatus(taskId, 'running');
 
-  const agentOf = {}; const roleOf = {};
+  const agentOf = {}; const roleOf = {}; const stepStart = {}; // stepStart:本步 running 时刻,用于按 mtime 归属产出
   const collect = (steps) => steps.forEach((s) => { if (s.body) collect(s.body); else { agentOf[s.id] = s.agent; if (s.role) roleOf[s.id] = s.role; } });
   collect(plan.steps || []);
 
@@ -308,7 +320,13 @@ async function execute(taskId, plan, deps, opts) {
       if (store.addEvent) store.addEvent(taskId, 'status', { step: stepId, v: status });
       emit(onEvent, taskId, stepId, 'status', status, agentOf[stepId]);
       writePlanFile(taskId, store, task.dir);
-      if (status === 'done' && gitOk) { const c = commitStep(task.dir, '步骤 ' + stepId + ' 完成'); if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n: c.files }); if (roleOf[stepId] && store.addRoleStat) store.addRoleStat(roleOf[stepId], c.files > 0); } // 每步 commit + 记录产出文件数 + 员工绩效(落盘/空转)
+      if (status === 'running') stepStart[stepId] = Date.now(); // 记开工时刻(供 mtime 归属)
+      if (status === 'done') {
+        const n = countRecentFiles(task.dir, stepStart[stepId] || 0); // 按 mtime 数本步产出(不受并行步 git add -A 污染)
+        if (gitOk) commitStep(task.dir, '步骤 ' + stepId + ' 完成'); // 仍每步 commit 供改动审查(计数不再取其暂存数)
+        if (store.addEvent) store.addEvent(taskId, 'files', { step: stepId, n });
+        if (roleOf[stepId] && store.addRoleStat) store.addRoleStat(roleOf[stepId], n > 0); // 员工绩效(落盘/空转)
+      }
     },
   };
   writePlanFile(taskId, store, task.dir); // 开工先落计划文件(员工简报可见)
@@ -357,4 +375,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep, pauseTask, skipStep, noteToTask, rerunStep };
+module.exports = { runTask, runApproved, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, writePlanFile, ensureOutputGit, commitStep, countRecentFiles, pauseTask, skipStep, noteToTask, rerunStep };
