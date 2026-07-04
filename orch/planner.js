@@ -218,6 +218,7 @@ async function makePlan(text, opts) {
   if (needRefine) { try { brief = await refineBrief(text, claude); } catch (e) {} }
   const orch = (orchestration || '').trim();
   const chief = (roles || []).find((r) => r.id === 'chief-orchestrator'); // 总调度经验行
+  const chiefMemo = chief && chief.memo ? relevantMemo(chief.memo, brief, 6) : ''; // 与员工一致:调度复盘也按当前任务相关性优选,不无脑塞全部
   const empRoles = (roles || []).filter((r) => r.dept !== '__system');    // __system 不进员工目录
   const deptRoles = dept ? empRoles.filter((r) => r.dept === dept) : empRoles;
   const roleMap = {}; deptRoles.forEach((r) => { roleMap[r.id] = r; });
@@ -231,11 +232,11 @@ async function makePlan(text, opts) {
   //    自愈:非法 role → 就近纠正;仍非法 → 带错误反馈让 LLM 重拆一次(避免默默丢角色回退到裸执行器)
   if (roleIds.length && claude && mode !== 'template') {
     try {
-      let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo);
+      let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo);
       if (!validateRoles(p, roleIds)) coerceRoles(p.steps, roleIds);
       if (!validateRoles(p, roleIds)) {
         const bad = badRoles(p, roleIds);
-        if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chief && chief.memo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
+        if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
       }
       if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; }
     } catch (e) { /* 落到执行器模式 */ }

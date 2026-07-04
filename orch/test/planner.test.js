@@ -93,6 +93,20 @@ test('经验注入:员工memo进角色卡,调度复盘进总调度提示', async
   assert.match(plan.steps[0].prompt, /file:\/\/被封/);
 });
 
+test('调度复盘按相关性优选(>6条时过滤无关)', async () => {
+  const memo = ['ZZ1 无', 'ZZ2 无', 'ZZ3 无', 'ZZ4 无', 'ZZ5 无', 'ZZ6 无', 'ZZ7 无', '支付相关先做风控'].join('\n');
+  const roles = [
+    { id: 'r1', dept: 'engineering', name: 'x', description: '', prompt: '你是X', memo: '', executor: 'claude' },
+    { id: 'chief-orchestrator', dept: '__system', name: '总调度', description: '', prompt: '', memo, executor: 'claude' },
+  ];
+  let seen = '';
+  const fakeClaude = { async run({ prompt }) { seen = prompt; return { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]}]}', success: true }; } };
+  await makePlan('做一个支付页面', { agents: ['claude'], roles, depts: [], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.match(seen, /支付相关先做风控/);                 // 相关复盘保留
+  const zc = (seen.match(/ZZ\d/g) || []).length;          // 8条 keep6 → relevant+5无关,故 ZZ≤5(旧行为全塞=7)
+  assert.ok(zc <= 5, '应过滤部分无关调度复盘,实际保留 ZZ 条数=' + zc);
+});
+
 test('计划自愈:非法role就近纠正,仍非法带反馈重拆', async () => {
   const { coerceRoles, badRoles } = require('../planner');
   const ids = ['engineering-frontend-developer', 'testing-api-tester'];
