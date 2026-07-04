@@ -31,6 +31,13 @@ test('buildAll 从真实任务派生 Maestro 总览数据', () => {
   assert.equal(all.counts.totalAgents, 2);
   assert.equal(all.counts.runningTasks, 1);
   assert.equal(all.counts.failed, 1);
+  assert.equal(all.counts.pendingRetry, 0); // 失败任务无 auto_retry 事件 → 不算待自动重试
+
+  // 排定过自动重试(次数未用完)的失败任务 → 计入 pendingRetry
+  const limitId = Number(store.createTask('限额任务', 'BI'));
+  store.setTaskStatus(limitId, 'failed');
+  store.addEvent(limitId, 'auto_retry', { inMin: 30 });
+  assert.equal(api.buildAll(store).counts.pendingRetry, 1);
 
   const codex = all.agents.find((a) => a.id === 'codex');
   assert.equal(codex.status, 'working');

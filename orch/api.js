@@ -211,6 +211,8 @@ function buildAll(store, user) {
       runningTasks: tasks.filter((t) => t.status === 'running').length,
       doneToday: tasks.filter((t) => t.status === 'done' && isToday(t.updated_at)).length,
       failed: tasks.filter((t) => t.status === 'failed').length,
+      // 待自动重试:限额类失败且已排定自动重试、次数未用完(≤2)——与永久失败区分,让操作者知系统会自愈
+      pendingRetry: tasks.filter((t) => { if (t.status !== 'failed') return false; const ar = store.getEvents(t.id).filter((e) => e.type === 'auto_retry').length; return ar > 0 && ar < 2; }).length,
       totalTasks: tasks.length, totalAgents: agents.length,
       costToday: today.cost,
     },
