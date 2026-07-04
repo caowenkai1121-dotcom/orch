@@ -204,6 +204,8 @@ function sanitizeDeps(plan) {
   // 重复 step id 去重(保留首个):runPlan 的 done/started 以 id 键化,重复 id 会静默丢步/互相覆盖、误判完成。
   // lint 会先尝试回喂重拆,这是最后兜底(也护住 edit-plan 客户端可写路径)。
   { const seen = new Set(); plan.steps = plan.steps.filter((s) => { if (seen.has(s.id)) return false; seen.add(s.id); return true; }); }
+  // loop body 子步同样去重 id + 剔自依赖:runLoop 顺序跑虽不用 body deps,但 api.plan 画布展开(按 body id 建节点)与 lint 需一致,防重复节点/残留
+  plan.steps.forEach((s) => { if (Array.isArray(s.body)) { const bs = new Set(); s.body = s.body.filter((b) => b && b.id != null && !bs.has(b.id) && bs.add(b.id)); s.body.forEach((b) => { if (b.deps) b.deps = b.deps.filter((d) => d !== b.id); }); } });
   const steps = plan.steps;
   const ids = new Set(steps.map((s) => s.id));
   steps.forEach((s) => { s.deps = (s.deps || []).filter((d) => d !== s.id && ids.has(d)); });

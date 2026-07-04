@@ -83,6 +83,20 @@ test('审查修复:extractJson 跳过回显的花括号格式片段取真计划 
   assert.equal(extractJson('```json\n{"steps":[{"id":"b"}]}\n```').steps[0].id, 'b'); // 剥围栏
   assert.equal(extractJson('前言 {"note":"x"} 然后 {"steps":[{"id":"c"}]}').steps[0].id, 'c'); // 优先含 steps 的候选
 });
+test('审查修复:sanitizeDeps 递归清理 loop body(去重id+剔自依赖)', () => {
+  const { sanitizeDeps } = require('../planner');
+  const p = sanitizeDeps({ steps: [
+    { id: 'q', type: 'loop', deps: [], body: [
+      { id: 'impl', agent: 'claude', deps: ['impl'] }, // 自依赖
+      { id: 'gate', agent: 'codex', deps: ['impl'] },
+      { id: 'impl', agent: 'x', deps: [] },            // 重复 id
+    ] },
+  ] });
+  const loop = p.steps.find((s) => s.id === 'q');
+  assert.equal(loop.body.length, 2);                                 // 重复 impl 去掉
+  assert.deepEqual(loop.body.find((b) => b.id === 'impl').deps, []); // 自依赖剔除
+});
+
 test('审查修复:fill 全部替换 {task} 且不解释 $ 特殊序列', () => {
   const out = fill([{ id: 'a', prompt: '为「{task}」实现,并给「{task}」写测试' }], '价格$&优惠');
   assert.equal(out[0].prompt, '为「价格$&优惠」实现,并给「价格$&优惠」写测试'); // 两处都替、$&字面保留
