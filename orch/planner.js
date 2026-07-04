@@ -110,7 +110,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
     + `调度要求:0)拆分粒度匹配任务复杂度——简单任务(单文件/脚本/小改动)1-2步即可,不必强加质量门;复杂任务(多模块/需评审)才用质量门loop,别过度拆分浪费;1)只挑真正需要的员工(通常2-5步),部门有标准流程的按流程顺序,不需要的可选环节跳过;2)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);3)不假设存在外部文档;4)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
-    + (feedback ? `\n\n⚠ 上次拆分的这些 role 不在员工目录里,请只用目录中真实存在的员工 id 重新拆分:${feedback}` : '')
+    + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
   const plan = extractJson(output);
@@ -155,6 +155,23 @@ function relevantMemo(memo, taskText, keep) {
   const tw = new Set(toks(taskText || ''));
   const score = (l) => toks(l).filter((w) => tw.has(w)).length;
   return lines.map((l, i) => ({ l, s: score(l), i })).sort((a, b) => b.s - a.s || b.i - a.i).slice(0, keep).sort((a, b) => a.i - b.i).map((x) => x.l).join('\n');
+}
+
+// #9 计划结构体检:返回问题清单(空=健康)。捕 sanitizeDeps 不管的结构错——重复 id(runPlan done[id] 碰撞丢步)、
+// 步缺指派、loop 缺 body。供 makePlan 带具体问题回喂 planner 重拆一次(而非静默 sanitize 成降级计划)。
+function lintPlan(plan, hasRole) {
+  const steps = (plan && plan.steps) || [];
+  if (!Array.isArray(steps) || !steps.length) return ['计划无任何步骤'];
+  const problems = []; const seen = new Set();
+  const walk = (arr) => (arr || []).forEach((s) => {
+    if (!s || s.id == null) { problems.push('存在无 id 的步骤'); return; }
+    if (seen.has(s.id)) problems.push('步骤 id 重复:' + s.id);
+    seen.add(s.id);
+    if (s.type === 'loop') { if (!Array.isArray(s.body) || !s.body.length) problems.push('loop 步骤「' + s.id + '」缺 body 子步骤'); walk(s.body); }
+    else if (hasRole ? !s.role : !s.agent) problems.push('步骤「' + s.id + '」未指派' + (hasRole ? '员工(role)' : '执行器(agent)'));
+  });
+  walk(steps);
+  return [...new Set(problems)];
 }
 
 // 依赖健全化:剔除指向不存在步骤的依赖、自依赖,拓扑排序断环(防 runPlan 静默卡死)
@@ -238,9 +255,12 @@ async function makePlan(text, opts) {
     try {
       let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo);
       if (!validateRoles(p, roleIds)) coerceRoles(p.steps, roleIds);
-      if (!validateRoles(p, roleIds)) {
-        const bad = badRoles(p, roleIds);
-        if (bad.length) { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, bad.join(', ')); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds)) p = p2; }
+      // #9 非法员工 + 结构问题(重复id/缺指派/loop缺body)任一存在 → 带具体问题回喂重拆一次(而非静默降级)
+      const bad = validateRoles(p, roleIds) ? [] : badRoles(p, roleIds);
+      const lint = lintPlan(p, true);
+      if (bad.length || lint.length) {
+        const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
+        try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb); coerceRoles(p2.steps, roleIds); if (validateRoles(p2, roleIds) && !lintPlan(p2, true).length) p = p2; } catch (e) {}
       }
       if (validateRoles(p, roleIds)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; }
     } catch (e) { /* 落到执行器模式 */ }
@@ -263,4 +283,4 @@ async function makePlan(text, opts) {
   return mark({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] });
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan };

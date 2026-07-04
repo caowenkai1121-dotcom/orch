@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
-const { makePlan, validate } = require('../planner');
+const { makePlan, validate, lintPlan } = require('../planner');
 
 test('规划期 claude 调用受并发信号量约束(不再fork风暴)', async () => {
   process.env.ORCH_CONCURRENCY = '1';
@@ -30,4 +30,29 @@ test('LLM 模式:非法(未知agent)回退模板', async () => {
   const claude = { async run() { return { output: '{"steps":[{"id":"x","agent":"ghost","prompt":"p","deps":[]}]}', success: true }; } };
   const plan = await makePlan('做事', { mode: 'llm', agents: ['claude', 'codex'], templatesDir: TPL, claude });
   assert.equal(plan.steps[0].id, 'dev'); // 兜底模板首步
+});
+
+test('#9 lintPlan 捕获结构错:重复id/缺指派/loop缺body/空', () => {
+  assert.deepEqual(lintPlan({ steps: [] }), ['计划无任何步骤']);
+  assert.ok(lintPlan({ steps: [{ id: 'a', agent: 'claude' }, { id: 'a', agent: 'claude' }] }).some((p) => /id 重复.*a/.test(p)));
+  assert.ok(lintPlan({ steps: [{ id: 'a' }] }).some((p) => /未指派执行器/.test(p)));       // 无 hasRole → 查 agent
+  assert.ok(lintPlan({ steps: [{ id: 'a' }] }, true).some((p) => /未指派员工/.test(p)));    // hasRole → 查 role
+  assert.ok(lintPlan({ steps: [{ id: 'q', type: 'loop', body: [] }] }).some((p) => /缺 body/.test(p)));
+  assert.deepEqual(lintPlan({ steps: [{ id: 'a', agent: 'claude', deps: [] }, { id: 'b', agent: 'claude', deps: ['a'] }] }), []); // 健康→无问题
+});
+
+test('#9 员工模式:结构坏(重复id)计划带问题回喂 planner 重拆一次', async () => {
+  let call = 0;
+  const claude = { async run() {
+    call++;
+    return call === 1
+      ? { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]},{"id":"a","role":"r1","prompt":"q","deps":[]}]}', success: true } // 重复 id a
+      : { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]},{"id":"b","role":"r1","prompt":"q","deps":["a"]}]}', success: true }; // 干净
+  } };
+  const roles = [{ id: 'r1', dept: 'dev', name: 'Dev', description: '', prompt: '角色', executor: 'claude' }];
+  const plan = await makePlan('做个东西', { mode: 'llm', agents: ['claude'], roles, depts: [], refine: false, templatesDir: TPL, claude });
+  assert.equal(call, 2);                                   // 坏计划触发一次回喂重拆
+  assert.equal(plan.steps.length, 2);
+  const ids = plan.steps.map((s) => s.id);
+  assert.deepEqual([...new Set(ids)].sort(), ['a', 'b']);   // 采用了无重复 id 的重拆结果
 });
