@@ -71,6 +71,7 @@ function open(file) {
   ensureCol('people', 'password', 'TEXT');
   ensureCol('people', 'admin', 'INTEGER');
   ensureCol('projects', 'owner', 'TEXT');
+  ensureCol('projects', 'approve', 'INTEGER'); // #4 项目级审批开关(admin 控;开启则本项目任务须审批)
   ensureCol('agents', 'kind', 'TEXT');
   ensureCol('agents', 'enabled', 'INTEGER'); // 启用/停用:null/1=启用,0=停用(停用的不进规划器可选列表)
   ensureCol('departments', 'flow', 'TEXT');
@@ -334,6 +335,9 @@ function open(file) {
       return id;
     },
     listProjects() { return db.prepare('SELECT * FROM projects').all(); },
+    // #4 项目级审批:admin 开启后本项目所有任务须先审批再执行(默认关)
+    setProjectApprove(name, on) { const r = db.prepare('SELECT id FROM projects WHERE name=?').get(name); if (r) db.prepare('UPDATE projects SET approve=? WHERE name=?').run(on ? 1 : 0, name); else db.prepare('INSERT INTO projects(id,name,created_at,approve) VALUES(?,?,?,?)').run(name, name, new Date().toISOString(), on ? 1 : 0); },
+    projectApprove(name) { const r = db.prepare('SELECT approve FROM projects WHERE name=?').get(name); return !!(r && r.approve); },
     seed() {
       if (db.prepare('SELECT COUNT(*) n FROM agents').get().n === 0) {
         this.addAgent({ id: 'claude', name: 'Claude', command: 'claude', args: ['-p', '--dangerously-skip-permissions'], model: 'claude CLI', caps: ['代码生成', '重构', '单元测试'], color: '#7C6FD9', avatar: 'C', dept: 'dev', pricing: { in: 3, out: 15 } });

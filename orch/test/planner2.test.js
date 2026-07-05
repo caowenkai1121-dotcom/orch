@@ -3,14 +3,14 @@ const assert = require('node:assert');
 const path = require('path');
 const { makePlan, validate, lintPlan, mergeEditedPlan, extractJson, fill } = require('../planner');
 
-test('规划期 claude 调用受并发信号量约束(不再fork风暴)', async () => {
-  process.env.ORCH_CONCURRENCY = '1';
+test('规划期 claude 调用受元调用信号量约束(不再fork风暴)', async () => {
+  process.env.ORCH_META_CONCURRENCY = '1'; // 规划走独立的元信号量(与执行步分离,任务启动不被执行槽卡住)
   let cur = 0, peak = 0;
   const claude = { async run() { cur++; peak = Math.max(peak, cur); await new Promise((r) => setTimeout(r, 20)); cur--; return { output: '{"steps":[{"id":"a","agent":"claude","prompt":"p","deps":[]}]}', success: true }; } };
   const opts = { agents: ['claude', 'codex'], roles: [], depts: [], refine: false, templatesDir: __dirname, claude }; // 多执行器→fromLLM 用 claude
   await Promise.all([makePlan('t1', opts), makePlan('t2', opts), makePlan('t3', opts)]);
-  assert.ok(peak <= 1, 'peak=' + peak); // sem(1) 下并发规划≤1
-  delete process.env.ORCH_CONCURRENCY;
+  assert.ok(peak <= 1, 'peak=' + peak); // metaSem(1) 下并发规划≤1
+  delete process.env.ORCH_META_CONCURRENCY;
 });
 const TPL = path.join(__dirname, '..', 'templates');
 

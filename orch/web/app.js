@@ -196,6 +196,7 @@ class MaestroBase extends RT.Component {
       failed:  { label:'失败', c:'#B23A33', bg:'#FBE9E7', dot:'#DC5B52' },
       review:  { label:'待审', c:'#3E5BD0', bg:'#E8ECFB', dot:'#4F6AE8' },
       queued:  { label:'排队中', c:'#6B6760', bg:'#F1EFEA', dot:'#C9C4BA' },
+      planning:{ label:'规划中', c:'#8a6d00', bg:'#FFF6D6', dot:'#F0B400' },
       meeting: { label:'方案会议中', c:'#4B3E86', bg:'#F1EEFB', dot:'#5B4BC4' },
     })[s] || { label:s, c:'#6B6760', bg:'#F1EFEA', dot:'#C9C4BA' };
   }
@@ -504,8 +505,9 @@ class Maestro extends MaestroBase {
     const failedTs = (this.TASKS || []).filter((t) => t.sk === 'failed' && t.canModify);
     v.failedN = failedTs.length; v.hasFailed = failedTs.length > 0;
     v.retryAll = () => this.retryAll(failedTs.length);
-    // 筛选后的列表(注入到 tasksList 由模板用),同时看板也过滤
-    this._taskFilterFn = (t) => (!curF || t.sk === curF) && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0);
+    // 筛选后的列表(注入到 tasksList 由模板用),同时看板也过滤;"进行中"含规划中/会议中(都属活跃态)
+    const activeSk = { working: 1, planning: 1, meeting: 1 };
+    this._taskFilterFn = (t) => (!curF || t.sk === curF || (curF === 'working' && activeSk[t.sk])) && (!fq || (t.title || '').toLowerCase().indexOf(fq) >= 0 || (t.proj || '').toLowerCase().indexOf(fq) >= 0);
     // 任务看板(参考 vibe-kanban):按状态分列
     v.taskViewBoard = this.state.taskView === 'board';
     v.taskViewList = !v.taskViewBoard;
@@ -516,7 +518,7 @@ class Maestro extends MaestroBase {
     const COLS = [
       { key: ['queued'], name: '排队', color: '#C9C4BA' },
       { key: ['awaiting'], name: '待审批', color: '#F0B400' },
-      { key: ['working'], name: '进行中', color: '#E0922E' },
+      { key: ['working', 'planning', 'meeting'], name: '进行中', color: '#E0922E' },
       { key: ['awaiting_input'], name: '待输入', color: '#B4541E' },
       { key: ['done'], name: '已完成', color: '#2E9E5B' },
       { key: ['failed', 'cancelled'], name: '失败/取消', color: '#DC5B52' },
@@ -580,8 +582,20 @@ class Maestro extends MaestroBase {
       bd: m.sys ? '#EAE7DF' : (m.mine ? '#1A1814' : '#E9E7E1'),
     }));
     v.meetRosterOpen = !!this.state.meetRoster;
-    v.toggleMeetRoster = () => this.setState({ meetRoster: !this.state.meetRoster });
-    v.meetRoster = (mtg.roster || []).map((r) => ({ ...r, summon: () => this.summonEmp(r.id) }));
+    v.toggleMeetRoster = () => this.setState({ meetRoster: !this.state.meetRoster, meetRosterSearch: '', meetRosterDept: '' });
+    // #2 @员工加入:搜索(姓名)+ 按部门筛选
+    const rq = (this.state.meetRosterSearch || '').trim().toLowerCase();
+    const rdept = this.state.meetRosterDept || '';
+    v.onMeetRosterKey = (e) => { const el = e.currentTarget; setTimeout(() => this.setState({ meetRosterSearch: el.value }), 0); };
+    const rosterAll = mtg.roster || [];
+    const deptSeen = []; rosterAll.forEach((r) => { if (r.deptName && deptSeen.indexOf(r.deptName) < 0) deptSeen.push(r.deptName); });
+    v.meetRosterDepts = [{ name: '全部', on: !rdept, pick: () => this.setState({ meetRosterDept: '' }) }].concat(
+      deptSeen.map((dn) => ({ name: dn, on: rdept === dn, pick: () => this.setState({ meetRosterDept: dn }) }))
+    ).map((d) => ({ ...d, bg: d.on ? '#1A1814' : '#fff', fg: d.on ? '#fff' : '#6B6760', bd: d.on ? '#1A1814' : '#E9E7E1' }));
+    v.meetRoster = rosterAll
+      .filter((r) => (!rq || (r.name || '').toLowerCase().indexOf(rq) >= 0) && (!rdept || r.deptName === rdept))
+      .slice(0, 40)
+      .map((r) => ({ ...r, summon: () => this.summonEmp(r.id) }));
     v.sendMeetingMsg = () => this.sendMeetingMsg();
     v.onMeetKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); this.sendMeetingMsg(); } };
     v.endMeetingUI = () => this.endMeetingUI();
@@ -600,7 +614,11 @@ class Maestro extends MaestroBase {
     const follow = this.state.canvasTaskId == null; // 框架 {{}} 不支持三元,样式值在此预算
     v.canvasFollowBg = follow ? '#1A1814' : '#fff'; v.canvasFollowFg = follow ? '#fff' : '#6B6760'; v.canvasFollowBd = follow ? '#1A1814' : '#E9E7E1';
     v.pickCanvasLatest = () => this.setState({ canvasTaskId: null });
-    v.canvasTasks = this.TASKS.slice(0, 8).map((t) => ({
+    // #3 画布历史任务:支持搜索(标题/编号);无搜索显最近8个,搜索时在全部里筛(最多20)
+    const cq = (this.state.canvasSearch || '').trim().toLowerCase();
+    v.onCanvasSearchKey = (e) => { const el = e.currentTarget; setTimeout(() => this.setState({ canvasSearch: el.value }), 0); }; // keydown 后延迟读值→实时筛
+    const canvasPool = cq ? this.TASKS.filter((t) => (t.title || '').toLowerCase().indexOf(cq) >= 0 || String(t.id).indexOf(cq) >= 0).slice(0, 20) : this.TASKS.slice(0, 8);
+    v.canvasTasks = canvasPool.map((t) => ({
       id: t.id, title: (t.title || '').slice(0, 22) || ('任务 ' + t.id), sel: t.id === curId,
       bg: t.id === curId ? '#1A1814' : '#fff', fg: t.id === curId ? '#fff' : '#3C3933', bd: t.id === curId ? '#1A1814' : '#E9E7E1',
       pick: () => this.setState({ canvasTaskId: t.id }),
@@ -674,6 +692,15 @@ class Maestro extends MaestroBase {
     const curD = (this.DEPTS || []).find((d) => d.id === this.state.deptId);
     v.deptEmployees = ((curD && curD.employees) || []).map((e) => ({ ...e, del: () => this.fireEmp(e.id, e.name), edit: () => this.editEmp(e.id) }));
     v.deptEmpN = v.deptEmployees.length;
+    // #5 本部门 Agent(执行器):添加已有 agent(不在本部门的)
+    v.deptAddOpen = !!this.state.deptAddOpen;
+    v.toggleDeptAdd = () => this.setState({ deptAddOpen: !this.state.deptAddOpen });
+    v.deptAddableAgents = (this.AGENTS || []).filter((a) => a.dept !== (curD && curD.id)).map((a) => ({ id: a.id, name: a.name, avatar: a.avatar, color: a.color, add: () => this.addAgentToDept(a.id) }));
+    // #5 侧栏部门列表可折叠
+    v.deptsExpanded = !this.state.deptsCollapsed;
+    v.deptsChevron = this.state.deptsCollapsed ? '▸' : '▾';
+    v.deptCount = (this.DEPTS || []).length;
+    v.toggleDepts = () => this.setState({ deptsCollapsed: !this.state.deptsCollapsed });
     v.hireEmp = () => this.setState({ modal: 'hire', editRoleId: null });
     v.hireIsEdit = !!this.state.editRoleId;
     v.notHireEdit = !this.state.editRoleId;
@@ -714,6 +741,11 @@ class Maestro extends MaestroBase {
     v.projKnowledge = curProj ? (curProj.knowledge || '') : '';
     v.projName = curProj ? curProj.name : '';
     v.saveKnowledge = () => this.saveKnowledge();
+    // #4 项目级审批开关(admin)
+    const pApr = !!(curProj && curProj.approve);
+    v.projApproveLabel = pApr ? '已开启 · 点击关闭' : '已关闭 · 点击开启';
+    v.projApproveBg = pApr ? '#1A1814' : '#fff'; v.projApproveFg = pApr ? '#fff' : '#3C3933'; v.projApproveBd = pApr ? '#1A1814' : '#E6E3DC';
+    v.toggleProjApprove = () => { if (!curProj) return; fetch('/api/projects/' + encodeURIComponent(curProj.name) + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on: !pApr }) }).then(() => this.fetchAll()).catch(() => {}); };
 
     // —— v4: 取消/成本 ——
     v.cancelTask = () => this.cancelTask();
@@ -884,6 +916,12 @@ class Maestro extends MaestroBase {
     const id = this.state.meetingId; if (typeof id !== 'number') return;
     if (!window.confirm('结束会议并生成《方案.md》?之后将按方案开始实现。')) return;
     fetch('/api/meeting/' + id + '/end', { method: 'POST' }).then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
+  }
+  // #5 把已有 agent 加入当前部门(改 agents.dept),加完 buildAll 重新按部门归类→本部门 Agent 正确显示
+  addAgentToDept(agentId) {
+    const did = this.state.deptId; if (!did) return;
+    this.setState({ deptAddOpen: false });
+    fetch('/api/depts/' + did + '/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: [agentId] }) }).then(() => this.fetchAll()).catch(() => {});
   }
   pauseTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/pause', { method: 'POST' }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
   resumeTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '继续按原计划执行' }) }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }

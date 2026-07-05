@@ -83,6 +83,7 @@ async function runTask(taskId, deps) {
   const task = store.getTask(taskId);
   // 提前建运行态,让规划期(LLM 拆分)的子进程可被取消
   const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(taskId)));
+  if (rec) { rec.cancelled = false; rec.paused = false; } // 复用旧 rec 时清残留取消标志:否则被取消过的任务重跑会立刻中止(卡在 planning 显排队)
   const plan = await makePlan(task.text, rec ? (c) => rec.children.add(c) : undefined);
   if (rec && rec.cancelled) return; // 规划期间被取消:不继续
   store.setPlan(taskId, plan);
@@ -169,7 +170,7 @@ async function harvestExperience(taskId, deps) {
     + '\n\n输出 JSON:{"employees":{"<员工id>":"一条≤60字可复用经验(成功套路或踩过的坑,具体不空话;若该员工产出文件为0要点明别只描述不落盘)"},"chief":"一条≤80字调度复盘(步骤划分/指派/质量门下次怎么改进)"}。'
     + '只为值得记的员工写经验(没有就省略该员工),只输出 JSON。';
   try {
-    const s = require('./engine').sem(); await s.acquire(); // 复盘 LLM 也过并发信号量
+    const s = require('./engine').metaSem(); await s.acquire(); // 复盘 LLM 也过并发信号量
     let output; try { ({ output } = await adapters.claude.run({ prompt, workdir: metaDir(), onLine: () => {} })); } finally { s.release(); }
     const j = JSON.parse((output.match(/\{[\s\S]*\}/) || ['{}'])[0]);
     const names = [];
@@ -207,7 +208,7 @@ async function meetingSpeak(deps, taskId, roleId, kickoff) {
   const rec = runs && runs.get(taskId);
   let output = '';
   try {
-    const s = require('./engine').sem(); await s.acquire();
+    const s = require('./engine').metaSem(); await s.acquire();
     try { ({ output } = await adapters[ex].run({ prompt, workdir: metaDir(), onLine: () => {}, onChild: rec ? (c) => rec.children.add(c) : undefined })); }
     finally { s.release(); }
   } catch (e) { return; }
@@ -284,7 +285,7 @@ async function endMeeting(taskId, deps) {
     + '开发需求:' + (t.text || '') + '\n\n【会议记录】\n' + transcript + '\n\n只输出《方案》正文(markdown),不要寒暄。';
   let result = '';
   try {
-    const s = require('./engine').sem(); await s.acquire();
+    const s = require('./engine').metaSem(); await s.acquire();
     try { ({ output: result } = await adapters.claude.run({ prompt, workdir: metaDir(), onLine: () => {} })); } finally { s.release(); }
   } catch (e) {}
   result = (result || '').trim() || '(方案综合失败,请参考会议记录.md)';
@@ -378,6 +379,7 @@ async function continueTask(taskId, deps, text) {
   const t = store.getTask(taskId);
   store.setTaskStatus(taskId, 'planning');
   const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(taskId)));
+  if (rec) { rec.cancelled = false; rec.paused = false; } // 继续开发:清残留取消标志(取消过的任务点继续不再卡在排队)
   let cur = {}; try { cur = JSON.parse(t.plan) || {}; } catch (e) { cur = { steps: [] }; } // 同上,防 null
   cur.steps = cur.steps || [];
   const context = '【继续开发】当前工作目录已有之前产出的文件,先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
@@ -453,7 +455,7 @@ async function execute(taskId, plan, deps, opts) {
   const { store, adapters, workspace, onEvent, runs } = deps;
   const fresh = { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] };
   const rec = runs && (runs.get(taskId) || (runs.set(taskId, fresh), fresh)) || fresh;
-  rec.paused = false; rec.skip = rec.skip || new Set(); rec.notes = rec.notes || [];
+  rec.cancelled = false; rec.paused = false; rec.skip = rec.skip || new Set(); rec.notes = rec.notes || []; // 清残留取消标志:resume/retry/rerun/approved 复用旧 rec 时不被误当已取消
   if (opts.initialNote) rec.notes.push(opts.initialNote); // 恢复/重试时随带的用户指令
   const task = store.getTask(taskId);
   store.setTaskStatus(taskId, 'running');

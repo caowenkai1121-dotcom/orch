@@ -15,6 +15,9 @@ function createSemaphore(n) {
 }
 let SEM = null;
 function sem() { const n = Math.max(1, parseInt(process.env.ORCH_CONCURRENCY || '3', 10)); if (!SEM || SEM._n !== n) { SEM = createSemaphore(n); SEM._n = n; } return SEM; }
+// 元调用(规划/细化/复盘/会议发言)专用信号量:与执行步分离,规划不再被占满的执行槽卡住排队(任务启动更快),仍限并发防 fork 风暴
+let METASEM = null;
+function metaSem() { const n = Math.max(1, parseInt(process.env.ORCH_META_CONCURRENCY || '4', 10)); if (!METASEM || METASEM._n !== n) { METASEM = createSemaphore(n); METASEM._n = n; } return METASEM; }
 
 // 问我模式:允许 agent 在无合理默认时输出 NEED_DECISION 停下等人
 const ASK = '[自动编排] 你在编排器中自动执行。优先自行采用最合理默认直接做完。'
@@ -265,4 +268,4 @@ async function runPlan(plan, ctx) {
   return done;
 }
 
-module.exports = { runPlan, AUTONOMY, ASK, REPLAN, sem, getFindings };
+module.exports = { runPlan, AUTONOMY, ASK, REPLAN, sem, metaSem, getFindings };

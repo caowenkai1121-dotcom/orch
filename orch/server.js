@@ -136,11 +136,19 @@ app.post('/api/grant', (req, res) => {
   res.json({ ok: true });
 });
 
+// #4 项目级审批开关(仅管理员):开启后本项目所有新任务须先审批
+app.post('/api/projects/:name/approve', adminOnly, (req, res) => {
+  store.setProjectApprove(req.params.name, !!(req.body && req.body.on));
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true });
+});
+
 // 建任务并启动:表单/定时任务/Webhook 共用
 function createAndRunTask(ownerName, body) {
   const project = body.project || '默认项目';
   const models = body.models && typeof body.models === 'object' ? body.models : null; // {执行器id:{model,effort}}
-  const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve: body.approve, isolate: body.isolate, ask: body.ask, replan: body.replan, models });
+  const approve = !!body.approve || store.projectApprove(project); // #4 任务级 或 项目级(admin 开启)审批,任一开启则须审批
+  const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve, isolate: body.isolate, ask: body.ask, replan: body.replan, models });
   const ws = taskWorkspace(store.getTask(id));
   store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
   // 全局日成本总护栏(无人值守防失控):今日累计花费已达上限则建任务但不执行,标失败可重试

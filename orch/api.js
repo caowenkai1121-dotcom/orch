@@ -5,7 +5,7 @@ const DEPT_META = {
   dev: { name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能' },
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
-const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input', paused: 'paused', meeting: 'meeting' })[s] || 'queued';
+const taskSk = (s) => ({ pending: 'queued', planning: 'planning', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input', paused: 'paused', meeting: 'meeting' })[s] || 'queued';
 const stepSk = (s) => ({ running: 'working', waiting: 'queued', done: 'done', failed: 'failed' })[s] || 'queued';
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
@@ -147,7 +147,7 @@ function buildAll(store, user) {
       id: 'PR' + i, name, client: 'orch', progress: prog,
       status: anyRun ? '进行中' : (allDone ? '已完成' : '规划'), sk: anyRun ? 'working' : (allDone ? 'done' : 'queued'),
       depts: Object.keys(deptSet), agentCount: Object.keys(agSet).length, taskCount: ts.length,
-      cost: Math.round(cost * 1000) / 1000, doneN, failN,
+      cost: Math.round(cost * 1000) / 1000, doneN, failN, approve: !!(projRow && projRow.approve),
       tasks: ts.map((t) => t.id), grantIds: store.grantsFor(name), amOwner,
       knowledge: store.projectKnowledge ? store.projectKnowledge(name) : '',
     };
@@ -157,7 +157,7 @@ function buildAll(store, user) {
   projRows.forEach((tp) => {
     if (projMap[tp.name]) return;
     if (vis && !(tp.owner === (user && user.id) || vis.has(tp.name))) return;
-    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)), knowledge: store.projectKnowledge ? store.projectKnowledge(tp.name) : '' });
+    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, approve: !!tp.approve, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)), knowledge: store.projectKnowledge ? store.projectKnowledge(tp.name) : '' });
   });
 
   const tasksVm = tasks.map((t) => {

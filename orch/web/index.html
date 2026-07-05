@@ -65,7 +65,10 @@
         应用广场
       </button>
 
-      <div style="font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#B6B1A7;padding:14px 12px 6px;">部门</div>
+      <button onClick="{{ toggleDepts }}" style-hover="background:#F2F0EA" style="width:100%;display:flex;align-items:center;gap:6px;padding:14px 12px 6px;border:none;background:transparent;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#B6B1A7;">
+        <span>{{ deptsChevron }}</span>部门<span style="font-family:'JetBrains Mono',monospace;">{{ deptCount }}</span>
+      </button>
+      <sc-if value="{{ deptsExpanded }}">
       <sc-for list="{{ depts }}" as="d" hint-placeholder-count="6">
         <button onClick="{{ d.open }}" style-hover="background:#F2F0EA" style="width:100%;display:flex;align-items:center;gap:10px;padding:7px 10px;border:none;border-radius:9px;cursor:pointer;font-size:13px;text-align:left;margin-bottom:1px;background:{{ d.nbg }};color:{{ d.nfg }};font-weight:{{ d.nw }};box-shadow:{{ d.nbar }};font-family:inherit;">
           <span style="width:18px;height:18px;flex:none;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;font-family:'JetBrains Mono',monospace;background:{{ d.color }};">{{ d.glyph }}</span>
@@ -73,6 +76,7 @@
           <span title="部门员工数" style="font-size:10.5px;color:#B6B1A7;font-family:'JetBrains Mono',monospace;">{{ d.empN }}</span>
         </button>
       </sc-for>
+      </sc-if>
 
       <div style="font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:#B6B1A7;padding:14px 12px 6px;">团队</div>
       <button onClick="{{ goAgents }}" style-hover="background:#F2F0EA" style="width:100%;display:flex;align-items:center;gap:11px;padding:8px 10px;border:none;border-radius:9px;cursor:pointer;font-size:13.5px;text-align:left;margin-bottom:2px;background:{{ nav.agents.bg }};color:{{ nav.agents.fg }};font-weight:{{ nav.agents.w }};box-shadow:{{ nav.agents.bar }};font-family:inherit;">
@@ -284,8 +288,9 @@
           <div style="flex:1;min-width:0;">
             <div style="font-size:18px;font-weight:700;letter-spacing:-.01em;">编排画布</div>
             <div style="font-size:12.5px;color:#8A857C;margin-top:3px;display:flex;align-items:center;gap:8px;"><span style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:6px;background:#fff;border:1px solid #E9E7E1;font-weight:600;color:#3C3933;">任务 · {{ activeTitle }}</span><span style="color:#C9C5BB;">·</span><span>项目 {{ activeProj }}</span></div>
-            <!-- 任务切换:可查看任意任务的编排画布,不再只锁定最新任务 -->
+            <!-- 任务切换:可查看任意任务的编排画布,不再只锁定最新任务;支持搜索历史任务 -->
             <div style="margin-top:8px;display:flex;align-items:center;gap:6px;overflow-x:auto;padding-bottom:2px;">
+              <input id="canvas-search" onkeydown="{{ onCanvasSearchKey }}" placeholder="🔍 搜历史任务(标题/编号)" style="flex:none;width:180px;height:26px;padding:0 10px;border-radius:7px;border:1px solid #E9E7E1;font-family:inherit;font-size:11.5px;outline:none;background:#fff;">
               <button onClick="{{ pickCanvasLatest }}" title="跟随最新任务" style="flex:none;height:26px;padding:0 10px;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:600;font-family:inherit;background:{{ canvasFollowBg }};color:{{ canvasFollowFg }};border:1px solid {{ canvasFollowBd }};">最新</button>
               <sc-for list="{{ canvasTasks }}" as="ct"><button onClick="{{ ct.pick }}" title="{{ ct.title }}" style="flex:none;height:26px;padding:0 11px;border-radius:7px;cursor:pointer;font-size:11.5px;font-weight:600;font-family:inherit;white-space:nowrap;background:{{ ct.bg }};color:{{ ct.fg }};border:1px solid {{ ct.bd }};">#{{ ct.id }} {{ ct.title }}</button></sc-for>
             </div>
@@ -785,7 +790,12 @@
           </sc-for>
         </div>
 
-        <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 12px;"><span style="font-size:13.5px;font-weight:650;">本部门 Agent</span></div>
+        <div style="display:flex;align-items:center;gap:9px;margin:4px 2px 12px;"><span style="font-size:13.5px;font-weight:650;">本部门 Agent</span><sc-if value="{{ isAdmin }}"><button onClick="{{ toggleDeptAdd }}" style="height:26px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 添加已有 Agent</button></sc-if></div>
+        <sc-if value="{{ deptAddOpen }}">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:#FBFAF8;border:1px solid #EEEDE7;border-radius:11px;margin-bottom:12px;">
+          <sc-for list="{{ deptAddableAgents }}" as="aa"><button onClick="{{ aa.add }}" title="加入本部门" style="display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E9E7E1;cursor:pointer;font-family:inherit;font-size:12px;color:#3C3933;"><span style="width:18px;height:18px;border-radius:5px;background:{{ aa.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ aa.avatar }}</span>{{ aa.name }}</button></sc-for>
+        </div>
+        </sc-if>
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
           <sc-for list="{{ dept.agents }}" as="a" hint-placeholder-count="3">
             <button onClick="{{ a.open }}" style-hover="border-color:#D9D5CC" style="text-align:left;cursor:pointer;background:#fff;border:1px solid #E9E7E1;border-radius:13px;padding:14px;font-family:inherit;box-shadow:0 1px 2px rgba(20,18,14,.04);">
@@ -855,6 +865,12 @@
             <sc-for list="{{ grantPeople }}" as="p" hint-placeholder-count="3"><button onClick="{{ p.toggle }}" style="display:flex;align-items:center;gap:7px;border:1px solid {{ p.bd }};background:{{ p.bg }};border-radius:8px;padding:5px 11px;cursor:pointer;font-family:inherit;font-size:12.5px;"><span style="width:20px;height:20px;border-radius:6px;background:{{ p.color }};color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ p.av }}</span>{{ p.name }} · {{ p.label }}</button></sc-for>
           </div>
         </div>
+        <sc-if value="{{ isAdmin }}">
+        <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+          <div style="flex:1;"><div style="font-size:13.5px;font-weight:650;">🔐 项目审批</div><div style="font-size:12px;color:#8A857C;margin-top:3px;">开启后本项目所有新任务须先审批(批准/编辑计划)才执行;默认关闭。</div></div>
+          <button onClick="{{ toggleProjApprove }}" style="flex:none;height:32px;padding:0 15px;border-radius:9px;background:{{ projApproveBg }};color:{{ projApproveFg }};border:1px solid {{ projApproveBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">{{ projApproveLabel }}</button>
+        </div>
+        </sc-if>
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:14px 16px;margin-bottom:16px;">
           <div style="font-size:13.5px;font-weight:650;margin-bottom:4px;">📘 项目约定 / 知识</div>
           <div style="font-size:12px;color:#8A857C;margin-bottom:10px;">技术栈、目录约定、验收口径等——会注入本项目每个任务的员工简报,免每次从零猜(无人值守下员工不能反问)。</div>
@@ -1346,8 +1362,14 @@
           <button onClick="{{ toggleMeetRoster }}" style="height:26px;padding:0 11px;border-radius:20px;background:#F0EEE9;border:1px dashed #C9C4BA;cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:600;color:#6B6760;">＋@ 员工加入</button>
         </div>
         <sc-if value="{{ meetRosterOpen }}">
-        <div style="margin-top:8px;max-height:132px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px;padding:9px;background:#FBFAF8;border:1px solid #EEEDE7;border-radius:10px;">
-          <sc-for list="{{ meetRoster }}" as="rr"><button onClick="{{ rr.summon }}" style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:8px;background:#fff;border:1px solid #E9E7E1;cursor:pointer;font-family:inherit;font-size:11.5px;color:#3C3933;"><span>{{ rr.avatar }}</span>{{ rr.name }}<span style="color:#A39E94;">· {{ rr.deptName }}</span></button></sc-for>
+        <div style="margin-top:8px;padding:9px;background:#FBFAF8;border:1px solid #EEEDE7;border-radius:10px;">
+          <input id="meet-roster-search" onkeydown="{{ onMeetRosterKey }}" placeholder="🔍 搜员工姓名" style="width:100%;height:30px;padding:0 10px;border-radius:8px;border:1px solid #E6E3DC;font-family:inherit;font-size:12px;outline:none;margin-bottom:8px;box-sizing:border-box;">
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;">
+            <sc-for list="{{ meetRosterDepts }}" as="rd"><button onClick="{{ rd.pick }}" style="height:24px;padding:0 9px;border-radius:7px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;background:{{ rd.bg }};color:{{ rd.fg }};border:1px solid {{ rd.bd }};">{{ rd.name }}</button></sc-for>
+          </div>
+          <div style="max-height:150px;overflow-y:auto;display:flex;flex-wrap:wrap;gap:6px;">
+            <sc-for list="{{ meetRoster }}" as="rr"><button onClick="{{ rr.summon }}" style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:8px;background:#fff;border:1px solid #E9E7E1;cursor:pointer;font-family:inherit;font-size:11.5px;color:#3C3933;"><span>{{ rr.avatar }}</span>{{ rr.name }}<span style="color:#A39E94;">· {{ rr.deptName }}</span></button></sc-for>
+          </div>
         </div>
         </sc-if>
       </div>
