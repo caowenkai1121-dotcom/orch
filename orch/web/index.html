@@ -1160,7 +1160,9 @@
       <input id="na-args" value="{{ naArgs }}" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-model" value="{{ naModel }}" placeholder="模型标签(可选,仅展示)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <div style="display:flex;gap:9px;margin-bottom:9px;">
-        <input id="na-defmodel" value="{{ naDefModel }}" placeholder="默认大模型(如 claude-opus-4-8;用户没指定时用)" style="flex:1;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+        <select id="na-defmodel" title="默认大模型(用户没指定时用)" style="flex:1;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 9px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
+          <sc-for list="{{ naDefModelOpts }}" as="o"><option value="{{ o.v }}">默认模型: {{ o.n }}</option></sc-for>
+        </select>
         <select id="na-defeffort" style="width:130px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
           <sc-for list="{{ naEffOpts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
         </select>

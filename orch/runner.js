@@ -228,8 +228,10 @@ async function openMeeting(taskId, deps) {
   store.setTaskStatus(taskId, 'meeting');
   if (store.addEvent) store.addEvent(taskId, 'meeting', 'open');
   const names = attendees.map((id) => { const r = store.getRole(id); return r ? r.name : id; }).join('、');
-  store.addMeetingMsg(taskId, { role: 'system', name: '会议室', avatar: '🏛', text: '方案讨论会开始。议题:' + (t.text || '') + '。参会:' + names + '。你可随时发言、@员工拉人加入;讨论完点「结束会议 · 生成方案」即开始实现。' });
-  store.addTaskMsg(taskId, 'system', '🗣 复杂任务已开「方案会议室」,员工正在讨论需求,你可参与并 @ 员工;讨论完点「结束会议 · 生成方案」即开始实现。');
+  const mainName = (plan.meeting && plan.meeting.mainDeptName) || '';
+  const deptLine = mainName ? '经分析,建议主负责部门:「' + mainName + '」——会上确认后由该部门主导执行,确需时可跨部门借调协助。' : '';
+  store.addMeetingMsg(taskId, { role: 'system', name: '会议室', avatar: '🏛', text: '方案讨论会开始。议题:' + (t.text || '') + '。' + deptLine + '参会:' + names + '。你可随时发言、@员工拉人加入;讨论完点「结束会议 · 生成方案」即开始实现。' });
+  store.addTaskMsg(taskId, 'system', '🗣 复杂任务已开「方案会议室」' + (mainName ? '(建议主负责部门:' + mainName + ')' : '') + ',员工正在讨论需求,你可参与并 @ 员工;讨论完点「结束会议 · 生成方案」即开始实现。');
   emit(onEvent, taskId, null, 'meeting', 'open');
   emit(onEvent, taskId, null, 'task', 'meeting');
   // 开场:各参会员工依次抛观点(看得到彼此发言,像讨论)

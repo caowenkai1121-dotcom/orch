@@ -214,7 +214,7 @@ class MaestroBase extends RT.Component {
   deptName(id) { const d = this.DEPTS.find(x => x.id === id); return d ? d.name : id; }
 
   decD(d) {
-    const ags = this.AGENTS.filter(a => a.dept === d.id);
+    const ags = this.AGENTS.filter(a => a.enabled !== false && (a.dept === d.id || (d.executors || []).indexOf(a.id) >= 0)); // #1停用不显 #2 家在此部门或在本部门执行器池的都显示
     const working = ags.filter(a => a.status === 'working').length;
     const blocked = ags.some(a => a.status === 'blocked');
     const on = this.state.screen === 'department' && this.state.deptId === d.id;
@@ -483,7 +483,7 @@ class Maestro extends MaestroBase {
     v.onProjQuickKey = (e) => { if (e.key === 'Enter') this.projQuickLaunch(); };
     // 新建任务:执行器为可点选 chip(勾选后才显示其模型/思考级别);支持多选
     const ntSel = this.state.ntAgents || [];
-    v.ntAgentChips = (this.AGENTS || []).map((a) => { const on = ntSel.indexOf(a.id) >= 0; return { id: a.id, name: a.name, on, bg: on ? '#1A1814' : '#fff', fg: on ? '#fff' : '#3C3933', bd: on ? '#1A1814' : '#ECEAE4', toggle: () => this.toggleNtAgent(a.id) }; });
+    v.ntAgentChips = (this.AGENTS || []).filter((a) => a.enabled !== false).map((a) => { const on = ntSel.indexOf(a.id) >= 0; return { id: a.id, name: a.name, on, bg: on ? '#1A1814' : '#fff', fg: on ? '#fff' : '#3C3933', bd: on ? '#1A1814' : '#ECEAE4', toggle: () => this.toggleNtAgent(a.id) }; }); // #1 停用 agent 不显示
     v.modelPick = this.modelPickers().filter((mp) => ntSel.indexOf(mp.agent) >= 0); // 只显已勾选执行器的模型选择
     v.hasModelPick = v.modelPick.length > 0;
     // 剧本选项(新建任务)
@@ -650,7 +650,12 @@ class Maestro extends MaestroBase {
     v.naCmd = ea ? (ea.command || '') : '';
     v.naArgs = ea ? (Array.isArray(ea.args) ? ea.args.join(' ') : '') : '';
     v.naModel = ea && ea.model && ea.model !== '—' ? ea.model : '';
-    v.naDefModel = ea && ea.defModel ? ea.defModel : ''; // #4 默认大模型
+    // #3 默认大模型:下拉枚举(按执行器给已知模型;保留已存的自定义值)
+    const MODELS = { claude: [{ v: '', n: '默认' }, { v: 'claude-fable-5', n: 'Fable 5' }, { v: 'claude-opus-4-8', n: 'Opus 4.8' }], codex: [{ v: '', n: '默认' }, { v: 'gpt-5.5', n: 'GPT-5.5' }, { v: 'gpt-5.4', n: 'GPT-5.4' }] };
+    const dm = ea && ea.defModel ? ea.defModel : '';
+    const dmOpts = (ea && MODELS[ea.id]) ? MODELS[ea.id].slice() : [{ v: '', n: '默认' }];
+    if (dm && !dmOpts.some((o) => o.v === dm)) dmOpts.push({ v: dm, n: dm });
+    v.naDefModelOpts = dmOpts.map((o) => ({ ...o, sel: o.v === dm })).sort((a, b) => (a.sel ? 0 : 1) - (b.sel ? 0 : 1)); // 当前值置顶=默认选中
     const naDe = ea && ea.defEffort ? ea.defEffort : '';
     v.naEffOpts = [{ v: '', n: '思考:默认' }, { v: 'low', n: '低' }, { v: 'medium', n: '中' }, { v: 'high', n: '高' }, { v: 'xhigh', n: '超高' }, { v: 'max', n: '极限' }].map((o) => ({ ...o, sel: o.v === naDe })).sort((a, b) => (a.sel ? 0 : 1) - (b.sel ? 0 : 1)); // 当前值置顶=默认选中
     v.naCaps = ea && ea.caps ? ea.caps.join(',') : '';
@@ -738,7 +743,7 @@ class Maestro extends MaestroBase {
     v.noFlow = !v.hasFlow;
     v.addFlowStep = () => this.addFlowStep();
     v.flowAddOpts = v.deptEmployees.map((e) => ({ id: e.id, name: e.name }));
-    v.deptExecs = ((this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli')).map((a) => {
+    v.deptExecs = ((this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== false)).map((a) => { // #1 停用 agent 不显示
       const on = ((curD && curD.executors) || []).indexOf(a.id) >= 0;
       return { id: a.id, name: a.name, on, bd: on ? '#B9E2C8' : '#E6E3DC', bg: on ? '#E4F4EA' : '#fff', toggle: () => this.toggleDeptExec(a.id) };
     });

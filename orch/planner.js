@@ -99,8 +99,23 @@ function validateRoles(plan, roleIds) {
   return plan.steps.every(check);
 }
 
+// 任务分派:分析任务,判定最应"主负责"的部门(会议据此确认;实现仍可跨部门借调协助)
+async function pickMainDept(text, depts, roles, claude) {
+  const byDept = {}; (roles || []).forEach((r) => { if (r.dept !== '__system') (byDept[r.dept] = byDept[r.dept] || []).push(r.name); });
+  const usable = (depts || []).filter((d) => d.id !== '__system' && byDept[d.id]);
+  if (usable.length < 2) return null;
+  const list = usable.map((d) => d.id + ':' + d.name + '(' + (byDept[d.id] || []).slice(0, 4).join('、') + ')').join('\n');
+  const prompt = '你是任务分派专家。下面是公司各部门(id:名称(部分员工))。判断这个开发任务最应由哪个部门"主负责"(挑最相关的一个)。\n' + list
+    + '\n\n任务: ' + text + '\n\n只输出该部门的 id(如 engineering),不要解释、不要标点。';
+  const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
+  const raw = String(output || '').trim().toLowerCase();
+  const ids = usable.map((d) => d.id);
+  return ids.find((id) => raw === id.toLowerCase()) || ids.find((id) => raw.includes(id.toLowerCase())) || null;
+}
+
 // 总调度员:最高权限,可调度所有部门所有员工;注入部门流程规范与质量门方法论(参考 agents-orchestrator)
-async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, chiefMemo, feedback) {
+// mainDept:分析定出的主负责部门 id——优先指派该部门员工主导,仅确需时少量借调其他部门协助
+async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, chiefMemo, feedback, mainDept) {
   const byDept = {};
   roles.forEach((r) => { (byDept[r.dept] = byDept[r.dept] || []).push(r); });
   const dName = {}; const dFlow = {};
@@ -120,6 +135,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
     + (chiefMemo ? `你的过往调度复盘(优先吸取):\n${chiefMemo}\n` : '') + '\n'
     + (deptId ? `本任务是「${dName[deptId] || deptId}」的部门任务,只用该部门员工,严格按其标准流程拆分(可选环节由你判断是否需要;质量门环节用 loop 包住"产出员工→门禁员工",失败重做)。\n` : '')
+    + (mainDept && !deptId ? `【主负责部门】经分析,本任务由「${dName[mainDept] || mainDept}」主负责:请优先指派该部门员工主导实现(实现步大多落在该部门);仅当确需其他部门的专长(如设计出图、测试把关)时,少量借调其他部门员工协助,不要把工作平均分散到各部门。\n` : '')
     + `公司部门与员工目录:\n${catalog}\n\n`
     + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出(质量门据此判定)"。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
@@ -261,7 +277,7 @@ function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
 // 用户需求:复杂任务先开"方案会议"(代码强制,不靠 LLM 自觉)。计划够复杂(≥4步且≥2不同角色)则前置:
 // 每个参会角色并行写本视角方案要点 md → 一个"方案综合"步产出《方案.md》→ 原实现步的根全部改为依赖综合步、按方案做。
 // 让编排画布清楚看到"先开会定方案、再各角色分头实现"。简单任务(<4步或角色单一)不开会,直接做。
-function prependMeeting(plan, roleMap) {
+function prependMeeting(plan, roleMap, mainDept, depts) {
   const ids = Object.keys(roleMap || {});
   if (!plan || !Array.isArray(plan.steps) || plan.steps.length < 4) {
     // 简单任务不开会:员工模式下(有员工目录)记一笔,让操作者在任务记录里看到"判为简单、跳过会议"
@@ -269,9 +285,9 @@ function prependMeeting(plan, roleMap) {
     return plan;
   }
   if (ids.length < 2) return plan; // 无员工目录(执行器模式),不开会
-  // 参会角色从员工目录挑:优先设计/规划类(架构/产品/评审/测试/负责人),不足则补其它——不依赖 LLM 是否在实现步用了 role
+  // 参会角色从员工目录挑:主负责部门的角色优先参会 + 设计/规划类(架构/产品/评审/测试/负责人)跨职能把关
   const want = ['architect', 'product', 'reviewer', 'lead', 'qa', 'test', 'design', 'prototyper', 'manager', 'engineer'];
-  const score = (id) => want.reduce((n, w) => n + (String(id).toLowerCase().includes(w) ? 1 : 0), 0);
+  const score = (id) => want.reduce((n, w) => n + (String(id).toLowerCase().includes(w) ? 1 : 0), 0) + ((mainDept && roleMap[id] && roleMap[id].dept === mainDept) ? 5 : 0);
   const attendees = ids.slice().sort((a, b) => score(b) - score(a)).slice(0, 3);
   if (attendees.length < 2) return plan;
   const fid = (r) => 'meet_' + String(r).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').slice(0, 24);
@@ -284,13 +300,16 @@ function prependMeeting(plan, roleMap) {
   }));
   const decide = {
     id: 'decide_plan', role: attendees[0], agent: ex(attendees[0]), deps: meetSteps.map((m) => m.id),
-    prompt: '【方案综合·会议主持】读齐各位的 ' + meetSteps.map((m) => m.id + '.md').join('、') + ',综合成最终《方案.md》:确定总体架构、模块划分、接口/数据约定、各部分分工、验收口径。这是后续所有实现步的唯一依据。',
+    prompt: '【方案综合·会议主持】读齐各位的 ' + meetSteps.map((m) => m.id + '.md').join('、') + ',综合成最终《方案.md》:'
+      + (mainDept ? '先确认本任务主负责部门(建议「' + ((depts || []).find((d) => d.id === mainDept) || {}).name + '」,由其主导实现,其他部门按需协助);再' : '')
+      + '确定总体架构、模块划分、接口/数据约定、各部分分工、验收口径。这是后续所有实现步的唯一依据。',
     expected_outcome: '《方案.md》——定架构/接口/分工/验收',
   };
   plan.steps.forEach((s) => { if (!Array.isArray(s.deps) || !s.deps.length) s.deps = ['decide_plan']; }); // 原实现步的根改为依赖会议结论
   plan.steps = [...meetSteps, decide, ...plan.steps];
-  // 会议元数据:供 runner 识别→开交互式会议室(员工+用户群聊)代替内联跑 meet_* 步;结束会议时这些步标 done 并 seed
-  plan.meeting = { attendees, meetIds: meetSteps.map((m) => m.id), decideId: 'decide_plan' };
+  // 会议元数据:供 runner 识别→开交互式会议室;含主负责部门(会上确认、该部门主导执行、可跨部门协助)
+  const dName = {}; (depts || []).forEach((d) => { dName[d.id] = d.name; });
+  plan.meeting = { attendees, meetIds: meetSteps.map((m) => m.id), decideId: 'decide_plan', mainDept: mainDept || '', mainDeptName: (mainDept && dName[mainDept]) || '' };
   return plan;
 }
 
@@ -324,8 +343,11 @@ async function makePlan(text, opts) {
   // 2) 员工模式(默认):总调度按部门员工目录与流程规范拆分;部门任务只用该部门员工
   //    自愈:非法 role → 就近纠正;仍非法 → 带错误反馈让 LLM 重拆一次(避免默默丢角色回退到裸执行器)
   if (roleIds.length && claude && mode !== 'template') {
+    // 分析任务→定主负责部门(仅默认全局任务时;显式部门任务/文字编排不覆盖)。会议据此确认,该部门主导执行、可跨部门协助
+    let mainDept = null;
+    if (!dept && !orch) { try { mainDept = await pickMainDept(brief, depts, empRoles, claude); } catch (e) {} }
     try {
-      let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo);
+      let p = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, undefined, mainDept);
       // 接受条件:每步是合法 role,或 LLM 夹带的裸合法 agent(容忍夹带,resolveRoles 会把裸 agent coerce 到部门执行器池);非法 role 仍视为失败
       const rmOk = (s) => s.type === 'loop' ? (Array.isArray(s.body) && s.body.length && s.body.every(rmOk)) : (roleIds.includes(s.role) || (!s.role && allowed.includes(s.agent)));
       // 提速:首版计划已可接受(结构合法)就直接用,不再花一次昂贵 LLM 回喂重拆;仅当首版不可接受(非法员工/缺指派/loop缺body)才带问题回喂一次
@@ -335,10 +357,10 @@ async function makePlan(text, opts) {
         const lint = lintPlan(p, true);
         if (bad.length || lint.length) {
           const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
-          try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb); coerceRoles(p2.steps, roleIds); if (p2.steps.every(rmOk)) p = p2; } catch (e) {}
+          try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb, mainDept); coerceRoles(p2.steps, roleIds); if (p2.steps.every(rmOk)) p = p2; } catch (e) {}
         }
       }
-      prependMeeting(p, roleMap); // 复杂计划前置"方案会议":讨论步→方案综合→实现步依赖它(代码强制,画布可见先开会再实现)
+      prependMeeting(p, roleMap, mainDept, depts); // 复杂计划前置"方案会议":讨论步→方案综合→实现步依赖它;传主部门→会上确认主负责部门、参会偏向该部门
       if (p.steps.every(rmOk)) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); return p; } // 解析:role→executor、裸 agent→coerce 到池(防 broken 自动发现 agent 混入)
     } catch (e) { /* 落到执行器模式 */ }
     empModeFell = true; // 员工模式进了但没成功返回 → 下面回退即降级
@@ -370,4 +392,4 @@ async function makePlan(text, opts) {
   return mark({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] });
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan, extractJson, fill, prependMeeting };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, lintPlan, mergeEditedPlan, extractJson, fill, prependMeeting };
