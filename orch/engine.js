@@ -146,10 +146,11 @@ async function runStep(step, ctx, prevOutput) {
     const notes = ctx.takeNotes ? ctx.takeNotes() : '';
     if (notes) prompt = '【用户最新指令(优先遵守)】\n' + notes + '\n\n' + prompt;
     ctx.onStatus(step.id, 'running');
-    // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式)
+    // 用户为该执行器选的大模型+思考级别(兼容旧的纯字符串格式);任务没指定则回退到该执行器的默认(#4)
     const mm = ctx.models && ctx.models[step.agent];
-    const model = (typeof mm === 'string' ? mm : (mm && mm.model)) || null;
-    const effort = (mm && typeof mm === 'object' && mm.effort) || null;
+    const dd = ctx.agentDefaults && ctx.agentDefaults[step.agent];
+    const model = (typeof mm === 'string' ? mm : (mm && mm.model)) || (dd && dd.model) || null;
+    const effort = (mm && typeof mm === 'object' && mm.effort) || (dd && dd.effort) || null;
     res = await adapter.run({
       prompt, workdir, model, effort,
       permission: step.permission, // #18 'read'=只读沙箱(审查/分析步)| 缺省 write(现有行为)

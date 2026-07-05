@@ -14,7 +14,7 @@ function roleMap(store) {
   store.listAgents().forEach((a) => {
     let caps = []; try { caps = JSON.parse(a.caps); } catch (e) {}
     let args = []; try { args = JSON.parse(a.args); } catch (e) {}
-    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli', enabled: a.enabled !== 0 };
+    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli', enabled: a.enabled !== 0, defModel: a.default_model || '', defEffort: a.default_effort || '' };
   });
   return m;
 }
@@ -94,6 +94,7 @@ function buildAll(store, user) {
     }
     return {
       id, name: r.label, type: id, dept: r.dept, enabled: r.enabled,
+      defModel: r.defModel, defEffort: r.defEffort,
       command: r.command, args: r.args, image: r.image, kind: r.kind,
       color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',
@@ -147,7 +148,7 @@ function buildAll(store, user) {
       id: 'PR' + i, name, client: 'orch', progress: prog,
       status: anyRun ? '进行中' : (allDone ? '已完成' : '规划'), sk: anyRun ? 'working' : (allDone ? 'done' : 'queued'),
       depts: Object.keys(deptSet), agentCount: Object.keys(agSet).length, taskCount: ts.length,
-      cost: Math.round(cost * 1000) / 1000, doneN, failN, approve: !!(projRow && projRow.approve),
+      cost: Math.round(cost * 1000) / 1000, doneN, failN, approve: !!(projRow && projRow.approve), budget: (projRow && projRow.budget) || 0,
       tasks: ts.map((t) => t.id), grantIds: store.grantsFor(name), amOwner,
       knowledge: store.projectKnowledge ? store.projectKnowledge(name) : '',
     };
@@ -157,7 +158,7 @@ function buildAll(store, user) {
   projRows.forEach((tp) => {
     if (projMap[tp.name]) return;
     if (vis && !(tp.owner === (user && user.id) || vis.has(tp.name))) return;
-    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, approve: !!tp.approve, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)), knowledge: store.projectKnowledge ? store.projectKnowledge(tp.name) : '' });
+    projects.push({ id: tp.id, name: tp.name, client: tp.client || 'orch', progress: 0, status: '规划', sk: 'queued', depts: [], agentCount: 0, taskCount: 0, cost: 0, doneN: 0, failN: 0, approve: !!tp.approve, budget: tp.budget || 0, tasks: [], grantIds: store.grantsFor(tp.name), amOwner: !!(user && (user.admin || tp.owner === user.id)), knowledge: store.projectKnowledge ? store.projectKnowledge(tp.name) : '' });
   });
 
   const tasksVm = tasks.map((t) => {
@@ -197,7 +198,7 @@ function buildAll(store, user) {
   const lastTs = tasks.length ? tasks[0].updated_at : null;
   const people = store.listPeople().map((p) => {
     const assigned = store.listPersonAgents(p.id);
-    return { id: p.id, name: p.name, av: p.av, color: p.color, role: p.role, email: p.email, projects: projN, agents: assigned.length, assignedIds: assigned, last: rel(lastTs) };
+    return { id: p.id, name: p.name, av: p.av, color: p.color, role: p.role, email: p.email, projects: projN, agents: assigned.length, assignedIds: assigned, last: rel(lastTs), budget: p.budget || 0, spend: Math.round((store.userSpend ? store.userSpend(p.name) : 0) * 1000) / 1000 };
   });
 
   const today = store.usageToday();

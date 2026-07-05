@@ -419,7 +419,7 @@
         <div style="display:flex;align-items:flex-start;gap:16px;margin-bottom:8px;">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:10px;"><span style="font-size:12px;font-family:'JetBrains Mono',monospace;color:#A39E94;">{{ task.id }}</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:7px;background:{{ task.sBg }};color:{{ task.sC }};"><span style="width:6px;height:6px;border-radius:50%;background:{{ task.sDot }};"></span>{{ task.sLabel }}</span></div>
-            <h1 style="font-size:21px;font-weight:700;letter-spacing:-.01em;margin:9px 0 6px;">{{ task.title }}</h1>
+            <div style="display:flex;align-items:center;gap:8px;margin:9px 0 6px;"><h1 style="font-size:21px;font-weight:700;letter-spacing:-.01em;margin:0;">{{ task.title }}</h1><sc-if value="{{ canRename }}"><button onClick="{{ renameTaskUI }}" title="重命名任务" style="flex:none;height:26px;width:28px;border-radius:7px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:12px;">✎</button></sc-if></div>
             <div style="font-size:13px;color:#8A857C;">项目 <b style="color:#3C3933;">{{ task.proj }}</b><sc-if value="{{ task.dept }}"> · 挂靠 <b style="color:#3C3933;">{{ task.dept }}</b></sc-if> · 由 <b style="color:#3C3933;">{{ opName }}</b> 创建 · 编排器统筹的 <b style="color:#3C3933;">开发 ↺ 验证</b> 接力</div>
             <div style="display:flex;gap:14px;margin-top:8px;font-size:12px;color:#8A857C;">
               <sc-if value="{{ task.progressLabel }}"><span>📊 进度 <b style="color:#3C3933;">{{ task.progressLabel }}</b></span></sc-if>
@@ -678,6 +678,13 @@
               <div style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#A39E94;margin-bottom:11px;">能力</div>
               <div style="display:flex;flex-wrap:wrap;gap:7px;"><sc-for list="{{ agent.caps }}" as="c" hint-placeholder-count="4"><span style="font-size:12px;font-weight:500;padding:4px 10px;border-radius:7px;background:#F5F4F1;border:1px solid #ECEAE4;color:#3C3933;">{{ c }}</span></sc-for></div>
             </div>
+            <sc-if value="{{ isAdmin }}">
+            <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:16px;box-shadow:0 1px 2px rgba(20,18,14,.04);">
+              <div style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#A39E94;margin-bottom:5px;">加入部门(执行器池)</div>
+              <div style="font-size:11.5px;color:#8A857C;margin-bottom:11px;">点选把该 Agent 加入这些部门,可批量点多个;加入后该部门任务可用它。</div>
+              <div style="display:flex;flex-wrap:wrap;gap:7px;"><sc-for list="{{ agentDeptChips }}" as="d"><button onClick="{{ d.toggle }}" style="font-size:12px;font-weight:600;padding:5px 11px;border-radius:8px;cursor:pointer;font-family:inherit;background:{{ d.bg }};color:{{ d.fg }};border:1px solid {{ d.bd }};">{{ d.name }}</button></sc-for></div>
+            </div>
+            </sc-if>
             <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:16px;box-shadow:0 1px 2px rgba(20,18,14,.04);">
               <div style="font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#A39E94;margin-bottom:11px;">当前任务</div>
               <button onClick="{{ openCurTask }}" style-hover="background:#FAF9F6" style="width:100%;text-align:left;background:transparent;border:none;cursor:pointer;font-family:inherit;padding:2px;">
@@ -870,6 +877,11 @@
           <div style="flex:1;"><div style="font-size:13.5px;font-weight:650;">🔐 项目审批</div><div style="font-size:12px;color:#8A857C;margin-top:3px;">开启后本项目所有新任务须先审批(批准/编辑计划)才执行;默认关闭。</div></div>
           <button onClick="{{ toggleProjApprove }}" style="flex:none;height:32px;padding:0 15px;border-radius:9px;background:{{ projApproveBg }};color:{{ projApproveFg }};border:1px solid {{ projApproveBd }};font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">{{ projApproveLabel }}</button>
         </div>
+        <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+          <div style="flex:1;"><div style="font-size:13.5px;font-weight:650;">💰 项目总成本上限</div><div style="font-size:12px;color:#8A857C;margin-top:3px;">本项目累计已花 <b style="color:#3C3933;">${{ project.cost }}</b> · 达上限后未启动步骤暂停;0/空=不限。</div></div>
+          <input id="proj-budget" value="{{ projBudget }}" type="number" min="0" step="1" placeholder="不限" style="flex:none;width:90px;height:32px;border:1px solid #E6E3DC;border-radius:8px;padding:0 9px;font-family:inherit;font-size:12.5px;box-sizing:border-box;">
+          <button onClick="{{ saveProjBudget }}" style="flex:none;height:32px;padding:0 14px;border-radius:9px;background:#1A1814;color:#fff;border:none;font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">保存</button>
+        </div>
         </sc-if>
         <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;padding:14px 16px;margin-bottom:16px;">
           <div style="font-size:13.5px;font-weight:650;margin-bottom:4px;">📘 项目约定 / 知识</div>
@@ -1019,6 +1031,7 @@
               <span style="width:80px;text-align:center;font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">{{ p.projects }}</span>
               <span style="width:80px;text-align:center;font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">{{ p.agents }}</span>
               <span style="width:70px;text-align:right;font-size:11.5px;color:#A39E94;">{{ p.last }}</span>
+              <sc-if value="{{ p.canSetBudget }}"><button onClick="{{ p.setBudget }}" title="设该用户总成本上限" style="margin-left:10px;height:28px;padding:0 11px;border-radius:7px;background:#fff;border:1px solid #E6E3DC;font-size:12px;cursor:pointer;font-family:inherit;">💰 {{ p.budgetLabel }}</button></sc-if>
               <button onClick="{{ p.assign }}" style="margin-left:10px;height:28px;padding:0 11px;border-radius:7px;background:#fff;border:1px solid #E6E3DC;font-size:12px;cursor:pointer;font-family:inherit;">分配</button>
             </div>
           </sc-for>
@@ -1093,24 +1106,13 @@
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="nt-mode" value="llm" checked>智能拆解(LLM)</label>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="radio" name="nt-mode" value="template">模板(开发→验证)</label>
       </div>
-      <div style="display:flex;gap:14px;align-items:center;margin-top:10px;font-size:13px;">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="nt-approve">逐步审批</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="nt-ask">遇抉择问我</label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;" title="运行中步骤发现实现现实与原计划结构性不符时,自动就剩余工作重新规划(默认关;上限3次,旧计划可回滚)"><input type="checkbox" id="nt-replan">遇偏离重规划</label>
-        <label style="display:flex;align-items:center;gap:6px;" title="累计成本达上限后暂停未启动步骤,防无人值守烧钱失控;0/空=不限"><span style="color:#8A857C;">成本上限 $</span><input type="number" id="nt-budget" min="0" step="0.1" placeholder="不限" style="width:64px;height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 8px;font-family:inherit;font-size:12.5px;"></label>
-        <span style="color:#8A857C;">隔离</span>
-        <select id="nt-isolate" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 8px;font-family:inherit;font-size:12.5px;">
-          <option value="none">无(共享data目录)</option>
-          <option value="worktree">git worktree</option>
-          <option value="container">容器(仅自定义agent)</option>
-        </select>
-      </div>
       <div style="margin-top:12px;font-size:13px;">
-        <div style="color:#8A857C;margin-bottom:6px;">用哪些 Agent(不选=自动/全部)</div>
+        <div style="color:#8A857C;margin-bottom:6px;">用哪些 Agent(不选=自动/全部;勾选后可为其设模型与思考级别)</div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          <sc-for list="{{ agents }}" as="a" hint-placeholder-count="2"><label style="display:flex;align-items:center;gap:6px;border:1px solid #ECEAE4;border-radius:7px;padding:4px 9px;cursor:pointer;"><input type="checkbox" class="nt-agent" value="{{ a.id }}">{{ a.name }}</label></sc-for>
+          <sc-for list="{{ ntAgentChips }}" as="a" hint-placeholder-count="2"><button onClick="{{ a.toggle }}" style="display:flex;align-items:center;gap:6px;border:1px solid {{ a.bd }};background:{{ a.bg }};color:{{ a.fg }};border-radius:7px;padding:5px 12px;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;">{{ a.name }}</button></sc-for>
         </div>
         <input id="nt-orch" placeholder="文字编排(可选): 如 claude 开发、codex 测试" style="width:100%;margin-top:8px;height:32px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:12.5px;box-sizing:border-box;">
+        <sc-if value="{{ hasModelPick }}">
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:9px;">
           <span style="color:#8A857C;">大模型:</span>
           <sc-for list="{{ modelPick }}" as="mp">
@@ -1124,14 +1126,10 @@
             </label>
           </sc-for>
         </div>
+        </sc-if>
         <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer;"><input type="checkbox" id="nt-refine" checked>智能细化需求(先扩写成高质量 brief 再开发)</label>
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:9px;font-size:12.5px;">
-          <span style="color:#8A857C;">📋 剧本:</span>
-          <select id="nt-playbook" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;max-width:170px;">
-            <option value="">不用(智能拆分)</option>
-            <sc-for list="{{ playbookOpts }}" as="pb"><option value="{{ pb.id }}">{{ pb.name }}</option></sc-for>
-          </select>
-          <span style="color:#8A857C;">⏰ 定时:</span>
+          <span style="color:#8A857C;">⏰ 定时(选重复方式即建定时任务):</span>
           <select id="nt-sched-kind" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;">
             <option value="">不重复</option><option value="daily">每天</option><option value="weekly">每周</option><option value="hours">每N小时</option>
           </select>
@@ -1160,7 +1158,13 @@
       </select>
       <input id="na-cmd" value="{{ naCmd }}" placeholder="命令(CLI类必填,如 gemini;大模型/视频/语音可留空)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-args" value="{{ naArgs }}" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-model" value="{{ naModel }}" placeholder="模型(可选)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-model" value="{{ naModel }}" placeholder="模型标签(可选,仅展示)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <div style="display:flex;gap:9px;margin-bottom:9px;">
+        <input id="na-defmodel" value="{{ naDefModel }}" placeholder="默认大模型(如 claude-opus-4-8;用户没指定时用)" style="flex:1;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;">
+        <select id="na-defeffort" style="width:130px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
+          <sc-for list="{{ naEffOpts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
+        </select>
+      </div>
       <input id="na-caps" value="{{ naCaps }}" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
       <input id="na-image" value="{{ naImage }}" placeholder="容器镜像(选填,任务选容器隔离时用)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
       <select id="na-dept" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">

@@ -80,15 +80,28 @@ app.get('/api/agentlog/:id', adminOnly, (req, res) => res.json(api.agentLog(stor
 app.get('/api/health', (req, res) => { if (req.query.refresh) health = boot.checkHealth(store); res.json(health); });
 
 app.post('/api/agents', adminOnly, (req, res) => {
-  const id = store.addAgent(req.body || {});
+  const b = req.body || {};
+  const id = store.addAgent(b);
+  if (b.default_model !== undefined || b.default_effort !== undefined) store.setAgentDefaults(id, b.default_model, b.default_effort); // #4
   adapters = boot.buildAdapters(store);
   health = boot.checkHealth(store);
   broadcastRaw({ type: 'agents' });
   res.json({ id });
 });
-app.put('/api/agents/:id', adminOnly, (req, res) => { store.updateAgent(req.params.id, req.body || {}); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
+app.put('/api/agents/:id', adminOnly, (req, res) => { const b = req.body || {}; store.updateAgent(req.params.id, b); if (b.default_model !== undefined || b.default_effort !== undefined) store.setAgentDefaults(req.params.id, b.default_model, b.default_effort); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.delete('/api/agents/:id', adminOnly, (req, res) => { store.deleteAgent(req.params.id); adapters = boot.buildAdapters(store); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); });
 app.post('/api/agents/:id/enabled', adminOnly, (req, res) => { store.setAgentEnabled(req.params.id, !!(req.body && req.body.enabled)); broadcastRaw({ type: 'agents' }); res.json({ ok: true }); }); // 启用/停用:停用的不进规划器可选列表
+// #3 把一个 agent 加入/移出某部门执行器池(在 Agent 团队页批量加多个部门,每次一个)
+app.post('/api/agents/:id/dept-pool', adminOnly, (req, res) => {
+  const aid = req.params.id; const deptId = (req.body || {}).deptId; const on = !!(req.body || {}).on;
+  if (!deptId) return res.json({ ok: false });
+  const cur = (store.allDeptExecutors()[deptId] || []).slice();
+  const i = cur.indexOf(aid);
+  if (on && i < 0) cur.push(aid); else if (!on && i >= 0) cur.splice(i, 1);
+  store.setDeptExecutors(deptId, cur);
+  broadcastRaw({ type: 'agents' });
+  res.json({ ok: true });
+});
 app.get('/api/projects', (req, res) => res.json(store.listProjects()));
 app.post('/api/projects', (req, res) => {
   const id = store.addProject({ ...(req.body || {}), owner: req.user.id });
@@ -139,6 +152,18 @@ app.post('/api/grant', (req, res) => {
 // #4 项目级审批开关(仅管理员):开启后本项目所有新任务须先审批
 app.post('/api/projects/:name/approve', adminOnly, (req, res) => {
   store.setProjectApprove(req.params.name, !!(req.body && req.body.on));
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true });
+});
+// #7 项目总成本上限(仅管理员;0=不限)
+app.post('/api/projects/:name/budget', adminOnly, (req, res) => {
+  store.setProjectBudget(req.params.name, Number((req.body || {}).budget) || 0);
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true });
+});
+// #7 用户总成本上限(仅管理员;0=不限)
+app.post('/api/people/:id/budget', adminOnly, (req, res) => {
+  store.setUserBudget(req.params.id, Number((req.body || {}).budget) || 0);
   broadcastRaw({ type: 'task' });
   res.json({ ok: true });
 });
@@ -425,6 +450,16 @@ app.post('/task/:id/message', (req, res) => {
     makePlan: (txt, onChild) => makePlan(txt, { mode: 'llm', agents: store.listAgents().filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== 0).map((a) => a.id), roles: store.listRoles(), depts: store.listDepts(), refine: false, templatesDir, claude: adapters.claude, onChild }),
     onEvent: broadcast,
   }, text);
+});
+// #1 任务重命名(仅本人/管理员)
+app.post('/task/:id/rename', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  const text = ((req.body || {}).text || '').trim();
+  if (!t || !text) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  store.renameTask(id, text);
+  broadcastRaw({ type: 'task' });
+  res.json({ ok: true });
 });
 app.post('/task/:id/pause', (req, res) => {
   const id = Number(req.params.id);

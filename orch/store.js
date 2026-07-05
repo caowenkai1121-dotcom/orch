@@ -72,8 +72,12 @@ function open(file) {
   ensureCol('people', 'admin', 'INTEGER');
   ensureCol('projects', 'owner', 'TEXT');
   ensureCol('projects', 'approve', 'INTEGER'); // #4 项目级审批开关(admin 控;开启则本项目任务须审批)
+  ensureCol('projects', 'budget', 'REAL'); // #7 项目总成本上限(admin 控;0=不限)
+  ensureCol('people', 'budget', 'REAL'); // #7 用户总成本上限(admin 控;0=不限)
   ensureCol('agents', 'kind', 'TEXT');
   ensureCol('agents', 'enabled', 'INTEGER'); // 启用/停用:null/1=启用,0=停用(停用的不进规划器可选列表)
+  ensureCol('agents', 'default_model', 'TEXT'); // #4 该执行器的默认大模型(用户没为任务指定时用)
+  ensureCol('agents', 'default_effort', 'TEXT'); // #4 该执行器的默认思考级别
   ensureCol('departments', 'flow', 'TEXT');
   ensureCol('tasks', 'models', 'TEXT');
   ensureCol('roles', 'memo', 'TEXT');
@@ -123,6 +127,7 @@ function open(file) {
     deleteApp(id) { db.prepare('DELETE FROM apps WHERE id=?').run(id); },
     setTaskDir(id, dir) { db.prepare('UPDATE tasks SET dir=? WHERE id=?').run(dir, id); },
     setTaskBudget(id, budget) { db.prepare('UPDATE tasks SET budget=? WHERE id=?').run(Number(budget) || 0, id); }, // 调整成本上限(0=不限),用于解封预算暂停任务
+    renameTask(id, text) { db.prepare('UPDATE tasks SET text=?, updated_at=? WHERE id=?').run(String(text || '').slice(0, 2000), new Date().toISOString(), id); }, // #1 任务重命名
     deleteTask(id) { // 级联清任务及其全部关联数据
       db.prepare('DELETE FROM tasks WHERE id=?').run(id);
       ['steps', 'logs', 'events', 'usage', 'task_messages', 'plan_versions'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
@@ -329,6 +334,7 @@ function open(file) {
     },
     setAgentDept(agentId, deptId) { db.prepare('UPDATE agents SET dept=? WHERE id=?').run(deptId, agentId); },
     setAgentEnabled(id, on) { db.prepare('UPDATE agents SET enabled=? WHERE id=?').run(on ? 1 : 0, id); }, // 停用的 agent 不进规划器可选列表
+    setAgentDefaults(id, model, effort) { db.prepare('UPDATE agents SET default_model=?, default_effort=? WHERE id=?').run(model || '', effort || '', id); }, // #4 执行器默认模型/思考级别
     addProject(d) {
       const id = d.id || freeAutoId('projects', String(d.name || 'proj').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'proj');
       db.prepare('INSERT OR REPLACE INTO projects(id,name,client,created_at,owner) VALUES(?,?,?,?,?)').run(id, d.name || id, d.client || '', new Date().toISOString(), d.owner || null);
@@ -338,6 +344,13 @@ function open(file) {
     // #4 项目级审批:admin 开启后本项目所有任务须先审批再执行(默认关)
     setProjectApprove(name, on) { const r = db.prepare('SELECT id FROM projects WHERE name=?').get(name); if (r) db.prepare('UPDATE projects SET approve=? WHERE name=?').run(on ? 1 : 0, name); else db.prepare('INSERT INTO projects(id,name,created_at,approve) VALUES(?,?,?,?)').run(name, name, new Date().toISOString(), on ? 1 : 0); },
     projectApprove(name) { const r = db.prepare('SELECT approve FROM projects WHERE name=?').get(name); return !!(r && r.approve); },
+    // #7 项目/用户总成本:admin 设上限,执行时按项目/用户累计花费核算(超限则暂停,类似日成本护栏)
+    setProjectBudget(name, amt) { const r = db.prepare('SELECT id FROM projects WHERE name=?').get(name); if (r) db.prepare('UPDATE projects SET budget=? WHERE name=?').run(Number(amt) || 0, name); else db.prepare('INSERT INTO projects(id,name,created_at,budget) VALUES(?,?,?,?)').run(name, name, new Date().toISOString(), Number(amt) || 0); },
+    projectBudgetOf(name) { const r = db.prepare('SELECT budget FROM projects WHERE name=?').get(name); return (r && r.budget) || 0; },
+    projectSpend(name) { const r = db.prepare('SELECT COALESCE(SUM(u.cost),0) c FROM usage u JOIN tasks t ON u.task_id=t.id WHERE t.project=?').get(name); return r.c || 0; },
+    setUserBudget(id, amt) { db.prepare('UPDATE people SET budget=? WHERE id=?').run(Number(amt) || 0, id); },
+    userBudgetOf(name) { const r = db.prepare('SELECT budget FROM people WHERE name=?').get(name); return (r && r.budget) || 0; },
+    userSpend(name) { const r = db.prepare('SELECT COALESCE(SUM(u.cost),0) c FROM usage u JOIN tasks t ON u.task_id=t.id WHERE t.owner=?').get(name); return r.c || 0; },
     seed() {
       if (db.prepare('SELECT COUNT(*) n FROM agents').get().n === 0) {
         this.addAgent({ id: 'claude', name: 'Claude', command: 'claude', args: ['-p', '--dangerously-skip-permissions'], model: 'claude CLI', caps: ['代码生成', '重构', '单元测试'], color: '#7C6FD9', avatar: 'C', dept: 'dev', pricing: { in: 3, out: 15 } });

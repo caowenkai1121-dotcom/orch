@@ -2,6 +2,7 @@ class MaestroBase extends RT.Component {
   state = {
     screen: 'dashboard',
     ntAdv: false, // 新建任务:高级选项默认折叠(渐进式披露,简化界面)
+    ntAgents: [], // 新建任务:已选执行器(勾选后才显示其模型/思考级别)
     orchMode: 'graph',
     canvasTaskId: null, // 编排画布当前查看的任务(null=跟随最新任务);可在画布头部切换查看别的任务
     deptId: 'dev',
@@ -480,16 +481,17 @@ class Maestro extends MaestroBase {
     v.onQuickKey = (e) => { if (e.key === 'Enter') this.quickLaunch(); };
     v.projQuickLaunch = () => this.projQuickLaunch();
     v.onProjQuickKey = (e) => { if (e.key === 'Enter') this.projQuickLaunch(); };
-    v.modelPick = this.modelPickers();
+    // 新建任务:执行器为可点选 chip(勾选后才显示其模型/思考级别);支持多选
+    const ntSel = this.state.ntAgents || [];
+    v.ntAgentChips = (this.AGENTS || []).map((a) => { const on = ntSel.indexOf(a.id) >= 0; return { id: a.id, name: a.name, on, bg: on ? '#1A1814' : '#fff', fg: on ? '#fff' : '#3C3933', bd: on ? '#1A1814' : '#ECEAE4', toggle: () => this.toggleNtAgent(a.id) }; });
+    v.modelPick = this.modelPickers().filter((mp) => ntSel.indexOf(mp.agent) >= 0); // 只显已勾选执行器的模型选择
+    v.hasModelPick = v.modelPick.length > 0;
     // 剧本选项(新建任务)
     if ((this.state.modal === 'task' || this.state.screen === 'dashboard' || this.state.screen === 'tasks') && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
     // 剧本管理(任务页)
-    v.playbooksMgmt = (this.live.playbooks || []).map((p) => ({ name: p.name, steps: p.steps || 0, use: () => this.runPlaybook(p.id, p.name), del: () => this.delPlaybook(p.id, p.name) }));
-    v.hasPlaybooksMgmt = this.state.screen === 'tasks' && v.playbooksMgmt.length > 0;
-    v.playbookOpts = (this.live.playbooks || []).map((p) => ({ id: p.id, name: p.name }));
-    // 总控台剧本快捷入口:一键复用已存工作流
-    v.dashPlaybooks = (this.live.playbooks || []).slice(0, 8).map((p) => ({ name: p.name, run: () => this.runPlaybook(p.id, p.name) }));
-    v.hasPlaybooks = v.dashPlaybooks.length > 0;
+    // 剧本功能已下线(用户要求去掉):相关 UI 全部隐藏
+    v.playbooksMgmt = []; v.hasPlaybooksMgmt = false; v.playbookOpts = [];
+    v.dashPlaybooks = []; v.hasPlaybooks = false;
     // 任务列表筛选:状态 + 关键词
     const TF = [
       { k: '', n: '全部' }, { k: 'working', n: '进行中' }, { k: 'awaiting', n: '待审批' },
@@ -628,7 +630,14 @@ class Maestro extends MaestroBase {
     const r = this.RELAY || [];
     v.taskRounds = r.length; v.taskAgentN = new Set(r.map((x) => x.who)).size;
     // 人员行分配按钮 + 每 agent 实时控制台
-    (v.people || []).forEach((p) => { p.assign = () => this.assignPerson(p.id); });
+    const meAdmin = !!(this.state.me && this.state.me.admin);
+    (v.people || []).forEach((p) => {
+      p.assign = () => this.assignPerson(p.id);
+      // #7 用户总成本:已花/上限(admin 可设)
+      p.budgetLabel = '$' + (p.spend || 0) + ' / ' + (p.budget > 0 ? '$' + p.budget : '不限');
+      p.canSetBudget = meAdmin;
+      p.setBudget = () => this.setUserBudget(p.id, p.name, p.budget);
+    });
     v.agentLog = (this.state.console && this.state.console[this.state.agentId]) || this.state.log[this.state.agentId] || [];
 
     // —— T5: Agent 编辑/删除 + 弹窗编辑态 ——
@@ -641,8 +650,14 @@ class Maestro extends MaestroBase {
     v.naCmd = ea ? (ea.command || '') : '';
     v.naArgs = ea ? (Array.isArray(ea.args) ? ea.args.join(' ') : '') : '';
     v.naModel = ea && ea.model && ea.model !== '—' ? ea.model : '';
+    v.naDefModel = ea && ea.defModel ? ea.defModel : ''; // #4 默认大模型
+    const naDe = ea && ea.defEffort ? ea.defEffort : '';
+    v.naEffOpts = [{ v: '', n: '思考:默认' }, { v: 'low', n: '低' }, { v: 'medium', n: '中' }, { v: 'high', n: '高' }, { v: 'xhigh', n: '超高' }, { v: 'max', n: '极限' }].map((o) => ({ ...o, sel: o.v === naDe })).sort((a, b) => (a.sel ? 0 : 1) - (b.sel ? 0 : 1)); // 当前值置顶=默认选中
     v.naCaps = ea && ea.caps ? ea.caps.join(',') : '';
     v.naImage = ea && ea.image ? ea.image : '';
+    // #3 当前 agent 加入哪些部门执行器池(可批量点选;admin)
+    const curAg = this.state.agentId;
+    v.agentDeptChips = (this.DEPTS || []).map((d) => { const on = (d.executors || []).indexOf(curAg) >= 0; return { id: d.id, name: d.name, on, bg: on ? '#1A1814' : '#fff', fg: on ? '#fff' : '#3C3933', bd: on ? '#1A1814' : '#E6E3DC', toggle: () => this.toggleAgentDept(curAg, d.id, !on) }; });
 
     // —— T6: 项目 + 全局搜索 ——
     v.isSearch = this.state.screen === 'search';
@@ -692,10 +707,11 @@ class Maestro extends MaestroBase {
     const curD = (this.DEPTS || []).find((d) => d.id === this.state.deptId);
     v.deptEmployees = ((curD && curD.employees) || []).map((e) => ({ ...e, del: () => this.fireEmp(e.id, e.name), edit: () => this.editEmp(e.id) }));
     v.deptEmpN = v.deptEmployees.length;
-    // #5 本部门 Agent(执行器):添加已有 agent(不在本部门的)
+    // #2 本部门 Agent:添加已有 agent 到本部门「执行器池」(持久,加后即在执行器池显示、本部门任务可用)
+    const curPool = (curD && curD.executors) || [];
     v.deptAddOpen = !!this.state.deptAddOpen;
     v.toggleDeptAdd = () => this.setState({ deptAddOpen: !this.state.deptAddOpen });
-    v.deptAddableAgents = (this.AGENTS || []).filter((a) => a.dept !== (curD && curD.id)).map((a) => ({ id: a.id, name: a.name, avatar: a.avatar, color: a.color, add: () => this.addAgentToDept(a.id) }));
+    v.deptAddableAgents = (this.AGENTS || []).filter((a) => curPool.indexOf(a.id) < 0).map((a) => ({ id: a.id, name: a.name, avatar: a.avatar, color: a.color, add: () => this.addAgentToDept(a.id, curPool) }));
     // #5 侧栏部门列表可折叠
     v.deptsExpanded = !this.state.deptsCollapsed;
     v.deptsChevron = this.state.deptsCollapsed ? '▸' : '▾';
@@ -746,6 +762,9 @@ class Maestro extends MaestroBase {
     v.projApproveLabel = pApr ? '已开启 · 点击关闭' : '已关闭 · 点击开启';
     v.projApproveBg = pApr ? '#1A1814' : '#fff'; v.projApproveFg = pApr ? '#fff' : '#3C3933'; v.projApproveBd = pApr ? '#1A1814' : '#E6E3DC';
     v.toggleProjApprove = () => { if (!curProj) return; fetch('/api/projects/' + encodeURIComponent(curProj.name) + '/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ on: !pApr }) }).then(() => this.fetchAll()).catch(() => {}); };
+    // #7 项目总成本上限(admin)
+    v.projBudget = (curProj && curProj.budget) ? curProj.budget : '';
+    v.saveProjBudget = () => { if (!curProj) return; const b = Number((document.getElementById('proj-budget') || {}).value) || 0; fetch('/api/projects/' + encodeURIComponent(curProj.name) + '/budget', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ budget: b }) }).then(() => { this.toast('✓ 已设项目成本上限'); this.fetchAll(); }).catch(() => {}); };
 
     // —— v4: 取消/成本 ——
     v.cancelTask = () => this.cancelTask();
@@ -755,6 +774,8 @@ class Maestro extends MaestroBase {
     v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.viewOnly = !!(curT && !curT.canModify);
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
+    v.canRename = !!(curT && canMod);
+    v.renameTaskUI = () => this.renameTaskUI();
     v.meetBanner = !!(curT && curT.sk === 'meeting');
     v.enterMeeting = () => this.openMeetingRoom(this.state.taskId);
     // 失败任务:置顶错误摘要(取失败步骤输出末段,免翻接力记录)
@@ -859,7 +880,7 @@ class Maestro extends MaestroBase {
       s.doRerun = () => this.rerunStepUI(s.title);
     });
     v.savePlaybook = () => this.saveAsPlaybook();
-    v.canSavePb = !!(curT && curT.sk === 'done' && canMod); // 存为剧本
+    v.canSavePb = false; // 剧本功能已下线(用户要求去掉)
     v.modalContinue = this.state.modal === 'continue';
     v.continueSubmit = () => this.continueSubmit();
     // 应用广场
@@ -917,11 +938,12 @@ class Maestro extends MaestroBase {
     if (!window.confirm('结束会议并生成《方案.md》?之后将按方案开始实现。')) return;
     fetch('/api/meeting/' + id + '/end', { method: 'POST' }).then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
   }
-  // #5 把已有 agent 加入当前部门(改 agents.dept),加完 buildAll 重新按部门归类→本部门 Agent 正确显示
-  addAgentToDept(agentId) {
+  // #2 把已有 agent 加入当前部门的「执行器池」(dept_agents,additive,持久);加后即在执行器池显示、本部门任务可用
+  addAgentToDept(agentId, curPool) {
     const did = this.state.deptId; if (!did) return;
     this.setState({ deptAddOpen: false });
-    fetch('/api/depts/' + did + '/agents', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds: [agentId] }) }).then(() => this.fetchAll()).catch(() => {});
+    const agentIds = (curPool || []).concat([agentId]);
+    fetch('/api/depts/' + did + '/executors', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agentIds }) }).then(() => this.fetchAll()).catch(() => {});
   }
   pauseTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/pause', { method: 'POST' }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
   resumeTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '继续按原计划执行' }) }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
@@ -1396,26 +1418,36 @@ class Maestro extends MaestroBase {
   }
   cloneTask() {
     const t = (this.TASKS || []).find((x) => x.id === this.state.taskId);
-    this.setState({ modal: 'task', taskDept: null });
-    setTimeout(() => { // 填 DOM,避免 render 覆盖;克隆配置(预算/隔离/审批/问我/大模型/执行器),非仅标题
+    this.setState({ modal: 'task', taskDept: null, ntAgents: (t && t.agents) ? t.agents.slice() : [] }); // 克隆执行器选择
+    setTimeout(() => { // 填 DOM(标题+大模型),避免 render 覆盖
       if (!t) return;
       const set = (id, v) => { const el = document.getElementById(id); if (el != null && v != null) el.value = v; };
-      const chk = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
       set('nt-text', t.title);
-      if (t.budget) set('nt-budget', t.budget);
-      set('nt-isolate', t.isolate || 'none');
-      chk('nt-approve', t.approve); chk('nt-ask', t.ask); chk('nt-replan', t.replan);
       (this.modelPickers() || []).forEach((mp) => { const m = t.models && t.models[mp.agent]; if (m) { set(mp.selId, m.model || ''); set(mp.effId, m.effort || ''); } });
-      (t.agents || []).forEach((a) => { const cb = [...document.querySelectorAll('.nt-agent')].find((c) => c.value === a); if (cb) cb.checked = true; });
     }, 80);
   }
   // —— 弹窗 ——
+  toggleNtAgent(id) { const s = (this.state.ntAgents || []).slice(); const i = s.indexOf(id); if (i >= 0) s.splice(i, 1); else s.push(id); this.setState({ ntAgents: s }); }
+  // #1 任务重命名
+  renameTaskUI() {
+    const id = this.state.taskId; const t = (this.TASKS || []).find((x) => x.id === id); if (!t) return;
+    const name = window.prompt('重命名任务:', t.title || ''); if (name == null) return;
+    const v = name.trim(); if (!v) return;
+    fetch('/task/' + id + '/rename', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: v }) }).then(() => this.fetchAll()).catch(() => {});
+  }
   newTask() {
-    this.setState({ modal: 'task', taskDept: null, ntAdv: false });
+    this.setState({ modal: 'task', taskDept: null, ntAdv: false, ntAgents: [] });
     const lp = this.live.lastProject;
     if (lp && lp !== '默认项目') setTimeout(() => { const el = document.getElementById('nt-proj-sel'); if (el && [...el.options].some((o) => o.value === lp)) el.value = lp; }, 80);
   }
   toggleAgentEnabled(id, on) { fetch('/api/agents/' + id + '/enabled', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ enabled: !!on }) }).then(() => { this.toast(on ? '✓ 已启用' : '⏸ 已停用'); this.fetchAll(); }).catch(() => {}); }
+  // #3 把 agent 加入/移出某部门执行器池(在 agent 详情批量点选多个部门)
+  toggleAgentDept(agentId, deptId, on) { fetch('/api/agents/' + agentId + '/dept-pool', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ deptId, on }) }).then(() => this.fetchAll()).catch(() => {}); }
+  // #7 设用户总成本上限(admin)
+  setUserBudget(id, name, cur) {
+    const s = window.prompt('设「' + name + '」总成本上限($,0 或空=不限):', cur > 0 ? String(cur) : ''); if (s == null) return;
+    fetch('/api/people/' + id + '/budget', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ budget: Number(s) || 0 }) }).then(() => { this.toast('✓ 已设用户成本上限'); this.fetchAll(); }).catch(() => {});
+  }
   newAgent() { this.setState({ modal: 'agent', editAgent: null }); }
   editCurAgent() { const a = this.AGENTS.find((x) => x.id === this.state.agentId); if (a) this.setState({ modal: 'agent', editAgent: a }); }
   delCurAgent() { const id = this.state.agentId; if (!id || !window.confirm('删除该 Agent?')) return; fetch('/api/agents/' + id, { method: 'DELETE' }).then(() => { this.setState({ screen: 'agents' }); this.fetchAll(); }).catch(() => {}); }
@@ -1466,33 +1498,27 @@ class Maestro extends MaestroBase {
     const modeEl = document.querySelector('input[name="nt-mode"]:checked');
     const mode = modeEl ? modeEl.value : 'llm';
     const user = this.currentName();
-    const approve = (document.getElementById('nt-approve') || {}).checked ? 1 : 0;
-    const ask = (document.getElementById('nt-ask') || {}).checked ? 1 : 0;
-    const replan = (document.getElementById('nt-replan') || {}).checked ? 1 : 0; // #12 遇偏离自动重规划
-    const isolate = (document.getElementById('nt-isolate') || {}).value || 'none';
-    const budget = Number((document.getElementById('nt-budget') || {}).value) || 0; // 成本上限,0=不限
-    const agents = [...document.querySelectorAll('.nt-agent:checked')].map((c) => c.value);
+    const agents = (this.state.ntAgents || []).slice(); // 已勾选执行器(state 驱动)
     const orchestration = (document.getElementById('nt-orch') || {}).value || '';
     const refine = (document.getElementById('nt-refine') || {}).checked ? 1 : 0;
     const dept = this.state.taskDept || null; // 部门任务:按该部门流程拆分
-    const models = {}; // 用户为 claude/codex 选的大模型+思考级别
-    (this.modelPickers() || []).forEach((mp) => {
+    const models = {}; // 用户为已选执行器选的大模型+思考级别(没选=用该 agent 默认)
+    (this.modelPickers() || []).filter((mp) => agents.indexOf(mp.agent) >= 0).forEach((mp) => {
       const m = (document.getElementById(mp.selId) || {}).value || '';
       const e = (document.getElementById(mp.effId) || {}).value || '';
       if (m || e) models[mp.agent] = { model: m || null, effort: e || null };
     });
-    const playbook = (document.getElementById('nt-playbook') || {}).value || null; // 用剧本:骨架复用不走LLM规划
-    // 定时重复:建 schedule 而非立即任务
+    // 定时:选了重复方式则建 schedule(定时任务)而非立即任务
     const skind = (document.getElementById('nt-sched-kind') || {}).value || '';
     if (skind) {
       const sval = ((document.getElementById('nt-sched-val') || {}).value || '').trim();
       const sdow = Number((document.getElementById('nt-sched-dow') || {}).value || 1);
       const spec = skind === 'hours' ? { kind: 'hours', n: Number(sval) || 24 } : skind === 'weekly' ? { kind: 'weekly', dow: sdow, at: sval || '09:00' } : { kind: 'daily', at: sval || '09:00' };
-      fetch('/api/schedules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, dept, agents, models, playbook, spec }) })
+      fetch('/api/schedules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, dept, agents, models, spec }) })
         .then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); this.fetchSchedules(); }).catch(() => {});
       return;
     }
-    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, approve, ask, replan, isolate, budget, agents, orchestration, refine, dept, models, playbook }) })
+    fetch('/task', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim(), project, mode, user, agents, orchestration, refine, dept, models }) })
       .then((r) => r.json()).then(() => { this.setState({ modal: null, taskDept: null, screen: 'tasks' }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
   submitAgent() {
@@ -1500,7 +1526,7 @@ class Maestro extends MaestroBase {
     const name = g('na-name'), command = g('na-cmd'), kind = g('na-kind') || 'cli';
     if (!name.trim()) return;
     if (kind === 'cli' && !command.trim()) return; // CLI 类必须有命令
-    const body = { name: name.trim(), command: command.trim(), kind, args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept') };
+    const body = { name: name.trim(), command: command.trim(), kind, args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept'), default_model: g('na-defmodel'), default_effort: g('na-defeffort') };
     const ea = this.state.editAgent;
     if (ea) { body.color = ea.color; body.avatar = ea.avatar; }
     fetch(ea ? '/api/agents/' + ea.id : '/api/agents', { method: ea ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })

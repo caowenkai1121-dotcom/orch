@@ -481,11 +481,15 @@ async function execute(taskId, plan, deps, opts) {
 
   const overTaskBudget = () => task.budget > 0 && (store.taskUsage(taskId).cost || 0) >= task.budget;
   const overDailyBudget = () => { const c = Number(process.env.ORCH_DAILY_BUDGET) || 0; return c > 0 && (store.usageToday().cost || 0) >= c; };
+  // #7 项目/用户总成本护栏:admin 设的上限,按项目/用户累计花费核算,超限暂停未启动步骤
+  const overProjectBudget = () => { const b = store.projectBudgetOf ? store.projectBudgetOf(task.project) : 0; return b > 0 && (store.projectSpend(task.project) || 0) >= b; };
+  const overUserBudget = () => { const b = (store.userBudgetOf && task.owner) ? store.userBudgetOf(task.owner) : 0; return b > 0 && (store.userSpend(task.owner) || 0) >= b; };
   let models = null; try { models = task.models ? JSON.parse(task.models) : null; } catch (e) {} // 用户选的大模型:{执行器id:模型}
+  const agentDefaults = {}; (store.listAgents() || []).forEach((a) => { if (a.default_model || a.default_effort) agentDefaults[a.id] = { model: a.default_model || null, effort: a.default_effort || null }; }); // #4 执行器默认模型/思考(任务没指定时用)
   let pending = null;
   let pendingReplan = null; // #12 某步发 NEED_REPLAN → runPlan 收尾后触发重规划
   const ctx = {
-    adapters, workspace, brief, models,
+    adapters, workspace, brief, models, agentDefaults,
     preamble: (task.ask ? ASK : AUTONOMY) + (task.replan ? REPLAN : ''),
     askMode: !!task.ask,
     replanMode: !!task.replan,
@@ -493,8 +497,8 @@ async function execute(taskId, plan, deps, opts) {
     answers: opts.answers || null,
     isCancelled: () => rec.cancelled,
     isPaused: () => rec.paused,
-    // 成本上限(0=不限):任务级 或 全局日级。执行期都查 → retry/continue/resume 及跑中超限都会收尾停(总护栏真正覆盖所有执行路径)
-    overBudget: () => overTaskBudget() || overDailyBudget(),
+    // 成本上限(0=不限):任务级/全局日级/项目级/用户级。执行期都查 → retry/continue/resume 及跑中超限都会收尾停(总护栏覆盖所有执行路径)
+    overBudget: () => overTaskBudget() || overDailyBudget() || overProjectBudget() || overUserBudget(),
     skip: rec.skip,
     lastFail: opts.lastFail || null, // 重跑时该步上次的失败输出
     takeNotes: () => { const t = rec.notes.splice(0).join('\n'); return t; }, // 用户中途指令,注入即消费
@@ -572,6 +576,8 @@ async function execute(taskId, plan, deps, opts) {
     if (noWork) store.addTaskMsg(taskId, 'system', '⚠ 任务从未成功规划(可能被成本护栏拦下或规划失败),空计划无步骤可跑。请调高预算/ORCH_DAILY_BUDGET 后用「重新规划」重跑。');
     else if (stoppedByBudget) store.addTaskMsg(taskId, 'system', overDailyBudget()
       ? ('🛑 已达全局日成本上限 $' + (Number(process.env.ORCH_DAILY_BUDGET) || 0) + '(今日已花 $' + (store.usageToday().cost || 0).toFixed(3) + '),未启动步骤已暂停。次日0点(本地)重置或调高 ORCH_DAILY_BUDGET 后恢复。')
+      : overProjectBudget() ? ('🛑 已达项目「' + task.project + '」总成本上限 $' + store.projectBudgetOf(task.project) + '(项目已花 $' + (store.projectSpend(task.project) || 0).toFixed(3) + '),未启动步骤已暂停。管理员在项目详情调高上限后可恢复。')
+      : overUserBudget() ? ('🛑 已达用户「' + task.owner + '」总成本上限 $' + store.userBudgetOf(task.owner) + '(该用户已花 $' + (store.userSpend(task.owner) || 0).toFixed(3) + '),未启动步骤已暂停。管理员在人员页调高上限后可恢复。')
       : ('💰 已达任务成本上限 $' + task.budget + '(实际约 $' + (store.taskUsage(taskId).cost || 0).toFixed(3) + '),未启动的步骤已暂停。提高预算后点「继续」,或发消息恢复。'));
     else if (final === 'paused') store.addTaskMsg(taskId, 'system', '⏸ 任务已暂停(当前步骤已收尾)。发消息即恢复并注入指令,或点「继续」原样恢复。');
     if (final === 'done' || final === 'failed') harvestExperience(taskId, deps).catch(() => {}); // 异步复盘,不阻塞
