@@ -3,6 +3,7 @@ class MaestroBase extends RT.Component {
     screen: 'dashboard',
     ntAdv: false, // 新建任务:高级选项默认折叠(渐进式披露,简化界面)
     orchMode: 'graph',
+    canvasTaskId: null, // 编排画布当前查看的任务(null=跟随最新任务);可在画布头部切换查看别的任务
     deptId: 'dev',
     agentId: 'claude-dev-01',
     taskId: 'T-1042',
@@ -427,8 +428,11 @@ class Maestro extends MaestroBase {
     } else {
       this.RELAY = (typeof _tid === 'number' && this.live.relay[_tid]) || [];
     }
-    const activeId = this.live.activeId != null ? this.live.activeId : (this.TASKS[0] && this.TASKS[0].id);
+    // 画布活动任务:用户在画布头部选定的优先(canvasTaskId),否则跟随最新任务(TASKS[0])
+    const activeId = this.state.canvasTaskId != null ? this.state.canvasTaskId : (this.TASKS[0] && this.TASKS[0].id);
+    if (activeId != null && !this.live.plan[activeId]) this.fetchPlan(activeId);
     this.PLAN = (activeId != null && this.live.plan[activeId]) || [];
+    this._activeId = activeId; // 供 activeTitle/activeProj 定位到真正在看的任务
     const v = super.renderVals();
     v.toast = this.live.toastMsg || '';
     v.metrics = this.realMetrics();
@@ -568,8 +572,18 @@ class Maestro extends MaestroBase {
     const op = this.PEOPLE[0] || { name: '操作者', av: '操', role: '操作者' };
     v.opName = op.name; v.opAv = op.av; v.opRole = (op.role || '操作者') + ' · orch';
     v.agentTotal = this.AGENTS.length; v.deptTotal = this.DEPTS.length; v.today = this.todayStr();
-    const at = this.TASKS[0];
+    const at = (this._activeId != null && this.TASKS.find((t) => t.id === this._activeId)) || this.TASKS[0];
     v.activeTitle = at ? at.title : '暂无任务'; v.activeProj = at ? at.proj : '—';
+    // 画布任务切换:最近若干任务做成可点 chip,选中高亮;点"最新"回到跟随最新
+    const curId = at ? at.id : null;
+    const follow = this.state.canvasTaskId == null; // 框架 {{}} 不支持三元,样式值在此预算
+    v.canvasFollowBg = follow ? '#1A1814' : '#fff'; v.canvasFollowFg = follow ? '#fff' : '#6B6760'; v.canvasFollowBd = follow ? '#1A1814' : '#E9E7E1';
+    v.pickCanvasLatest = () => this.setState({ canvasTaskId: null });
+    v.canvasTasks = this.TASKS.slice(0, 8).map((t) => ({
+      id: t.id, title: (t.title || '').slice(0, 22) || ('任务 ' + t.id), sel: t.id === curId,
+      bg: t.id === curId ? '#1A1814' : '#fff', fg: t.id === curId ? '#fff' : '#3C3933', bd: t.id === curId ? '#1A1814' : '#E9E7E1',
+      pick: () => this.setState({ canvasTaskId: t.id }),
+    }));
     v.planCount = this.PLAN.length;
     v.planAgents = new Set(this.PLAN.map((p) => p.agent)).size;
     const r = this.RELAY || [];

@@ -125,7 +125,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。多个无依赖的步骤会并行;并行且会改同一文件/目录的步骤给它们相同的 "lock":"名字" 字段使其互斥串行(不冲突的步不要加 lock)。纯审查/分析且确定不改文件的步可加 "permission":"read" 在只读沙箱运行(会改文件的步不要加)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
-    + `调度要求:0)先判复杂度:【简单任务】(单文件/脚本/小改动/单一明确产出)1-2步直接做,不强加质量门;【复杂任务】(多模块/前后端/多角色协作)按模块/功能点细分成多步(会自动在前面插入"方案会议"阶段,你只需专注把实现步拆细拆清,别自己加会议步)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 clarify_req/design_ui/impl_login/test_auth),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让流水线能看出每个角色何时做什么,别把多件事塞进一步(简单任务仍保持1-2步,别为拆而拆);2)只挑真正需要的员工,部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
+    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作,或虽是单文件但含多个可独立交付的功能点(如"待办应用"的 增删/标记完成/本地存储/筛选),都要按功能点/模块细分成多步(复杂任务会自动在前面插入"方案会议"阶段,你只需专注把实现步拆细拆清,别自己加会议步)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 scaffold_ui/impl_add_del/impl_storage/impl_filter/self_test),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让画布能看出每个角色在哪个关键节点做什么,别把多个功能点塞进一步(真正单一产出的简单任务才保持1-2步,别为拆而拆);2)只挑真正需要的员工,部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
@@ -262,8 +262,12 @@ function resolveRoles(steps, roleMap, allowed, deptPools, taskText, depts) {
 // 每个参会角色并行写本视角方案要点 md → 一个"方案综合"步产出《方案.md》→ 原实现步的根全部改为依赖综合步、按方案做。
 // 让编排画布清楚看到"先开会定方案、再各角色分头实现"。简单任务(<4步或角色单一)不开会,直接做。
 function prependMeeting(plan, roleMap) {
-  if (!plan || !Array.isArray(plan.steps) || plan.steps.length < 4) return plan; // 简单任务不开会
   const ids = Object.keys(roleMap || {});
+  if (!plan || !Array.isArray(plan.steps) || plan.steps.length < 4) {
+    // 简单任务不开会:员工模式下(有员工目录)记一笔,让操作者在任务记录里看到"判为简单、跳过会议"
+    if (plan && ids.length >= 2 && (plan.steps || []).some((s) => s.role)) plan.simpleNote = '任务判为简单(单一/少量产出),无需方案会议,已直接编排执行。';
+    return plan;
+  }
   if (ids.length < 2) return plan; // 无员工目录(执行器模式),不开会
   // 参会角色从员工目录挑:优先设计/规划类(架构/产品/评审/测试/负责人),不足则补其它——不依赖 LLM 是否在实现步用了 role
   const want = ['architect', 'product', 'reviewer', 'lead', 'qa', 'test', 'design', 'prototyper', 'manager', 'engineer'];
@@ -310,8 +314,9 @@ async function makePlan(text, opts) {
 
   let empModeFell = false; // 员工模式该走却没成功 → 后续回退标记为"降级"(丢了团队协作)
   const mark = (p) => (empModeFell && p ? Object.assign(p, { degraded: true }) : p);
-  // 1) 用户显式只选一个执行器 + 无编排 + 非部门任务 → 该执行器单步直做(保持既有行为)
-  if (explicit && allowed.length === 1 && !orch && !dept) {
+  // 1) 用户显式只选一个执行器 + 无编排 + 非部门任务 + 无员工目录 → 该执行器单步直做
+  //    有员工目录时不走此捷径:改走员工模式,让画布显"部门·角色"并按功能点细化(单执行器会被 resolveRoles coerce 成该执行器)
+  if (explicit && allowed.length === 1 && !orch && !dept && !roleIds.length) {
     return { task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] };
   }
   // 2) 员工模式(默认):总调度按部门员工目录与流程规范拆分;部门任务只用该部门员工

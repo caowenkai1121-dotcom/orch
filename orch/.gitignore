@@ -5,4 +5,7 @@ data/
 *.db-journal
 orch-run.log
 orch-err.log
+err.log
+out.log
+plan.json
 orch.db.bak
