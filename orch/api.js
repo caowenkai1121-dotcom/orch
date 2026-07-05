@@ -5,7 +5,7 @@ const DEPT_META = {
   dev: { name: '开发部', glyph: '</>', color: '#7C6FD9', soft: 'rgba(124,111,217,.2)', desc: '编写与重构代码、实现功能' },
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
-const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input', paused: 'paused' })[s] || 'queued';
+const taskSk = (s) => ({ pending: 'queued', planning: 'queued', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input', paused: 'paused', meeting: 'meeting' })[s] || 'queued';
 const stepSk = (s) => ({ running: 'working', waiting: 'queued', done: 'done', failed: 'failed' })[s] || 'queued';
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
@@ -315,6 +315,20 @@ function plan(store, id) {
   return out;
 }
 
+// 会议室视图:参会员工 + 群聊消息流 + 可 @ 加入的员工名册
+function meeting(store, id) {
+  const t = store.getTask(id);
+  if (!t) return null;
+  const mt = store.getMeeting(id);
+  if (!mt) return { status: 'none', task: t.text, attendees: [], msgs: [], roster: [] };
+  const RV = roleView(store);
+  const att = (mt.attendees || []).map((rid) => { const e = RV[rid] || {}; return { id: rid, name: e.name || rid, avatar: e.emoji || '🧑‍💼', deptName: e.deptName || '', color: e.color || '#7C6FD9' }; });
+  const attSet = new Set(mt.attendees || []);
+  const msgs = store.listMeetingMsgs(id).map((m) => ({ role: m.role, name: m.name, avatar: m.avatar || '🧑‍💼', text: m.text, ts: (m.ts || '').slice(11, 16), mine: m.role === 'user', sys: m.role === 'system' }));
+  const roster = store.listRoles().filter((r) => r.dept !== '__system' && !attSet.has(r.id)).map((r) => { const e = RV[r.id] || {}; return { id: r.id, name: r.name, avatar: r.emoji || '🧑‍💼', deptName: e.deptName || '' }; });
+  return { status: mt.status, task: t.text, attendees: att, msgs, roster };
+}
+
 function agentLog(store, agentId, limit) {
   return store.recentLogsForAgent(agentId, limit || 40).map((r) => '[T' + r.task_id + '·' + r.step_id + '] ' + r.line);
 }
@@ -338,4 +352,4 @@ function taskReport(store, id) {
   return md;
 }
 
-module.exports = { buildAll, relay, plan, agentLog, roleMap, planRoleMap, roleView, taskReport };
+module.exports = { buildAll, relay, plan, meeting, agentLog, roleMap, planRoleMap, roleView, taskReport };

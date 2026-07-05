@@ -196,6 +196,7 @@ class MaestroBase extends RT.Component {
       failed:  { label:'失败', c:'#B23A33', bg:'#FBE9E7', dot:'#DC5B52' },
       review:  { label:'待审', c:'#3E5BD0', bg:'#E8ECFB', dot:'#4F6AE8' },
       queued:  { label:'排队中', c:'#6B6760', bg:'#F1EFEA', dot:'#C9C4BA' },
+      meeting: { label:'方案会议中', c:'#4B3E86', bg:'#F1EEFB', dot:'#5B4BC4' },
     })[s] || { label:s, c:'#6B6760', bg:'#F1EFEA', dot:'#C9C4BA' };
   }
 
@@ -564,6 +565,26 @@ class Maestro extends MaestroBase {
     v.ntAdvStyle = this.state.ntAdv ? '' : 'display:none'; // 高级选项折叠:display 隐藏不移除 DOM,提交仍读默认值
     v.ntAdvLabel = this.state.ntAdv ? '⚙ 高级选项 ▴' : '⚙ 高级选项 ▾';
     v.toggleNtAdv = () => this.setState({ ntAdv: !this.state.ntAdv });
+    // —— 会议室弹窗 ——
+    v.modalMeeting = this.state.modal === 'meeting';
+    const mtg = this.live.meeting || { attendees: [], msgs: [], roster: [], status: 'none' };
+    v.meetOpen = mtg.status === 'open';
+    v.meetClosing = mtg.status === 'closing';
+    v.meetTaskTitle = mtg.task || '';
+    v.meetAttendees = (mtg.attendees || []).map((a) => ({ ...a, summon: () => this.summonEmp(a.id) }));
+    v.meetMsgs = (mtg.msgs || []).map((m) => ({
+      name: m.name, avatar: m.avatar, text: m.text, ts: m.ts, showHead: !m.sys,
+      align: m.mine ? 'flex-end' : 'flex-start',
+      bub: m.sys ? '#F1EEE8' : (m.mine ? '#1A1814' : '#fff'),
+      fg: m.sys ? '#8A857C' : (m.mine ? '#fff' : '#2A2722'),
+      bd: m.sys ? '#EAE7DF' : (m.mine ? '#1A1814' : '#E9E7E1'),
+    }));
+    v.meetRosterOpen = !!this.state.meetRoster;
+    v.toggleMeetRoster = () => this.setState({ meetRoster: !this.state.meetRoster });
+    v.meetRoster = (mtg.roster || []).map((r) => ({ ...r, summon: () => this.summonEmp(r.id) }));
+    v.sendMeetingMsg = () => this.sendMeetingMsg();
+    v.onMeetKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); this.sendMeetingMsg(); } };
+    v.endMeetingUI = () => this.endMeetingUI();
     v.modalAgent = this.state.modal === 'agent';
     v.modalPerson = this.state.modal === 'person';
     v.modalPersonNew = this.state.modal === 'person' && !this.state.assignPid;
@@ -702,6 +723,8 @@ class Maestro extends MaestroBase {
     v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.viewOnly = !!(curT && !curT.canModify);
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
+    v.meetBanner = !!(curT && curT.sk === 'meeting');
+    v.enterMeeting = () => this.openMeetingRoom(this.state.taskId);
     // 失败任务:置顶错误摘要(取失败步骤输出末段,免翻接力记录)
     if (curT && curT.sk === 'failed') {
       const bad = (this.RELAY || []).filter((s) => s.back || s.sk === 'failed');
@@ -842,6 +865,25 @@ class Maestro extends MaestroBase {
     el.value = '';
     fetch('/task/' + id + '/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) })
       .then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {});
+  }
+  // —— 会议室 ——
+  fetchMeeting(id) { fetch('/api/meeting/' + id).then((r) => r.ok ? r.json() : null).then((m) => { this.live.meeting = m || null; this.live.meetingFor = id; this.scheduleRender(); }).catch(() => {}); }
+  openMeetingRoom(id) { this.setState({ modal: 'meeting', meetingId: id, meetRoster: false }); this.fetchMeeting(id); }
+  sendMeetingMsg() {
+    const id = this.state.meetingId; if (typeof id !== 'number') return;
+    const el = document.getElementById('meet-input'); const text = el ? el.value.trim() : '';
+    if (!text) return; el.value = '';
+    fetch('/api/meeting/' + id + '/msg', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }) }).then(() => this.fetchMeeting(id)).catch(() => {});
+  }
+  summonEmp(roleId) {
+    const id = this.state.meetingId; if (typeof id !== 'number') return;
+    this.setState({ meetRoster: false });
+    fetch('/api/meeting/' + id + '/summon', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ roleId }) }).then(() => this.fetchMeeting(id)).catch(() => {});
+  }
+  endMeetingUI() {
+    const id = this.state.meetingId; if (typeof id !== 'number') return;
+    if (!window.confirm('结束会议并生成《方案.md》?之后将按方案开始实现。')) return;
+    fetch('/api/meeting/' + id + '/end', { method: 'POST' }).then(() => { this.setState({ modal: null }); this.fetchAll(); }).catch(() => {});
   }
   pauseTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/pause', { method: 'POST' }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
   resumeTaskUI() { const id = this.state.taskId; fetch('/task/' + id + '/message', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: '继续按原计划执行' }) }).then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {}); }
@@ -1488,6 +1530,9 @@ class Maestro extends MaestroBase {
           }
         } else if (m.type === 'msg') {
           if (m.taskId === this.state.taskId) this.fetchMsgs(m.taskId);
+        } else if (m.type === 'meeting') {
+          if (this.state.modal === 'meeting' && m.taskId === this.state.meetingId) this.fetchMeeting(m.taskId);
+          if (m.data === 'closed') this.fetchAll(); // 会议结束→任务转执行,刷新状态
         } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents' || m.type === 'apps') {
           this.fetchAll().then(() => this.notifyTask(m)); // 先刷新拿到最新failReason,再桌面通知(含失败原因)
           if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }

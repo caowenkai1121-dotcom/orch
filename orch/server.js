@@ -363,6 +363,36 @@ app.get('/api/msgs/:id', (req, res) => {
   if (!canSeeTask(req.user, t)) return res.status(403).json([]);
   res.json(store.getTaskMsgs(t.id));
 });
+// —— 会议室:复杂任务开会讨论(员工+用户群聊)——
+const meetDeps = (t) => ({ store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast });
+app.get('/api/meeting/:id', (req, res) => {
+  const t = store.getTask(Number(req.params.id));
+  if (!canSeeTask(req.user, t)) return res.status(403).json(null);
+  res.json(api.meeting(store, t.id));
+});
+app.post('/api/meeting/:id/msg', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  const text = ((req.body || {}).text || '').trim();
+  if (!t || !text) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  const ok = runnerMod.meetingUserMsg(id, meetDeps(t), text, req.user.name);
+  res.json({ ok });
+});
+app.post('/api/meeting/:id/summon', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  const roleId = (req.body || {}).roleId;
+  if (!t || !roleId) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  res.json({ ok: true });
+  runnerMod.summonEmployee(id, meetDeps(t), roleId).catch(() => {});
+});
+app.post('/api/meeting/:id/end', (req, res) => {
+  const id = Number(req.params.id); const t = store.getTask(id);
+  if (!t) return res.json({ ok: false });
+  if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  res.json({ ok: true });
+  runnerMod.endMeeting(id, meetDeps(t)).catch(() => {});
+});
 app.post('/task/:id/message', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   const text = ((req.body || {}).text || '').trim();

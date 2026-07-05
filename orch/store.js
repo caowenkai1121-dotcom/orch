@@ -41,6 +41,10 @@ function open(file) {
       id INTEGER PRIMARY KEY, task_id INTEGER, ts TEXT, type TEXT, data TEXT);
     CREATE TABLE IF NOT EXISTS task_messages(
       id INTEGER PRIMARY KEY, task_id INTEGER, who TEXT, text TEXT, ts TEXT);
+    CREATE TABLE IF NOT EXISTS meetings(
+      task_id INTEGER PRIMARY KEY, attendees TEXT, status TEXT, result TEXT, created_at TEXT);
+    CREATE TABLE IF NOT EXISTS meeting_msgs(
+      id INTEGER PRIMARY KEY, task_id INTEGER, role TEXT, name TEXT, avatar TEXT, text TEXT, ts TEXT);
     CREATE TABLE IF NOT EXISTS playbooks(
       id INTEGER PRIMARY KEY, name TEXT, description TEXT, plan TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS schedules(
@@ -97,6 +101,13 @@ function open(file) {
     // 任务对话:用户与团队的消息流(运行中=指令注入,结束后=继续开发)
     addTaskMsg(taskId, who, text) { db.prepare('INSERT INTO task_messages(task_id,who,text,ts) VALUES(?,?,?,?)').run(taskId, who, text, new Date().toISOString()); },
     getTaskMsgs(taskId) { return db.prepare('SELECT * FROM task_messages WHERE task_id=? ORDER BY id').all(taskId); },
+    // 会议室:复杂任务开会讨论需求(员工+用户群聊),结束后产出方案与记录
+    createMeeting(taskId, attendees) { db.prepare('INSERT OR REPLACE INTO meetings(task_id,attendees,status,result,created_at) VALUES(?,?,?,?,?)').run(taskId, JSON.stringify(attendees || []), 'open', '', new Date().toISOString()); },
+    getMeeting(taskId) { const m = db.prepare('SELECT * FROM meetings WHERE task_id=?').get(taskId); if (m) { try { m.attendees = JSON.parse(m.attendees) || []; } catch (e) { m.attendees = []; } } return m; },
+    setMeetingAttendees(taskId, attendees) { db.prepare('UPDATE meetings SET attendees=? WHERE task_id=?').run(JSON.stringify(attendees || []), taskId); },
+    setMeetingStatus(taskId, status, result) { db.prepare('UPDATE meetings SET status=?, result=COALESCE(?,result) WHERE task_id=?').run(status, result == null ? null : result, taskId); },
+    addMeetingMsg(taskId, m) { db.prepare('INSERT INTO meeting_msgs(task_id,role,name,avatar,text,ts) VALUES(?,?,?,?,?,?)').run(taskId, m.role || '', m.name || '', m.avatar || '', m.text || '', new Date().toISOString()); },
+    listMeetingMsgs(taskId) { return db.prepare('SELECT * FROM meeting_msgs WHERE task_id=? ORDER BY id').all(taskId); },
     // 剧本:成功任务的计划骨架,可复用
     addPlaybook(d) { return db.prepare('INSERT INTO playbooks(name,description,plan,created_at) VALUES(?,?,?,?)').run(d.name || '剧本', d.description || '', JSON.stringify(d.plan || {}), new Date().toISOString()).lastInsertRowid; },
     listPlaybooks() { return db.prepare('SELECT * FROM playbooks ORDER BY id DESC').all(); },

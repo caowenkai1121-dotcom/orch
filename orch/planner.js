@@ -289,6 +289,8 @@ function prependMeeting(plan, roleMap) {
   };
   plan.steps.forEach((s) => { if (!Array.isArray(s.deps) || !s.deps.length) s.deps = ['decide_plan']; }); // 原实现步的根改为依赖会议结论
   plan.steps = [...meetSteps, decide, ...plan.steps];
+  // 会议元数据:供 runner 识别→开交互式会议室(员工+用户群聊)代替内联跑 meet_* 步;结束会议时这些步标 done 并 seed
+  plan.meeting = { attendees, meetIds: meetSteps.map((m) => m.id), decideId: 'decide_plan' };
   return plan;
 }
 
