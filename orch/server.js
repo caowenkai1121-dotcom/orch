@@ -9,7 +9,13 @@ const { runTask } = require('./runner');
 const api = require('./api');
 const boot = require('./bootstrap');
 const perm = require('./perm');
+const modelDiscovery = require('./model_discovery');
 const { killTree } = require('./adapters/steptimeout'); // 按 PID 杀子进程树(POSIX 杀 shell 的子=真 agent,防孤儿),与超时守卫同一实现
+
+// 进程级兜底:单个未捕获异常/悬空 rejection 不掀翻整个编排器——进程挂掉 = 所有运行中任务瞬间成僵尸、子进程成孤儿,
+// 代价远大于带伤继续跑(状态全在 SQLite,坏不掉;错误如实进日志供排查)。
+process.on('uncaughtException', (e) => { try { console.error('[uncaughtException]', (e && e.stack) || e); } catch (x) {} });
+process.on('unhandledRejection', (e) => { try { console.error('[unhandledRejection]', (e && e.stack) || e); } catch (x) {} });
 
 const ROOT = process.cwd();
 const store = open(path.join(__dirname, 'orch.db'));
@@ -20,6 +26,7 @@ let adapters = boot.buildAdapters(store);
 if (boot.scanAgents(store)) adapters = boot.buildAdapters(store);
 const listFilesIn = boot.listFilesIn;
 let health = boot.checkHealth(store); // 执行器健康(启动检测,缓存)
+let modelDiscoveryCache = { ts: 0, data: null };
 
 const runs = new Map(); // 运行态注册表:taskId -> { cancelled, children }
 const workspace = makeWorkspace(ROOT);
@@ -78,6 +85,16 @@ app.get('/api/plan/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask
 app.get('/api/agentlog/:id', adminOnly, (req, res) => res.json(api.agentLog(store, req.params.id))); // 按执行器跨全部任务聚合日志→无法单任务鉴权,收口为 adminOnly(防普通用户越权读他人任务日志)
 // 执行器健康(缓存;?refresh=1 重测)
 app.get('/api/health', (req, res) => { if (req.query.refresh) health = boot.checkHealth(store); res.json(health); });
+app.get('/api/agents/model-discovery', async (req, res) => {
+  try {
+    if (!req.query.refresh && modelDiscoveryCache.data && Date.now() - modelDiscoveryCache.ts < 60000) return res.json(modelDiscoveryCache.data);
+    const data = await modelDiscovery.discoverModels(store);
+    modelDiscoveryCache = { ts: Date.now(), data };
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ agents: {}, error: (e && e.message) || String(e) });
+  }
+});
 
 app.post('/api/agents', adminOnly, (req, res) => {
   const b = req.body || {};
@@ -237,10 +254,57 @@ function isGit(d) { try { execSync('git rev-parse --is-inside-work-tree', { cwd:
 function taskWorkspace(t) {
   let dir = ROOT;
   try {
-    if (t.isolate === 'worktree' && isGit(ROOT)) dir = worktreeDir(ROOT, t.id);
+    // 已有产出目录一律复用:目录名含任务文本 slug,任务重命名后重新推导会得到全新空目录,
+    // retry/resume/继续开发 就会跑错地方(交接/产出/git 历史全断)。t.dir 是唯一真相。
+    if (t.dir && fs.existsSync(t.dir)) dir = t.dir;
+    else if (t.isolate === 'worktree' && isGit(ROOT)) dir = worktreeDir(ROOT, t.id);
     else dir = taskDir(ROOT, t.owner, t.project, t.text, t.id);
   } catch (e) {}
   return { make: () => dir };
+}
+
+function parseRouteChoice(s) {
+  const t = String(s || '').trim().toUpperCase();
+  if (/^A\b|快速/.test(t)) return 'A';
+  if (/^B\b|标准/.test(t)) return 'B';
+  if (/^C\b|深度|会议/.test(t)) return 'C';
+  return '';
+}
+
+function applyRouteChoice(id, t, answer) {
+  const choice = parseRouteChoice(answer);
+  if (!choice) {
+    store.addTaskMsg(id, 'system', '请选择 A / B / C: A=快速实现,B=标准编排,C=深度会议。');
+    broadcastRaw({ type: 'msg', taskId: id });
+    return false;
+  }
+  const allAgents = store.listAgents().filter((a) => (a.kind || 'cli') === 'cli' && a.enabled !== 0).map((a) => a.id);
+  store.addTaskMsg(id, 'user', choice);
+  store.clearTaskDecision(id);
+  store.clearSteps(id);
+  store.setTaskStatus(id, 'planning');
+  store.addEvent(id, 'route_choice', { choice });
+  broadcastRaw({ type: 'task', taskId: id });
+  (async () => {
+    try {
+      // 注册运行态:让规划期 LLM 子进程可被取消;取消后不再复活执行(否则「取消」对此路径完全失效)
+      const rec = runs.get(id) || (runs.set(id, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(id));
+      rec.cancelled = false; rec.paused = false;
+      const planStart = Date.now();
+      const plan = await makePlan(t.text, { mode: 'llm', agents: allAgents, roles: store.listRoles(), depts: store.listDepts(), deptPools: store.allDeptExecutors(), refine: true, templatesDir, claude: adapters.claude, routeChoice: choice, onChild: (c) => rec.children.add(c) });
+      if (rec.cancelled) return; // 规划期间被取消
+      const planMs = Date.now() - planStart;
+      store.addEvent(id, 'plan', { steps: (plan.steps || []).length, ms: planMs, route: plan.planning_stats && plan.planning_stats.route, llmCalls: plan.planning_stats && plan.planning_stats.llm_calls });
+      broadcast({ taskId: id, type: 'plan', data: plan });
+      require('./runner').runPlanned(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, plan);
+    } catch (e) {
+      store.setTaskStatus(id, 'failed');
+      store.addTaskMsg(id, 'system', '规划模式选择后重规划失败:' + (e && e.message || e));
+      store.addEvent(id, 'task', 'failed');
+      broadcast({ taskId: id, type: 'task', data: 'failed' });
+    }
+  })();
+  return true;
 }
 // 用户回答决策 → 续跑
 app.post('/task/:id/answer', (req, res) => {
@@ -249,6 +313,11 @@ app.post('/task/:id/answer', (req, res) => {
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   const stepId = (req.body && req.body.stepId) || t.blocked_step;
   const answer = (req.body && req.body.answer) || '';
+  if (t.status !== 'awaiting_input') return res.json({ ok: false, error: '任务不在待输入状态(可能已被处理)' }); // 防重复提交/旧页面把在跑任务再拉起一份并发执行
+  if (stepId === '__route_choice') {
+    const ok = applyRouteChoice(id, t, answer);
+    return res.json({ ok, mode: 'route_choice' });
+  }
   res.json({ ok: true });
   require('./runner').resumeTask(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast }, stepId, answer);
 });
@@ -302,6 +371,7 @@ app.post('/task/:id/continue', (req, res) => {
   const text = ((req.body && req.body.text) || '').trim();
   if (!t || !text) return res.json({ ok: false });
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status === 'running' || t.status === 'planning' || t.status === 'meeting') return res.json({ ok: false, error: '任务进行中,请在任务对话里发消息注入,或先停止' }); // 防与在跑计划并发双跑
   const dir = t.dir || ROOT;
   res.json({ id });
   require('./runner').continueTask(id, {
@@ -424,7 +494,8 @@ app.post('/api/meeting/:id/end', (req, res) => {
   if (!t) return res.json({ ok: false });
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   res.json({ ok: true });
-  runnerMod.endMeeting(id, meetDeps(t)).catch(() => {});
+  // 用户显式点「结束会议 · 生成方案」= 用户拍板:直接收束,不再过主持人判定(否则会被 continue 否决,用户按钮失效还多花一次 LLM)
+  runnerMod.endMeeting(id, meetDeps(t), { status: 'user_forced', reason: '用户手动结束会议' }).catch(() => {});
 });
 app.post('/task/:id/message', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
@@ -441,7 +512,14 @@ app.post('/task/:id/message', (req, res) => {
     return res.json({ ok: true, mode: 'inject' });
   }
   if (t.status === 'paused') { res.json({ ok: true, mode: 'resume' }); return runnerMod.retryFailed(id, deps(), text); }
-  if (t.status === 'awaiting_input') { res.json({ ok: true, mode: 'answer' }); return runnerMod.resumeTask(id, deps(), t.blocked_step, text); }
+  if (t.status === 'awaiting_input') {
+    if (t.blocked_step === '__route_choice') {
+      const ok = applyRouteChoice(id, t, text);
+      return res.json({ ok, mode: 'route_choice' });
+    }
+    res.json({ ok: true, mode: 'answer' });
+    return runnerMod.resumeTask(id, deps(), t.blocked_step, text);
+  }
   if (t.status === 'awaiting') { store.addTaskMsg(id, 'system', '任务在等审批,请先「批准并运行」(可先编辑计划)。'); broadcastRaw({ type: 'msg', taskId: id }); return res.json({ ok: true, mode: 'info' }); }
   // done/failed/cancelled → 继续开发
   res.json({ ok: true, mode: 'continue' });
@@ -501,6 +579,8 @@ app.post('/task/:id/replan', (req, res) => {
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能重规划,请先停止' });
   store.clearSteps(id); // 清旧步骤,避免残留误判进度
+  // 清旧交接全文:新计划步骤 id 常与旧同名(scaffold_ui 等通用名),残留文件会把上一轮的全文当"上游交接"喂给新员工
+  if (t.dir) { try { fs.rmSync(path.join(t.dir, '交接'), { recursive: true, force: true }); } catch (e) {} }
   if (store.addEvent) store.addEvent(id, 'replan', {});
   store.addTaskMsg(id, 'system', '🔄 已推翻原计划,正在按原需求重新拆分。');
   res.json({ ok: true });
@@ -571,6 +651,7 @@ app.post('/task/:id/retry', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   if (!t) return res.json({ ok: false });
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status === 'running' || t.status === 'planning' || t.status === 'meeting') return res.json({ ok: false, error: '任务进行中,不能重试(会双跑),请先停止' });
   res.json({ ok: true });
   require('./runner').retryFailed(id, { store, adapters, workspace: taskWorkspace(t), runs, onEvent: broadcast });
 });
@@ -580,6 +661,7 @@ app.post('/task/:id/approve', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   if (!t) return res.json({ ok: false });
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
+  if (t.status !== 'awaiting') return res.json({ ok: false, error: '任务不在待审批状态(可能已批准)' }); // 防重复批准把同一计划并发跑两遍
   let plan = req.body && req.body.plan;
   if (!plan) { try { plan = JSON.parse(t.plan); } catch (e) { plan = { steps: [] }; } }
   require('./planner').sanitizeDeps(plan); // 用户可能编辑坏依赖(循环/悬空)→ 健全化防卡死
@@ -597,6 +679,9 @@ app.post('/task/:id/cancel', (req, res) => {
     // 只杀仍存活的子进程,且按 PID 定向(绝不按镜像名):避免 PID 被回收后误杀无关进程(极端下可能是别的 claude 会话)
     rec.children.forEach((c) => killTree(c));
   }
+  // 会议中取消:一并关会议,否则会议室仍 open,用户/员工还能继续发言触发 LLM(取消后继续烧钱)
+  try { const mt = store.getMeeting(id); if (mt && mt.status === 'open') { store.setMeetingStatus(id, 'closed', ''); store.addMeetingMsg(id, { role: 'system', name: '会议室', avatar: '🏛', text: '任务已取消,会议关闭。' }); } } catch (e) {}
+  store.clearTaskDecision(id); // 挂起的裁决/决策问题一并清掉,防残留误导
   store.setTaskStatus(id, 'cancelled'); store.addEvent(id, 'task', 'cancelled'); broadcast({ taskId: id, type: 'task', data: 'cancelled' });
   res.json({ ok: true });
 });
@@ -684,7 +769,7 @@ app.get('/api/replay/:id', (req, res) => {
 });
 
 // —— 定时任务:每分钟检查,到点自动建任务(参考 Manus Scheduled Tasks) ——
-app.get('/api/schedules', (req, res) => res.json(store.listSchedules().filter((s) => req.user.admin || s.owner === req.user.name).map((s) => ({ ...s, spec: JSON.parse(s.spec || '{}') }))));
+app.get('/api/schedules', (req, res) => res.json(store.listSchedules().filter((s) => req.user.admin || s.owner === req.user.name).map((s) => { let spec = {}; try { spec = JSON.parse(s.spec || '{}') || {}; } catch (e) {} return { ...s, spec }; }))); // 单条坏 spec 不掀翻整个列表接口
 app.post('/api/schedules', (req, res) => {
   const b = req.body || {};
   if (!b.text || !b.spec || !b.spec.kind) return res.json({ ok: false, error: '缺 text/spec' });
@@ -727,7 +812,13 @@ store.listTasks().filter((t) => t.status === 'failed').forEach((t) => {
 });
 
 const activity = []; // 真实活动流环形缓冲(最新在前)
+// roleMap/roleView 缓存:toActivity 对每条 status 广播都重建(87 角色 + 部门全表),并发多任务每秒几十次。
+// 角色/部门/执行器极少变,变更统一走 broadcastRaw({type:'agents'})——在那清缓存即可。
+let _rmCache = null, _rvCache = null;
+const roleMapCached = () => _rmCache || (_rmCache = api.roleMap(store));
+const roleViewCached = () => _rvCache || (_rvCache = api.roleView(store));
 function broadcastRaw(ev) {
+  if (ev && ev.type === 'agents') { _rmCache = null; _rvCache = null; } // 角色/部门/执行器变更 → 失效缓存
   const msg = JSON.stringify(ev);
   // 单个客户端 send 抛错(socket 刚好关闭的 TOCTOU)不得中断其它客户端广播,更不得沿 onEvent 冒泡进引擎把好任务搞成 failed
   wss.clients.forEach((c) => { if (c.readyState === 1) { try { c.send(msg); } catch (e) {} } });
@@ -744,8 +835,8 @@ function toActivity(ev) {
   if (data !== 'running' && data !== 'done' && data !== 'failed') return null;
   const t = store.getTask(taskId);
   const st = t && t.steps ? t.steps.find((x) => x.step_id === stepId) : null;
-  const role = st && api.roleMap(store)[st.agent];
-  const emp = t && stepId ? (api.roleView(store)[api.planRoleMap(t)[stepId]] || null) : null; // 员工署名优先
+  const role = st && roleMapCached()[st.agent];
+  const emp = t && stepId ? (roleViewCached()[api.planRoleMap(t)[stepId]] || null) : null; // 员工署名优先(缓存 roleMap/roleView)
   const who = emp ? (emp.deptName + '·' + emp.name) : (role ? role.label : '编排器');
   const c = emp ? emp.color : (role ? role.color : '#1A1814');
   if (data === 'running') return { a: who, c, t: '开始 ' + stepId, dot: '#F0B400', soft: '#FFF6D6', time };

@@ -65,6 +65,7 @@ function open(file) {
     CREATE INDEX IF NOT EXISTS idx_usage_task ON usage(task_id);
     CREATE INDEX IF NOT EXISTS idx_steps_task ON steps(task_id);
     CREATE INDEX IF NOT EXISTS idx_logs_task ON logs(task_id, step_id);
+    CREATE INDEX IF NOT EXISTS idx_meeting_msgs_task ON meeting_msgs(task_id);
   `);
   // 迁移:给旧库补列
   const ensureCol = (t, c, type) => { const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r) => r.name); if (!cols.includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${type}`); };
@@ -78,6 +79,8 @@ function open(file) {
   ensureCol('agents', 'enabled', 'INTEGER'); // 启用/停用:null/1=启用,0=停用(停用的不进规划器可选列表)
   ensureCol('agents', 'default_model', 'TEXT'); // #4 该执行器的默认大模型(用户没为任务指定时用)
   ensureCol('agents', 'default_effort', 'TEXT'); // #4 该执行器的默认思考级别
+  ensureCol('agents', 'base_url', 'TEXT'); // API 型大模型 Agent:OpenAI 兼容地址(填 /v1 或裸域名均可)
+  ensureCol('agents', 'api_key', 'TEXT'); // API 型大模型 Agent:密钥(本地单机明文存;绝不进 /api/all 与配置导出)
   ensureCol('departments', 'flow', 'TEXT');
   ensureCol('tasks', 'models', 'TEXT');
   ensureCol('roles', 'memo', 'TEXT');
@@ -107,12 +110,13 @@ function open(file) {
     addTaskMsg(taskId, who, text) { db.prepare('INSERT INTO task_messages(task_id,who,text,ts) VALUES(?,?,?,?)').run(taskId, who, text, new Date().toISOString()); },
     getTaskMsgs(taskId) { return db.prepare('SELECT * FROM task_messages WHERE task_id=? ORDER BY id').all(taskId); },
     // 会议室:复杂任务开会讨论需求(员工+用户群聊),结束后产出方案与记录
-    createMeeting(taskId, attendees) { db.prepare('INSERT OR REPLACE INTO meetings(task_id,attendees,status,result,created_at) VALUES(?,?,?,?,?)').run(taskId, JSON.stringify(attendees || []), 'open', '', new Date().toISOString()); },
+    createMeeting(taskId, attendees) { db.prepare('DELETE FROM meeting_msgs WHERE task_id=?').run(taskId); db.prepare('INSERT OR REPLACE INTO meetings(task_id,attendees,status,result,created_at) VALUES(?,?,?,?,?)').run(taskId, JSON.stringify(attendees || []), 'open', '', new Date().toISOString()); },
     getMeeting(taskId) { const m = db.prepare('SELECT * FROM meetings WHERE task_id=?').get(taskId); if (m) { try { m.attendees = JSON.parse(m.attendees) || []; } catch (e) { m.attendees = []; } } return m; },
     setMeetingAttendees(taskId, attendees) { db.prepare('UPDATE meetings SET attendees=? WHERE task_id=?').run(JSON.stringify(attendees || []), taskId); },
     setMeetingStatus(taskId, status, result) { db.prepare('UPDATE meetings SET status=?, result=COALESCE(?,result) WHERE task_id=?').run(status, result == null ? null : result, taskId); },
     addMeetingMsg(taskId, m) { db.prepare('INSERT INTO meeting_msgs(task_id,role,name,avatar,text,ts) VALUES(?,?,?,?,?,?)').run(taskId, m.role || '', m.name || '', m.avatar || '', m.text || '', new Date().toISOString()); },
     listMeetingMsgs(taskId) { return db.prepare('SELECT * FROM meeting_msgs WHERE task_id=? ORDER BY id').all(taskId); },
+    meetingSummariesByTask() { const m = new Map(); db.prepare('SELECT mt.task_id, mt.status, COUNT(mm.id) msg_count FROM meetings mt LEFT JOIN meeting_msgs mm ON mm.task_id=mt.task_id GROUP BY mt.task_id, mt.status').all().forEach((r) => m.set(r.task_id, { status: r.status, msgCount: r.msg_count || 0 })); return m; },
     // 剧本:成功任务的计划骨架,可复用
     addPlaybook(d) { return db.prepare('INSERT INTO playbooks(name,description,plan,created_at) VALUES(?,?,?,?)').run(d.name || '剧本', d.description || '', JSON.stringify(d.plan || {}), new Date().toISOString()).lastInsertRowid; },
     listPlaybooks() { return db.prepare('SELECT * FROM playbooks ORDER BY id DESC').all(); },
@@ -130,7 +134,7 @@ function open(file) {
     renameTask(id, text) { db.prepare('UPDATE tasks SET text=?, updated_at=? WHERE id=?').run(String(text || '').slice(0, 2000), new Date().toISOString(), id); }, // #1 任务重命名
     deleteTask(id) { // 级联清任务及其全部关联数据
       db.prepare('DELETE FROM tasks WHERE id=?').run(id);
-      ['steps', 'logs', 'events', 'usage', 'task_messages', 'plan_versions'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
+      ['steps', 'logs', 'events', 'usage', 'task_messages', 'plan_versions', 'meetings', 'meeting_msgs'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id)); // 含会议数据:task id(rowid)删除后会被复用,残留会议会附身到新任务
       db.prepare('DELETE FROM apps WHERE task_id=?').run(id); // 已发布应用也移除
     },
     setTaskDecision(id, stepId, question) { db.prepare('UPDATE tasks SET blocked_step=?, question=? WHERE id=?').run(stepId, question, id); },
@@ -152,6 +156,13 @@ function open(file) {
       db.prepare('UPDATE tasks SET status=?, updated_at=? WHERE id=?').run(status, new Date().toISOString(), id);
     },
     clearSteps(taskId) { db.prepare('DELETE FROM steps WHERE task_id=?').run(taskId); },
+    // 只保留仍在计划里的步骤行:动态重规划会换血 plan.steps,被丢弃的旧步若残留,进度分母虚高、接力记录混入死步
+    pruneSteps(taskId, keepIds) {
+      const rows = db.prepare('SELECT step_id FROM steps WHERE task_id=?').all(taskId);
+      const keep = new Set(keepIds || []);
+      const del = db.prepare('DELETE FROM steps WHERE task_id=? AND step_id=?');
+      rows.forEach((r) => { if (!keep.has(r.step_id)) del.run(taskId, r.step_id); });
+    },
     setStep(taskId, stepId, agent, status, output) {
       db.prepare(`INSERT INTO steps(task_id,step_id,agent,status,output)
         VALUES(?,?,?,?,?)
@@ -162,6 +173,10 @@ function open(file) {
     addLog(taskId, stepId, line) {
       db.prepare('INSERT INTO logs(task_id,step_id,line) VALUES(?,?,?)')
         .run(taskId, stepId, line);
+    },
+    // 日志裁剪:任务终态时保留最近 N 行(流式日志每行入库,长任务几万行,不清理 DB 只涨不减、/api/all 越来越慢)
+    trimLogs(taskId, keep) {
+      db.prepare('DELETE FROM logs WHERE task_id=? AND id NOT IN (SELECT id FROM logs WHERE task_id=? ORDER BY id DESC LIMIT ?)').run(taskId, taskId, keep || 2000);
     },
     addEvent(taskId, type, data) { db.prepare('INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)').run(taskId, new Date().toISOString(), type, JSON.stringify(data == null ? null : data)); },
     getEvents(taskId) { return db.prepare('SELECT * FROM events WHERE task_id=? ORDER BY id').all(taskId); },
@@ -176,6 +191,32 @@ function open(file) {
     usageTodayByAgent() { const n = new Date(); const start = new Date(n.getFullYear(), n.getMonth(), n.getDate()).toISOString(); return db.prepare("SELECT agent, COALESCE(SUM(input_tokens),0) i, COALESCE(SUM(output_tokens),0) o, COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage WHERE ts>=? GROUP BY agent ORDER BY c DESC").all(start); },
     usageAllTime() { const r = db.prepare('SELECT COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage').get(); return { cost: r.c, calls: r.n }; },
     agentTotals(id) { const r = db.prepare('SELECT COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage WHERE agent=?').get(id); return { cost: r.c, calls: r.n }; }, // 单执行器累计成本(agent详情)
+    // 一趟聚合所有执行器累计成本,消除 buildAll 每执行器一次 agentTotals
+    agentTotalsAll() { const m = new Map(); db.prepare('SELECT agent, COALESCE(SUM(cost),0) c, COUNT(*) n FROM usage GROUP BY agent').all().forEach((r) => m.set(r.agent, { cost: r.c, calls: r.n })); return m; },
+    // 一趟算出所有执行器的平均耗时(秒):替代 buildAll 里每执行器 agentAvgSeconds(内部对其参与的每个历史任务拉一次 events 全表)。
+    // 单次全表扫 status events(ORDER BY id 保序,start 按 task 隔离)+ 单次扫 done steps,等价于原逐个算法。
+    agentAvgSecondsAll() {
+      const stepAgent = {}; // task_id → {step_id: agent}(仅 done 步)
+      db.prepare("SELECT task_id, step_id, agent FROM steps WHERE status='done'").all().forEach((r) => { (stepAgent[r.task_id] = stepAgent[r.task_id] || {})[r.step_id] = r.agent; });
+      const acc = {}; // agent → {total, n}
+      const startByTask = {}; // task_id → {step: startMs}(events 全局混序,须按任务隔离)
+      db.prepare("SELECT task_id, ts, data FROM events WHERE type='status' ORDER BY id").all().forEach((e) => {
+        let d; try { d = JSON.parse(e.data); } catch (x) { return; }
+        if (!d || !d.step) return;
+        const st = startByTask[e.task_id] || (startByTask[e.task_id] = {});
+        if (d.v === 'running') st[d.step] = new Date(e.ts).getTime();
+        else if (d.v === 'done' && st[d.step]) {
+          const ag = stepAgent[e.task_id] && stepAgent[e.task_id][d.step];
+          if (ag) { const a = acc[ag] || (acc[ag] = { total: 0, n: 0 }); a.total += (new Date(e.ts).getTime() - st[d.step]) / 1000; a.n++; }
+          delete st[d.step];
+        }
+      });
+      const m = new Map();
+      Object.keys(acc).forEach((ag) => { const a = acc[ag]; m.set(ag, a.n ? Math.round(a.total / a.n) : 0); });
+      return m;
+    },
+    // 某步最后一行日志(idx_logs_task 命中);替代 buildAll 拉整任务全部日志再倒序找
+    lastLogLine(taskId, stepId) { const r = db.prepare('SELECT line FROM logs WHERE task_id=? AND step_id=? ORDER BY id DESC LIMIT 1').get(taskId, stepId); return (r && r.line) || ''; },
     // 该执行器已完成步骤的平均耗时(秒):从 status 事件的 running→done 时差算
     agentAvgSeconds(id) {
       const rows = db.prepare("SELECT DISTINCT task_id FROM steps WHERE agent=? AND status='done'").all(id);
@@ -200,20 +241,23 @@ function open(file) {
     listTasks() {
       return db.prepare('SELECT id,text,status,project,owner,budget,approve,isolate,ask,replan,models,dir,blocked_step,question,parent,created_at,updated_at FROM tasks ORDER BY id DESC').all();
     },
+    // 一趟批量拿所有任务的 plan(id→plan 字符串):供 buildAll 消除逐任务 getTask 的 N+1
+    //(getTask 每次含一个冗余的 steps 全表子查询,而 buildAll 顶部 allSteps 已全量拿过)
+    plansByTask() { const m = new Map(); db.prepare('SELECT id, plan FROM tasks').all().forEach((r) => m.set(r.id, r.plan)); return m; },
     getLogs(taskId) {
       return db.prepare('SELECT step_id,line FROM logs WHERE task_id=? ORDER BY id').all(taskId);
     },
     // 内容搜索:任务需求 + 各步产出 + 用户对话里匹配关键词,返回匹配任务(带命中片段)
     searchContent(q, limit) {
-      const like = '%' + q + '%'; const ql = q.toLowerCase();
+      const like = '%' + String(q).replace(/[\\%_]/g, (c) => '\\' + c) + '%'; const ql = q.toLowerCase(); // 转义 LIKE 通配符:搜 "100%"/"a_b" 不再全表误匹配
       // 用户对话用 EXISTS 子查询(避免 steps×messages 笛卡尔膨胀);限 who='user' 聚焦用户意图/决策,避开系统样板噪声
-      const rows = db.prepare("SELECT DISTINCT t.id, t.text, t.project, t.owner, t.status FROM tasks t LEFT JOIN steps s ON s.task_id=t.id WHERE t.text LIKE ? OR s.output LIKE ? OR EXISTS(SELECT 1 FROM task_messages m WHERE m.task_id=t.id AND m.who='user' AND m.text LIKE ?) ORDER BY t.id DESC LIMIT ?").all(like, like, like, limit || 30);
+      const rows = db.prepare("SELECT DISTINCT t.id, t.text, t.project, t.owner, t.status FROM tasks t LEFT JOIN steps s ON s.task_id=t.id WHERE t.text LIKE ? ESCAPE '\\' OR s.output LIKE ? ESCAPE '\\' OR EXISTS(SELECT 1 FROM task_messages m WHERE m.task_id=t.id AND m.who='user' AND m.text LIKE ? ESCAPE '\\') ORDER BY t.id DESC LIMIT ?").all(like, like, like, limit || 30);
       return rows.map((t) => {
         let snip = '';
         if (!String(t.text || '').toLowerCase().includes(ql)) {
-          const st = db.prepare('SELECT output FROM steps WHERE task_id=? AND output LIKE ? LIMIT 1').get(t.id, like);
+          const st = db.prepare("SELECT output FROM steps WHERE task_id=? AND output LIKE ? ESCAPE '\\' LIMIT 1").get(t.id, like);
           if (st && st.output) { const i = st.output.toLowerCase().indexOf(ql); snip = st.output.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); }
-          if (!snip) { const mm = db.prepare("SELECT text FROM task_messages WHERE task_id=? AND who='user' AND text LIKE ? LIMIT 1").get(t.id, like); if (mm && mm.text) { const i = mm.text.toLowerCase().indexOf(ql); snip = '💬 ' + mm.text.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); } }
+          if (!snip) { const mm = db.prepare("SELECT text FROM task_messages WHERE task_id=? AND who='user' AND text LIKE ? ESCAPE '\\' LIMIT 1").get(t.id, like); if (mm && mm.text) { const i = mm.text.toLowerCase().indexOf(ql); snip = '💬 ' + mm.text.slice(Math.max(0, i - 30), i + 60).replace(/\s+/g, ' '); } }
         }
         return { id: t.id, text: t.text, project: t.project, owner: t.owner, status: t.status, snip };
       });
@@ -231,8 +275,10 @@ function open(file) {
     listAgents() { return db.prepare('SELECT * FROM agents').all(); },
     addAgent(d) {
       const id = d.id || freeAutoId('agents', String(d.name || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent');
-      db.prepare('INSERT OR REPLACE INTO agents(id,name,command,args,model,caps,color,avatar,dept,pricing,image,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(id, d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli');
+      // upsert 而非 REPLACE:REPLACE 会擦掉不在列清单里的 enabled/default_model/default_effort;api_key 空传=保留旧值
+      db.prepare(`INSERT INTO agents(id,name,command,args,model,caps,color,avatar,dept,pricing,image,kind,base_url,api_key) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET name=excluded.name,command=excluded.command,args=excluded.args,model=excluded.model,caps=excluded.caps,color=excluded.color,avatar=excluded.avatar,dept=excluded.dept,pricing=excluded.pricing,image=excluded.image,kind=excluded.kind,base_url=excluded.base_url,api_key=CASE WHEN excluded.api_key='' THEN agents.api_key ELSE excluded.api_key END`)
+        .run(id, d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli', d.base_url || '', d.api_key || '');
       return id;
     },
     listPeople() { return db.prepare('SELECT * FROM people').all(); },
@@ -290,7 +336,10 @@ function open(file) {
     addRoleStat(id, produced) { db.prepare('UPDATE roles SET ' + (produced ? 'done_count=COALESCE(done_count,0)+1' : 'empty_count=COALESCE(empty_count,0)+1') + ' WHERE id=?').run(id); },
     addRole(d) {
       const id = d.id || freeAutoId('roles', String(d.name || 'role').toLowerCase().replace(/[^a-z0-9一-龥]+/g, '-') || 'role');
-      db.prepare('INSERT OR REPLACE INTO roles(id,dept,name,emoji,description,prompt,executor) VALUES(?,?,?,?,?,?,?)')
+      // upsert 而非 REPLACE:REPLACE 会把不在列清单里的 memo/done_count/empty_count 置空——
+      // roles-seed 版本升级与配置导入会把全员经验与绩效清零,摧毁"越用越聪明"的根基
+      db.prepare(`INSERT INTO roles(id,dept,name,emoji,description,prompt,executor) VALUES(?,?,?,?,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET dept=excluded.dept,name=excluded.name,emoji=excluded.emoji,description=excluded.description,prompt=excluded.prompt,executor=excluded.executor`)
         .run(id, d.dept || 'engineering', d.name || id, d.emoji || '🧑‍💼', d.description || '', d.prompt || '', d.executor || 'claude');
       return id;
     },
@@ -325,8 +374,9 @@ function open(file) {
     },
     listPersonAgents(pid) { return db.prepare('SELECT agent_id FROM person_agents WHERE person_id=?').all(pid).map((r) => r.agent_id); },
     updateAgent(id, d) {
-      db.prepare('UPDATE agents SET name=?,command=?,args=?,model=?,caps=?,color=?,avatar=?,dept=?,pricing=?,image=?,kind=? WHERE id=?')
-        .run(d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli', id);
+      // api_key 编辑留空 = 保留旧 Key(前端不回显明文,空提交不该清空);base_url 直接覆盖
+      db.prepare("UPDATE agents SET name=?,command=?,args=?,model=?,caps=?,color=?,avatar=?,dept=?,pricing=?,image=?,kind=?,base_url=?,api_key=COALESCE(NULLIF(?, ''),api_key) WHERE id=?")
+        .run(d.name || id, d.command || '', JSON.stringify(d.args || []), d.model || '—', JSON.stringify(d.caps || []), d.color || '#7C6FD9', d.avatar || (d.name || 'A').slice(0, 1).toUpperCase(), d.dept || 'dev', JSON.stringify(d.pricing || null), d.image || '', d.kind || 'cli', d.base_url || '', d.api_key || '', id);
     },
     deleteAgent(id) {
       db.prepare('DELETE FROM agents WHERE id=?').run(id);

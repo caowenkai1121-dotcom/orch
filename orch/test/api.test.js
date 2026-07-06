@@ -130,6 +130,21 @@ test('plan 展开普通步骤和 loop body 并覆盖真实步骤状态', () => {
   assert.deepEqual(fix.deps, ['dev']); // loop 展开:body[0] 继承 loop 的依赖(画布连线不断)
 });
 
+test('plan 暴露验收标准与知识引用标签', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('实现缓存', 'CRM'));
+  store.setPlan(id, { diagnostics: { score: 82, issues: [{ level: 'warn', message: '复杂任务缺质量门' }] }, steps: [
+    { id: 'impl_cache', agent: 'claude', prompt: '实现缓存', deps: [], expected_outcome: '缓存文件真实落盘' },
+  ] });
+  store.addEvent(id, 'knowledge', { step: 'impl_cache', hits: [{ file: '项目知识.md', score: 2, snippet: 'SQLite 回滚' }] });
+
+  const row = api.plan(store, id)[0];
+  assert.match(row.outcome, /真实落盘/);
+  assert.match(row.knowledgeLabel, /项目知识\.md/);
+  assert.match(row.healthLabel, /82/);
+});
+
 test('#8 why-not:未就绪步给出为何未推进(已完成/排队槽位/等上游)', () => {
   const store = open(':memory:');
   store.seed();
@@ -158,4 +173,94 @@ test('agentLog 只返回指定 agent 的真实日志', () => {
   assert.match(text, /dev finished/);
   assert.match(text, /failed line/);
   assert.doesNotMatch(text, /qa started/);
+});
+
+test('plan 为画布节点返回中文标题、角色、耗时和日志详情', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('修复登录按钮文案', 'CRM'));
+  store.setPlan(id, { steps: [
+    { id: 'impl_frontend', agent: 'claude', role: 'engineering-frontend-developer', prompt: '修复登录按钮文案', deps: [], expected_outcome: '按钮文案已修复并可验收' },
+  ] });
+  store.addEvent(id, 'status', { step: 'impl_frontend', v: 'running' });
+  store.addEvent(id, 'status', { step: 'impl_frontend', v: 'done' });
+  store.setStep(id, 'impl_frontend', 'claude', 'done', 'done output');
+  store.addLog(id, 'impl_frontend', '正在修改登录按钮文案');
+
+  const row = api.plan(store, id)[0];
+  assert.match(row.shortTitle, /前端|按钮|文案|实现|修复/);
+  assert.match(row.roleLine, /工程部|前端开发/);
+  assert.match(row.executorLabel, /Claude/);
+  assert.match(row.durationLabel, /\d+s|⏱/);
+  assert.match(row.logPreview, /按钮文案/);
+  assert.match(row.logText, /按钮文案/);
+  assert.equal(row.stepId, 'impl_frontend');
+});
+
+test('plan 无员工角色时画布显示未分配员工和执行器兜底', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('单执行器修复', 'CRM'));
+  store.setPlan(id, { steps: [
+    { id: 'build', agent: 'claude', prompt: '修复问题', deps: [] },
+  ] });
+
+  const row = api.plan(store, id)[0];
+  assert.match(row.roleLine, /未分配员工/);
+  assert.match(row.roleLine, /Claude/);
+  assert.match(row.executorLabel, /Claude/);
+  assert.match(row.metaLine, /未分配员工/);
+  assert.doesNotMatch(row.metaLine, /Claude · Claude/);
+});
+
+test('plan 为画布节点返回流程类型和编排理由', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('开发股票交易网站', 'Trading'));
+  store.setPlan(id, {
+    process: { type: 'risk_review', reason: '交易任务需要风险复核', manager_role: 'engineering-backend-architect', debate_rounds: 1, risk_review: true },
+    meeting: { agenda: ['目标澄清', '方案推进', '反方质询', '风险复核', '经理裁决'] },
+    steps: [
+      { id: 'risk_review', agent: 'codex', role: 'security-appsec-engineer', prompt: '风险复核', deps: [], expected_outcome: '风险复核完成' },
+    ],
+  });
+
+  const row = api.plan(store, id)[0];
+  assert.equal(row.processType, 'risk_review');
+  assert.match(row.processLabel, /风险复核/);
+  assert.match(row.orchestrationReason, /交易任务/);
+  assert.match(row.meetingAgenda, /反方质询/);
+});
+
+test('meeting 返回显式主持人信息', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('开发复杂系统', 'CRM'));
+  store.setPlan(id, { meeting: { hostRole: 'chief-orchestrator', attendees: ['engineering-backend-architect'], meetIds: ['meet_arch'], decideId: 'decide_plan' }, steps: [
+    { id: 'meet_arch', role: 'engineering-backend-architect', agent: 'claude', deps: [] },
+    { id: 'decide_plan', role: 'chief-orchestrator', agent: 'claude', deps: ['meet_arch'] },
+  ] });
+  store.createMeeting(id, ['engineering-backend-architect']);
+
+  const mt = api.meeting(store, id);
+  assert.equal(mt.host.id, 'chief-orchestrator');
+  assert.match(mt.host.name, /总调度/);
+  assert.ok(!mt.attendees.some((a) => a.id === 'chief-orchestrator'));
+});
+
+test('buildAll 为已结束会议保留任务入口摘要', () => {
+  const store = open(':memory:');
+  store.seed();
+  const id = Number(store.createTask('开发ERP系统', 'ERP'));
+  store.setTaskStatus(id, 'done');
+  store.createMeeting(id, ['product-manager']);
+  store.addMeetingMsg(id, { role: 'system', name: '会议室', text: '会议开始' });
+  store.addMeetingMsg(id, { role: 'product-manager', name: '产品经理', text: '形成结论' });
+  store.setMeetingStatus(id, 'closed', '会议结论');
+
+  const row = api.buildAll(store).tasks.find((t) => t.id === id);
+
+  assert.equal(row.hasMeeting, true);
+  assert.equal(row.meetingStatus, 'closed');
+  assert.equal(row.meetingMsgCount, 2);
 });

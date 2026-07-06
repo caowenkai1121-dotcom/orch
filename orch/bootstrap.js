@@ -48,7 +48,9 @@ function importDataDir(store, ROOT) {
 // 适配器注册表从 DB 的 agent 定义构建,新增 agent 后重建
 function buildAdapters(store) {
   const m = { echo: require('./adapters/echo') };
-  store.listAgents().forEach((a) => { m[a.id] = generic.make(a); });
+  const openai = require('./adapters/openai');
+  // API 型大模型(kind≠cli 且配了 base_url)走 OpenAI 兼容适配器(三项接入:地址/Key/模型,可做会议发言/文本步);其余走 CLI generic
+  store.listAgents().forEach((a) => { m[a.id] = ((a.kind || 'cli') !== 'cli' && a.base_url) ? openai.make(a) : generic.make(a); });
   m.claude = require('./adapters/claude'); // claude 用 stream-json 专用适配器
   if (m.codex) m.codex = require('./adapters/codex'); // codex 用 --json 专用适配器(真实 token/成本,替代 char/4 估算)
   return m;
@@ -78,8 +80,9 @@ function recoverZombies(store) {
     store.setTaskStatus(t.id, 'failed');
     store.addEvent(t.id, 'task', 'interrupted');
     store.addLog(t.id, '', '⚠ 服务重启,任务执行被中断(非任务本身错误)。点「↻ 重试失败步骤」续跑,已完成步骤不会重跑。');
-    // 运行中的步骤一并标失败,重试时会重跑这些步骤
-    (store.getTask(t.id).steps || []).forEach((s) => { if (s.status === 'running') store.setStep(t.id, s.step_id, s.agent, 'failed', s.output); });
+    // 运行中的步骤一并标失败,重试时会重跑这些步骤;补状态事件——否则 events 里只有 running 没有终态,
+    // 耗时统计(stepDurations/agentAvgSeconds)会把这些步永远显示为"⏱ 运行中"且越走越大
+    (store.getTask(t.id).steps || []).forEach((s) => { if (s.status === 'running') { store.setStep(t.id, s.step_id, s.agent, 'failed', s.output); store.addEvent(t.id, 'status', { step: s.step_id, v: 'failed' }); } });
   });
   if (zombies.length) console.log('恢复中断任务:', zombies.length, '个(已标记失败,可重试续跑)');
 }

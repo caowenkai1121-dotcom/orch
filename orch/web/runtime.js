@@ -20,6 +20,9 @@
   const strip = (s) => s.replace(/[{}]/g, '');
   function dispatchClick(e) { const f = e.currentTarget._onclick; if (typeof f === 'function') f(e); }
   function dispatchKey(e) { const f = e.currentTarget._onkeydown; if (typeof f === 'function') f(e); }
+  // 其余 on* 事件(oninput/onchange/onkeyup)通用分发:原先只认 onclick/onkeydown,模板里这些属性会被当普通字符串
+  // setAttribute(函数源码文本)→ 输入筛选/自动增高/文件导入 onchange 全部静默失效
+  function dispatchEvt(e) { const f = e.currentTarget._evh && e.currentTarget._evh[e.type]; if (typeof f === 'function') f(e); }
   function enterHover(e) {
     const el = e.currentTarget;
     el.setAttribute('data-base', el.getAttribute('style') || '');
@@ -79,6 +82,10 @@
       } else if (name === 'onkeydown') {
         el._onkeydown = resolve(strip(val), scopes);
         el.addEventListener('keydown', dispatchKey); el._keyBound = true;
+      } else if (name === 'oninput' || name === 'onchange' || name === 'onkeyup') {
+        const evt = name.slice(2);
+        (el._evh = el._evh || {})[evt] = resolve(strip(val), scopes);
+        el.addEventListener(evt, dispatchEvt); (el._evhBound = el._evhBound || {})[evt] = true;
       } else if (name === 'style-hover') {
         el._hover = val;
         el.addEventListener('mouseenter', enterHover);
@@ -132,10 +139,12 @@
     }
     o._onclick = nw._onclick; // 同步最新 handler 到保留的旧节点
     o._onkeydown = nw._onkeydown;
+    o._evh = nw._evh;
     o._hover = nw._hover;
     o._refFn = nw._refFn;
     if (o._onclick && !o._clickBound) { o.addEventListener('click', dispatchClick); o._clickBound = true; } // 无监听器旧节点被对齐到带 onClick 的新节点:补绑,否则点击无反应
     if (o._onkeydown && !o._keyBound) { o.addEventListener('keydown', dispatchKey); o._keyBound = true; }
+    if (o._evh) for (const k in o._evh) { if (!o._evhBound || !o._evhBound[k]) { o.addEventListener(k, dispatchEvt); (o._evhBound = o._evhBound || {})[k] = true; } } // 通用 on* 同步补绑
     if (o._refFn) o._refFn(o); // ref 作用在保留的真实节点上(修:原来在游离 frag 节点上,滚动/聚焦等失效)
     morph(o, nw);
   }

@@ -14,7 +14,7 @@ function roleMap(store) {
   store.listAgents().forEach((a) => {
     let caps = []; try { caps = JSON.parse(a.caps); } catch (e) {}
     let args = []; try { args = JSON.parse(a.args); } catch (e) {}
-    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli', enabled: a.enabled !== 0, defModel: a.default_model || '', defEffort: a.default_effort || '' };
+    m[a.id] = { dept: a.dept || 'dev', label: a.name, model: a.model, color: a.color, av: a.avatar, caps, args, command: a.command, image: a.image || '', kind: a.kind || 'cli', enabled: a.enabled !== 0, defModel: a.default_model || '', defEffort: a.default_effort || '', baseUrl: a.base_url || '', hasKey: !!a.api_key }; // api_key 本身绝不出 API
   });
   return m;
 }
@@ -49,6 +49,8 @@ function rel(iso) {
   return Math.floor(h / 24) + ' 天前';
 }
 function isToday(iso) { if (!iso) return false; const d = new Date(iso), n = new Date(); return d.toDateString() === n.toDateString(); }
+// 本地时区 HH:MM(ts 存 UTC ISO,直接 slice 会差出时区,如中国 +8h)
+function hhmmLocal(iso) { if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return ''; const z = (n) => (n < 10 ? '0' + n : '' + n); return z(d.getHours()) + ':' + z(d.getMinutes()); }
 
 // 当前用户可见的项目集合(null=全部,管理员)
 function visibleSet(store, user) {
@@ -66,7 +68,12 @@ function buildAll(store, user) {
   const projRows = store.listProjects();       // 只查一次,循环内复用
   const usageMap = store.usageByTask();        // 一趟聚合,消除每任务 taskUsage 的 N+1
   const uOf = (id) => usageMap.get(id) || { input: 0, output: 0, cost: 0 };
+  const avgAll = store.agentAvgSecondsAll ? store.agentAvgSecondsAll() : new Map(); // 一趟算所有执行器平均耗时(替代每执行器逐历史任务扫 events)
+  const totalsAll = store.agentTotalsAll ? store.agentTotalsAll() : new Map();       // 一趟聚合所有执行器累计成本
   const vis = visibleSet(store, user);         // null=全部
+  const plansMap = store.plansByTask ? store.plansByTask() : new Map(); // 批量取 plan,消除逐任务 getTask 的 N+1(每次含冗余 steps 子查询)
+  const meetingMap = store.meetingSummariesByTask ? store.meetingSummariesByTask() : new Map(); // 批量取会议摘要,保留已结束会议入口
+  const planRowOf = (id) => ({ plan: plansMap.get(id) });               // planRoleMap 只读 .plan,给个轻量壳即可
   const tasks = store.listTasks().filter((t) => !vis || vis.has(t.project || '默认项目') || t.owner === (user && user.name));
   const visIds = new Set(tasks.map((t) => t.id));
   const steps = store.allSteps().filter((s) => visIds.has(s.task_id));
@@ -75,7 +82,7 @@ function buildAll(store, user) {
 
   const progressOf = (tid) => { const ss = byTask[tid] || []; if (!ss.length) return 0; return Math.round(ss.filter((s) => s.status === 'done').length / ss.length * 100); };
   const agentsInTask = (tid) => { const set = {}; (byTask[tid] || []).forEach((s) => { if (s.agent && ROLE[s.agent]) set[s.agent] = 1; }); return Object.keys(set); };
-  const lastLine = (tid, stepId) => { const rows = store.getLogs(tid); for (let i = rows.length - 1; i >= 0; i--) if (rows[i].step_id === stepId) return rows[i].line; return ''; };
+  const lastLine = (tid, stepId) => store.lastLogLine ? store.lastLogLine(tid, stepId) : (function () { const rows = store.getLogs(tid); for (let i = rows.length - 1; i >= 0; i--) if (rows[i].step_id === stepId) return rows[i].line; return ''; })();
 
   const agents = Object.keys(ROLE).map((id) => {
     const r = ROLE[id];
@@ -88,7 +95,7 @@ function buildAll(store, user) {
     // 正在扮演的员工(部门·角色)
     let empNow = '';
     if (running) {
-      const sr = planRoleMap(store.getTask(running.task_id) || {});
+      const sr = planRoleMap(planRowOf(running.task_id));
       const emp = sr[running.step_id] && RV[sr[running.step_id]];
       if (emp) empNow = emp.emoji + ' ' + emp.deptName + '·' + emp.name;
     }
@@ -96,14 +103,15 @@ function buildAll(store, user) {
       id, name: r.label, type: id, dept: r.dept, enabled: r.enabled,
       defModel: r.defModel, defEffort: r.defEffort,
       command: r.command, args: r.args, image: r.image, kind: r.kind,
+      baseUrl: r.baseUrl, hasKey: r.hasKey, hasApi: !!((r.kind || 'cli') !== 'cli' && r.baseUrl),
       color: r.color, avatar: r.av, soft: (r.color || '#7C6FD9') + '2b',
       status: running ? 'working' : 'idle',
       task: cur ? cur.text : '—', taskId: cur ? cur.id : '', empNow,
       action: running ? ((empNow ? empNow + ' · ' : '') + (lastLine(running.task_id, running.step_id) || ('执行 ' + running.step_id))) : '空闲 · 等待任务',
       actions: [], progress: cur ? progressOf(cur.id) : 0,
       model: r.model, success: tot ? Math.round(done / tot * 100) + '%' : '—', done,
-      avg: (function () { const s = store.agentAvgSeconds ? store.agentAvgSeconds(id) : 0; return s > 0 ? (s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's') : '—'; })(),
-      cost: (function () { const c = store.agentTotals ? store.agentTotals(id).cost : 0; return c > 0 ? '$' + (Math.round(c * 1000) / 1000) : '—'; })(), caps: r.caps,
+      avg: (function () { const s = avgAll.get(id) || 0; return s > 0 ? (s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's') : '—'; })(),
+      cost: (function () { const c = (totalsAll.get(id) || {}).cost || 0; return c > 0 ? '$' + (Math.round(c * 1000) / 1000) : '—'; })(), caps: r.caps,
     };
   });
 
@@ -163,8 +171,11 @@ function buildAll(store, user) {
 
   const tasksVm = tasks.map((t) => {
     const u = uOf(t.id);
-    // 进度:顶层步骤完成数/总数(loop 子步骤不计)
-    const tops = (byTask[t.id] || []).filter((s) => (s.step_id || '').indexOf('.') < 0);
+    const trow = planRowOf(t.id); // 仅需 plan(批量预取,不再逐任务 getTask + 冗余 steps 子查询)
+    // 进度:只统计计划顶层步骤。原按 step_id 含 '.' 排除 loop 子步——但子步 id 是 LLM 起的任意名根本没点,
+    // 分母把子步和 loop 包装步双计,进度虚低。以 plan 顶层 id 集为准;无计划(导入/损坏)回退旧启发。
+    let topIds = null; try { const pl = JSON.parse(trow.plan || 'null'); if (pl && Array.isArray(pl.steps) && pl.steps.length) topIds = new Set(pl.steps.map((s) => s.id)); } catch (e) {}
+    const tops = (byTask[t.id] || []).filter((s) => topIds ? topIds.has(s.step_id) : (s.step_id || '').indexOf('.') < 0);
     const total = tops.length, doneN = tops.filter((s) => s.status === 'done').length;
     const progress = total ? Math.round(doneN / total * 100) : 0;
     const progressLabel = total ? (doneN + '/' + total + ' 步') : '';
@@ -178,7 +189,7 @@ function buildAll(store, user) {
       if (sec > 0) durLabel = sec >= 3600 ? Math.floor(sec / 3600) + 'h' + Math.floor(sec % 3600 / 60) + 'm' : (sec >= 60 ? Math.floor(sec / 60) + 'm' + (sec % 60) + 's' : sec + 's'); // 0s(导入历史/瞬时)不显,避免"⏱ 0s"误导似坏了
     }
     // 任务挂靠部门 + 运行中谁在做什么:都用步骤→角色映射(开发任务的步骤多是工程部角色 → 挂工程部)
-    const sr = planRoleMap(store.getTask(t.id) || {});
+    const sr = planRoleMap(trow);
     const deptCount = {};
     Object.values(sr).forEach((role) => { const emp = RV[role]; if (emp && emp.deptName) deptCount[emp.deptName] = (deptCount[emp.deptName] || 0) + 1; });
     const deptName = Object.keys(deptCount).sort((a, b) => deptCount[b] - deptCount[a])[0] || '';
@@ -190,7 +201,8 @@ function buildAll(store, user) {
       }).join(' | ');
     }
     let modelsObj = null; try { modelsObj = t.models ? JSON.parse(t.models) : null; } catch (e) {} // 供「再来一个」克隆配置
-    return { id: t.id, title: t.text, proj: t.project || '默认项目', dept: deptName, sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, budget: t.budget || 0, approve: !!t.approve, ask: !!t.ask, replan: !!t.replan, isolate: t.isolate || 'none', models: modelsObj, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason };
+    const meeting = meetingMap.get(t.id);
+    return { id: t.id, title: t.text, proj: t.project || '默认项目', dept: deptName, sk: taskSk(t.status), agents: agentsInTask(t.id), updated: rel(t.updated_at), cost: u.cost, tokens: u.input + u.output, budget: t.budget || 0, approve: !!t.approve, ask: !!t.ask, replan: !!t.replan, isolate: t.isolate || 'none', models: modelsObj, question: t.question || '', blockedStep: t.blocked_step || '', hasDir: !!t.dir, owner: t.owner, mine: !!(user && t.owner === user.name), canModify: !!(user && (user.admin || t.owner === user.name)), nowDoing, progress, progressLabel, durLabel, failReason, hasMeeting: !!meeting, meetingStatus: meeting ? meeting.status : '', meetingMsgCount: meeting ? meeting.msgCount : 0 };
   });
 
   // 人员:来自 DB(含分配的 agent)
@@ -248,6 +260,42 @@ function stepDurations(store, taskId) {
   return dur;
 }
 
+function compactText(s, n) {
+  return String(s || '').replace(/\s+/g, ' ').trim().slice(0, n || 80);
+}
+
+function promptTaskText(prompt) {
+  const s = String(prompt || '');
+  const m = s.match(/【任务】([\s\S]*)/);
+  return compactText((m ? m[1] : s).replace(/【[^】]+】/g, ' '), 80);
+}
+
+function shortStepTitle(step, emp) {
+  const id = String(step.id || '');
+  const txt = (id + ' ' + promptTaskText(step.prompt) + ' ' + (step.role || '') + ' ' + (emp && emp.name || '')).toLowerCase();
+  if (/decide_plan|方案综合|决议/.test(txt)) return '方案决议';
+  if (/meet_|meeting|会议/.test(txt)) return '会议讨论';
+  if (/competitor|竞品/.test(txt)) return '竞品分析';
+  if (/roadmap|路线|规划/.test(txt)) return '路线规划';
+  if (/ux|design|体验|视觉|设计/.test(txt)) return '体验设计';
+  if (/architect|architecture|架构/.test(txt)) return '技术架构';
+  if (/fix|repair|修复|报错|bug/.test(txt) && /front|ui|页面|按钮|文案|样式/.test(txt)) return '前端修复';
+  if (/fix|repair|修复|报错|bug/.test(txt)) return '修复处理';
+  if (/backend|server|api|接口|后端|数据库/.test(txt)) return '后端实现';
+  if (/frontend|front|ui|页面|按钮|文案|样式|组件/.test(txt)) return '前端实现';
+  if (/test|verify|qa|review|验收|测试|验证|评审|质量/.test(txt)) return '验收测试';
+  if (/build|impl|develop|实现|开发|交付/.test(txt)) return '实现交付';
+  const fromPrompt = promptTaskText(step.prompt);
+  return fromPrompt ? compactText(fromPrompt, 18) : compactText(id, 18);
+}
+
+function stepLogDetail(logs, stepId) {
+  const rows = (logs || []).filter((r) => r.step_id === stepId).slice(-20);
+  const lines = rows.map((r) => String(r.line || '').trim()).filter(Boolean);
+  const text = lines.join('\n').slice(-4000);
+  return { preview: lines.length ? compactText(lines[lines.length - 1], 90) : '', text };
+}
+
 function relay(store, id) {
   const ROLE = roleMap(store);
   const t = store.getTask(id);
@@ -256,10 +304,18 @@ function relay(store, id) {
   const stepRole = planRoleMap(t);
   const RV = roleView(store);
   const durs = stepDurations(store, id);
-  const files = {}; (store.getEvents ? store.getEvents(id) : []).forEach((e) => { if (e.type === 'files') { try { const d = JSON.parse(e.data); files[d.step] = d.n; } catch (x) {} } });
+  const files = {}; const knowledge = {};
+  (store.getEvents ? store.getEvents(id) : []).forEach((e) => {
+    if (e.type === 'files') { try { const d = JSON.parse(e.data); files[d.step] = d.n; } catch (x) {} }
+    if (e.type === 'knowledge') { try { const d = JSON.parse(e.data); if (d && d.step && Array.isArray(d.hits)) knowledge[d.step] = d.hits.map((h) => h.file).filter(Boolean).slice(0, 3); } catch (x) {} }
+  });
   const costs = store.stepCosts ? store.stepCosts(id) : {};
   // loop 包装步骤 id:接力里标注为"质量环",避免空署名看着像坏行
-  const loopIds = new Set(); try { (JSON.parse(t.plan).steps || []).forEach((s) => { if (s.type === 'loop') loopIds.add(s.id); }); } catch (e) {}
+  const loopIds = new Set(); const outcomes = {};
+  try {
+    const walk = (steps) => (steps || []).forEach((s) => { if (s.type === 'loop') { loopIds.add(s.id); walk(s.body); } else if (s && s.id) outcomes[s.id] = s.expected_outcome || ''; });
+    walk(JSON.parse(t.plan).steps || []);
+  } catch (e) {}
   return (t.steps || []).map((s) => {
     const isLoop = loopIds.has(s.step_id);
     const emp = !isLoop && stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
@@ -270,11 +326,13 @@ function relay(store, id) {
     const full = (outFull.length > 300) ? outFull.slice(-4000) : ''; // 有更多内容才给全文(供前端展开)
     const who = emp ? (emp.deptName + ' · ' + emp.name) : r.label;
     const fn = files[s.step_id];
-    const filesLabel = s.status === 'done' ? (fn > 0 ? '📄 ' + fn + ' 文件' : '⚠ 无产出') : '';
+    // fn===undefined(会议 seed 步/历史导入步,压根没跑过文件统计)≠ 空转:不误标「⚠ 无产出」;只有真实统计到 0 才警示
+    const filesLabel = s.status === 'done' ? (fn > 0 ? '📄 ' + fn + ' 文件' : (fn === 0 ? '⚠ 无产出' : '')) : '';
     const sc = costs[s.step_id];
     const costLabel = sc > 0 ? '$' + (Math.round(sc * 1000) / 1000) : '';
     const metaLabel = [costLabel, filesLabel, durs[s.step_id] || ''].filter(Boolean).join(' · '); // 成本·文件·耗时 合并
-    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, full, time: '', dur: durs[s.step_id] || '', filesLabel, costLabel, metaLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B' };
+    const know = knowledge[s.step_id] || [];
+    return { who, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, title: s.step_id, desc: summary, full, time: '', dur: durs[s.step_id] || '', filesLabel, costLabel, metaLabel, sk: stepSk(s.status), back: s.status === 'failed', art: null, artLabel: '', barPct: '0%', barColor: '#2E9E5B', outcome: outcomes[s.step_id] || '', knowledgeLabel: know.length ? know.join('、') : '' };
   });
 }
 
@@ -286,11 +344,37 @@ function plan(store, id) {
   if (!t) return [];
   let p = null; try { p = JSON.parse(t.plan); } catch (e) {}
   if (!p || !p.steps) return [];
+  const logs = store.getLogs(id);
+  const durs = stepDurations(store, id);
+  const stepRows = {};
+  (t.steps || []).forEach((st) => { stepRows[st.step_id] = st; });
+  const knowledge = {};
+  (store.getEvents ? store.getEvents(id) : []).forEach((e) => {
+    if (e.type !== 'knowledge') return;
+    try {
+      const d = JSON.parse(e.data);
+      if (d && d.step && Array.isArray(d.hits)) knowledge[d.step] = d.hits.map((h) => h.file).filter(Boolean).slice(0, 3);
+    } catch (x) {}
+  });
+  const diag = p.diagnostics || {};
+  const process = p.process || {};
+  const processLabels = { fast: '快速执行', sequential: '顺序编排', hierarchical: '经理调度', debate: '有界辩论', risk_review: '风险复核', ask_user: '等待选择' };
+  const meetingAgenda = p.meeting && Array.isArray(p.meeting.agenda) ? p.meeting.agenda.join('、') : '';
+  const healthLabel = diag.score == null ? '' : ('健康 ' + diag.score + ((diag.issues && diag.issues.length) ? ' · ' + diag.issues[0].message : ''));
   let n = 0; const out = [];
   const push = (s, dep, deps) => {
     const emp = s.role && RV[s.role];
     const r = ROLE[s.agent] || { label: s.agent || '编排器', color: '#1A1814', av: '◆' };
-    out.push({ n: ++n, title: s.id, agent: emp ? (emp.deptName + '·' + emp.name) : r.label, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (deps && deps.length ? '依赖 ' + deps.join(',') : ''), deps: deps || [] });
+    const know = knowledge[s.id] || [];
+    const executorLabel = r.label;
+    const roleLine = emp ? (emp.deptName + ' · ' + emp.name) : ('未分配员工 · ' + executorLabel);
+    const detail = stepLogDetail(logs, s.id);
+    const st = stepRows[s.id] || {};
+    const logPreview = detail.preview || compactText(st.output, 90);
+    const logText = detail.text || logPreview;
+    const durationLabel = durs[s.id] || '';
+    const metaLine = [roleLine, emp ? executorLabel : '', durationLabel].filter(Boolean).join(' · ');
+    out.push({ n: ++n, stepId: s.id, title: s.id, shortTitle: shortStepTitle(s, emp), agent: emp ? (emp.deptName + '·' + emp.name) : r.label, roleLine, executorLabel, durationLabel, metaLine, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (deps && deps.length ? '依赖 ' + deps.join(',') : ''), deps: deps || [], outcome: s.expected_outcome || '', assignWhy: s.why || '', knowledgeLabel: know.length ? know.join('、') : '', healthLabel, logPreview, logText, processType: process.type || '', processLabel: processLabels[process.type] || '', orchestrationReason: process.reason || '', meetingAgenda });
   };
   // 展开 loop 为串联 body,并把依赖链重写到子步骤(保证画布连线不断):
   // body[0] 继承 loop.deps, body[i] 依赖 body[i-1];下游引用 loop id → 改指最后一个 body
@@ -323,11 +407,15 @@ function meeting(store, id) {
   const mt = store.getMeeting(id);
   if (!mt) return { status: 'none', task: t.text, attendees: [], msgs: [], roster: [] };
   const RV = roleView(store);
+  let p = {}; try { p = JSON.parse(t.plan) || {}; } catch (e) {}
+  const hostId = (p.meeting && p.meeting.hostRole) || ((mt.attendees || [])[0] || '');
+  const hostView = hostId && (RV[hostId] || {});
+  const host = hostId ? { id: hostId, name: hostView.name || hostId, avatar: hostView.emoji || '🎭', deptName: hostView.deptName || '会议主持', color: hostView.color || '#1A1814' } : null;
   const att = (mt.attendees || []).map((rid) => { const e = RV[rid] || {}; return { id: rid, name: e.name || rid, avatar: e.emoji || '🧑‍💼', deptName: e.deptName || '', color: e.color || '#7C6FD9' }; });
-  const attSet = new Set(mt.attendees || []);
-  const msgs = store.listMeetingMsgs(id).map((m) => ({ role: m.role, name: m.name, avatar: m.avatar || '🧑‍💼', text: m.text, ts: (m.ts || '').slice(11, 16), mine: m.role === 'user', sys: m.role === 'system' }));
+  const attSet = new Set((mt.attendees || []).concat(hostId ? [hostId] : []));
+  const msgs = store.listMeetingMsgs(id).map((m) => ({ role: m.role, name: m.name, avatar: m.avatar || '🧑‍💼', text: m.text, ts: hhmmLocal(m.ts), mine: m.role === 'user', sys: m.role === 'system' }));
   const roster = store.listRoles().filter((r) => r.dept !== '__system' && !attSet.has(r.id)).map((r) => { const e = RV[r.id] || {}; return { id: r.id, name: r.name, avatar: r.emoji || '🧑‍💼', deptName: e.deptName || '' }; });
-  return { status: mt.status, task: t.text, attendees: att, msgs, roster };
+  return { status: mt.status, task: t.text, host, attendees: att, msgs, roster };
 }
 
 function agentLog(store, agentId, limit) {
@@ -348,6 +436,8 @@ function taskReport(store, id) {
   rows.forEach((r, i) => {
     md += '### ' + (i + 1) + '. ' + r.title + ' — ' + r.who + '\n';
     md += '结果:' + (r.sk || '') + (r.filesLabel ? ' · ' + r.filesLabel : '') + (r.dur ? ' · 用时 ' + r.dur : '') + '\n\n';
+    if (r.outcome) md += '- 验收:' + r.outcome + '\n';
+    if (r.knowledgeLabel) md += '- 知识引用:' + r.knowledgeLabel + '\n';
     if (r.desc) md += '> ' + String(r.desc).replace(/\n/g, '\n> ') + '\n\n';
   });
   return md;

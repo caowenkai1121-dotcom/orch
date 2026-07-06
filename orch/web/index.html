@@ -313,8 +313,8 @@
               </svg>
               <sc-for list="{{ graph.edges }}" as="e"><sc-if value="{{ e.flow }}"><div style="position:absolute;left:0;top:0;width:11px;height:11px;border-radius:50%;background:#F0B400;box-shadow:0 0 9px #F4C53A;offset-path:path('{{ e.d }}');offset-rotate:0deg;animation:flow {{ e.dur }} linear infinite;pointer-events:none;"></div></sc-if></sc-for>
               <sc-for list="{{ graph.nodes }}" as="nd" hint-placeholder-count="3">
-                <div style="position:absolute;left:{{ nd.x }}px;top:{{ nd.y }}px;width:200px;">
-                  <div style="background:{{ nd.nbg }};border:1.5px solid {{ nd.dot }};border-radius:13px;padding:11px 13px;box-shadow:0 6px 18px rgba(20,18,14,.10);">
+                <div style="position:absolute;left:{{ nd.x }}px;top:{{ nd.y }}px;width:220px;">
+                  <div onClick="{{ nd.open }}" style="background:{{ nd.nbg }};border:1.5px solid {{ nd.dot }};border-radius:12px;padding:11px 13px;box-shadow:0 6px 18px rgba(20,18,14,.10);cursor:pointer;">
                     <div style="display:flex;align-items:center;gap:7px;">
                       <sc-if value="{{ nd.seq }}"><span style="flex:none;min-width:17px;height:17px;border-radius:6px;background:#F0EEE9;color:#6B6760;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;padding:0 3px;">{{ nd.seq }}</span></sc-if>
                       <div style="width:24px;height:24px;flex:none;border-radius:7px;background:{{ nd.aColor }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;">{{ nd.avatar }}</div>
@@ -326,7 +326,8 @@
                       <div style="flex:1;min-width:0;font-size:11px;color:{{ nd.subc }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ nd.agent }}</div>
                       <sc-if value="{{ nd.skTxt }}"><span style="flex:none;font-size:10px;font-weight:700;color:{{ nd.skC }};background:{{ nd.skBg }};padding:1px 7px;border-radius:6px;">{{ nd.skTxt }}</span></sc-if>
                     </div>
-                    <sc-if value="{{ nd.blockReason }}"><div title="{{ nd.blockReason }}" style="margin-top:6px;font-size:10.5px;color:#B08800;background:#FBF4DE;border-radius:6px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">⏳ {{ nd.blockReason }}</div></sc-if>
+                    <sc-if value="{{ nd.metaLine }}"><div style="margin-top:4px;font-size:10.5px;color:{{ nd.subc }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ nd.metaLine }}</div></sc-if>
+                    <sc-if value="{{ nd.hintLine }}"><div title="{{ nd.hintLine }}" style="margin-top:6px;font-size:10.5px;color:#B08800;background:#FBF4DE;border-radius:6px;padding:3px 7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">⏳ {{ nd.hintLine }}</div></sc-if>
                   </div>
                 </div>
               </sc-for>
@@ -381,6 +382,9 @@
                         <span style="font-size:11.5px;color:#A39E94;font-family:'JetBrains Mono',monospace;">{{ s.eta }}</span>
                         <span style="font-size:11.5px;color:#B6B1A7;">{{ s.dep }}</span>
                       </div>
+                      <sc-if value="{{ s.assignWhy }}"><div style="font-size:11.5px;color:#4B3E86;margin-top:8px;line-height:1.45;">🎯 为何选他: {{ s.assignWhy }}</div></sc-if>
+                      <sc-if value="{{ s.outcome }}"><div style="font-size:11.5px;color:#6B6760;margin-top:8px;line-height:1.45;">验收: {{ s.outcome }}</div></sc-if>
+                      <sc-if value="{{ s.knowledgeLabel }}"><div style="font-size:11.5px;color:#5B4BC4;margin-top:4px;line-height:1.45;">知识引用: {{ s.knowledgeLabel }}</div></sc-if>
                     </div>
                   </div>
                 </sc-for>
@@ -393,6 +397,7 @@
                 <div style="font-size:13.5px;font-weight:650;margin-bottom:13px;">编排概要</div>
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">参与 Agent</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">{{ planAgents }}</span></div>
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">计划步骤</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">{{ planCount }}</span></div>
+                <sc-if value="{{ planHealth }}"><div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">计划健康</span><span style="font-size:12px;font-weight:600;color:#6B6760;text-align:right;">{{ planHealth }}</span></div></sc-if>
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:12.5px;color:#8A857C;">预估成本</span><span style="font-size:13px;font-weight:600;font-family:'JetBrains Mono',monospace;">—</span></div>
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;"><span style="font-size:12.5px;color:#8A857C;">回退环</span><span style="font-size:13px;font-weight:600;color:#B4541E;">开发 ↺ 验证</span></div>
                 <button onClick="{{ newTask }}" style="width:100%;height:38px;margin-top:14px;border-radius:10px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:13.5px;cursor:pointer;font-family:inherit;">批准并运行</button>
@@ -443,8 +448,8 @@
         <sc-if value="{{ meetBanner }}">
         <div style="background:#F1EEFB;border:1px solid #D9CFF2;border-radius:12px;padding:12px 15px;margin:16px 0 4px;display:flex;align-items:center;gap:12px;">
           <span style="font-size:20px;">🏛</span>
-          <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:650;color:#4B3E86;">方案会议进行中</div><div style="font-size:12px;color:#6E63A0;margin-top:2px;">员工正在讨论需求,你可参与并 @ 员工;讨论完点「结束会议 · 生成方案」即开始实现。</div></div>
-          <button onClick="{{ enterMeeting }}" style="flex:none;height:34px;padding:0 16px;border-radius:9px;background:#5B4BC4;color:#fff;border:none;font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">进入会议室 →</button>
+          <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:650;color:#4B3E86;">{{ meetBannerTitle }}</div><div style="font-size:12px;color:#6E63A0;margin-top:2px;">{{ meetBannerDesc }}</div></div>
+          <button onClick="{{ enterMeeting }}" style="flex:none;height:34px;padding:0 16px;border-radius:9px;background:#5B4BC4;color:#fff;border:none;font-weight:650;font-size:12.5px;cursor:pointer;font-family:inherit;">{{ meetBannerButton }}</button>
         </div>
         </sc-if>
 
@@ -518,6 +523,16 @@
         <div style="background:#FFF6D6;border:1px solid #F3E2A0;border-radius:13px;padding:14px 16px;margin-bottom:16px;">
           <div style="font-size:13.5px;font-weight:650;color:#8a6d00;margin-bottom:8px;">⚠ Agent 需要你决策</div>
           <div style="font-size:13px;color:#2A2722;margin-bottom:10px;white-space:pre-wrap;">{{ question }}</div>
+          <sc-if value="{{ isRouteChoice }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px;">
+            <sc-for list="{{ routeChoiceOptions }}" as="o">
+              <button onClick="{{ o.pick }}" style="min-height:48px;text-align:left;border:1px solid #E8D58B;background:#FFFDF3;border-radius:9px;padding:8px 10px;cursor:pointer;font-family:inherit;color:#2A2722;">
+                <div style="font-size:12.5px;font-weight:700;">{{ o.title }}</div>
+                <div style="font-size:11.5px;color:#8A6D00;margin-top:3px;line-height:1.35;">{{ o.hint }}</div>
+              </button>
+            </sc-for>
+          </div>
+          </sc-if>
           <textarea id="answer-input" placeholder="输入你的选择/答复…" style="width:100%;height:60px;border:1px solid #E6E3DC;border-radius:9px;padding:8px;font-family:inherit;font-size:13px;box-sizing:border-box;"></textarea>
           <div style="display:flex;justify-content:flex-end;margin-top:10px;"><button onClick="{{ answerTask }}" style="height:32px;padding:0 15px;border-radius:8px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">提交并继续</button></div>
         </div>
@@ -541,6 +556,8 @@
                   <span style="margin-left:auto;font-size:11px;color:#B6B1A7;font-family:'JetBrains Mono',monospace;">{{ s.metaLabel }}</span>
                 </div>
                 <div style="font-size:13.5px;font-weight:600;margin-top:7px;">{{ s.title }}</div>
+                <sc-if value="{{ s.outcome }}"><div style="font-size:11.5px;color:#6B6760;margin-top:5px;line-height:1.45;">验收: {{ s.outcome }}</div></sc-if>
+                <sc-if value="{{ s.knowledgeLabel }}"><div style="font-size:11.5px;color:#5B4BC4;margin-top:4px;line-height:1.45;">知识引用: {{ s.knowledgeLabel }}</div></sc-if>
                 <div style="font-size:12.5px;color:#8A857C;margin-top:4px;line-height:1.5;white-space:pre-wrap;word-break:break-word;">{{ s.descShown }}</div>
                 <sc-if value="{{ s.canExpand }}"><button onClick="{{ s.toggleExpand }}" style="margin-top:5px;background:none;border:none;color:#7C6FD9;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0;">{{ s.expandLabel }}</button></sc-if>
                 <sc-if value="{{ s.hasCode }}">
@@ -1095,6 +1112,7 @@
       <div style="font-size:16px;font-weight:700;margin-bottom:14px;">新建任务</div>
       <sc-if value="{{ isDeptTask }}"><div style="display:flex;align-items:center;gap:7px;background:#FFF6D6;border:1px solid #F3E2A0;border-radius:9px;padding:7px 11px;margin-bottom:11px;font-size:12.5px;color:#8a6d00;"><b>部门任务 · {{ taskDeptName }}</b><span style="color:#A8925A;">只用本部门员工,按部门标准流程拆分</span></div></sc-if>
       <textarea id="nt-text" placeholder="描述目标,例如:开发一个电商公司官网首页" style="width:100%;height:90px;border:1px solid #E6E3DC;border-radius:9px;padding:10px;font-family:inherit;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
+      <div style="margin-top:8px;background:#FAF9F6;border:1px solid #E9E7E1;border-radius:9px;padding:8px 10px;font-size:12px;color:#6B6760;line-height:1.5;">编排预期:总调度先分析任务类型、主产物与关键模块,再选择主责部门/员工;复杂任务会自动开方案会议,每步都有验收口径,质量门失败会退回重做。高级选项可约束 Agent 与文字编排范围。</div>
       <select id="nt-proj-sel" style="width:100%;margin-top:10px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;font-size:13px;box-sizing:border-box;">
         <option value="">默认项目</option>
         <sc-for list="{{ projOpts }}" as="p" hint-placeholder-count="3"><option value="{{ p.name }}">{{ p.name }}</option></sc-for>
@@ -1115,6 +1133,8 @@
         <sc-if value="{{ hasModelPick }}">
         <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:9px;">
           <span style="color:#8A857C;">大模型:</span>
+          <span style="font-size:11.5px;color:#A39E94;">{{ modelDiscoveryHint }}</span>
+          <button onClick="{{ refreshModels }}" style="height:26px;padding:0 9px;border-radius:7px;background:#fff;border:1px solid #E6E3DC;color:#6B6760;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;">刷新模型</button>
           <sc-for list="{{ modelPick }}" as="mp">
             <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;"><span style="color:#3C3933;">{{ mp.label }}</span>
               <select id="{{ mp.selId }}" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;">
@@ -1153,12 +1173,20 @@
     <div style="background:#fff;border-radius:16px;padding:22px;width:460px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
       <div style="font-size:16px;font-weight:700;margin-bottom:14px;">{{ agentModalTitle }}</div>
       <input id="na-name" value="{{ naName }}" placeholder="名字,如 DeepSeek / Seedance" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <select id="na-kind" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;color:#3C3933;">
+      <select id="na-kind" onchange="{{ onNaKind }}" ref="{{ naKindRef }}" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;color:#3C3933;">
         <sc-for list="{{ kindOpts }}" as="k"><option value="{{ k.id }}">类型: {{ k.name }}</option></sc-for>
       </select>
-      <input id="na-cmd" value="{{ naCmd }}" placeholder="命令(CLI类必填,如 gemini;大模型/视频/语音可留空)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <sc-if value="{{ naIsApi }}">
+      <div style="background:#FAF9F6;border:1px solid #E9E7E1;border-radius:9px;padding:8px 10px;margin-bottom:9px;font-size:12px;color:#6B6760;line-height:1.5;">API 接入只需三项:OpenAI 兼容地址 + Key + 模型 ID。接入后可选为员工「执行器」参与会议发言与文本产出(写文件的实现步会自动回退 CLI 执行器)。</div>
+      <input id="na-baseurl" value="{{ naBaseUrl }}" placeholder="模型地址,如 https://api.deepseek.com/v1" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <input id="na-key" type="password" placeholder="{{ naKeyPh }}" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      </sc-if>
+      <sc-if value="{{ naIsCli }}">
+      <input id="na-cmd" value="{{ naCmd }}" placeholder="命令(CLI类必填,如 gemini)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <input id="na-args" value="{{ naArgs }}" placeholder="参数(空格分隔),如 -p --yolo" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
-      <input id="na-model" value="{{ naModel }}" placeholder="模型标签(可选,仅展示)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      </sc-if>
+      <input id="na-model" value="{{ naModel }}" placeholder="{{ naModelPh }}" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
+      <sc-if value="{{ naIsCli }}">
       <div style="display:flex;gap:9px;margin-bottom:9px;">
         <select id="na-defmodel" title="默认大模型(用户没指定时用)" style="flex:1;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 9px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
           <sc-for list="{{ naDefModelOpts }}" as="o"><option value="{{ o.v }}">默认模型: {{ o.n }}</option></sc-for>
@@ -1169,6 +1197,7 @@
       </div>
       <input id="na-caps" value="{{ naCaps }}" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
       <input id="na-image" value="{{ naImage }}" placeholder="容器镜像(选填,任务选容器隔离时用)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
+      </sc-if>
       <select id="na-dept" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
         <sc-for list="{{ deptOpts }}" as="d"><option value="{{ d.id }}">所属部门: {{ d.name }}</option></sc-for>
       </select>
@@ -1326,6 +1355,33 @@
   </div>
   </sc-if>
 
+  <sc-if value="{{ modalGraphStep }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.5);display:flex;align-items:center;justify-content:center;z-index:70;">
+    <div style="background:#fff;border-radius:16px;padding:20px;width:760px;max-width:94vw;height:540px;max-height:86vh;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:15px;font-weight:700;">{{ graphStepTitle }}</span>
+        <span style="flex:1;min-width:0;font-size:12.5px;color:#8A857C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ graphStepId }}</span>
+        <button onClick="{{ openGraphStepTask }}" style="height:30px;padding:0 12px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;font-size:12.5px;">任务详情</button>
+        <button onClick="{{ closeModal }}" style="height:30px;padding:0 12px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;font-size:12.5px;">关闭</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:12px;">
+        <div style="border:1px solid #E9E7E1;border-radius:10px;padding:9px 11px;background:#FAF9F6;"><div style="font-size:10.5px;color:#A39E94;">执行角色</div><div style="font-size:12.5px;font-weight:650;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ graphStepRole }}</div></div>
+        <div style="border:1px solid #E9E7E1;border-radius:10px;padding:9px 11px;background:#FAF9F6;"><div style="font-size:10.5px;color:#A39E94;">执行器</div><div style="font-size:12.5px;font-weight:650;margin-top:3px;">{{ graphStepExecutor }}</div></div>
+        <div style="border:1px solid #E9E7E1;border-radius:10px;padding:9px 11px;background:#FAF9F6;"><div style="font-size:10.5px;color:#A39E94;">状态 / 用时</div><div style="font-size:12.5px;font-weight:650;margin-top:3px;">{{ graphStepStatus }} {{ graphStepDuration }}</div></div>
+      </div>
+      <sc-if value="{{ graphStepProcessLabel }}"><div style="margin-bottom:6px;font-size:12px;color:#5F6673;line-height:1.5;">流程：{{ graphStepProcessLabel }}<sc-if value="{{ graphStepOrchestrationReason }}"> · {{ graphStepOrchestrationReason }}</sc-if></div></sc-if>
+      <sc-if value="{{ graphStepMeetingAgenda }}"><div style="margin-bottom:10px;font-size:12px;color:#5F6673;line-height:1.5;">会议议程：{{ graphStepMeetingAgenda }}</div></sc-if>
+      <sc-if value="{{ graphStepBlock }}"><div style="margin-bottom:10px;font-size:12px;color:#9A7400;background:#FBF4DE;border:1px solid #F1E3B6;border-radius:9px;padding:8px 10px;">{{ graphStepBlock }}</div></sc-if>
+      <sc-if value="{{ graphStepOutcome }}"><div style="margin-bottom:10px;font-size:12px;color:#3C3933;background:#F7F6F3;border:1px solid #E9E7E1;border-radius:9px;padding:8px 10px;">验收: {{ graphStepOutcome }}</div></sc-if>
+      <sc-if value="{{ graphStepWhy }}"><div style="margin-bottom:10px;font-size:12px;color:#4B3E86;background:#F1EEFB;border:1px solid #D9CFF2;border-radius:9px;padding:8px 10px;">🎯 为何选他: {{ graphStepWhy }}</div></sc-if>
+      <div style="flex:1;min-height:0;border:1px solid #E9E7E1;border-radius:11px;overflow:hidden;display:flex;flex-direction:column;">
+        <div style="padding:8px 12px;border-bottom:1px solid #F0EEE9;font-size:12px;font-weight:650;background:#FBFAF8;">实时日志</div>
+        <pre style="flex:1;margin:0;overflow:auto;padding:11px 13px;font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.55;white-space:pre-wrap;background:#fff;color:#2A2722;">{{ graphStepLogs }}</pre>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
   <sc-if value="{{ modalReplay }}">
   <div style="position:fixed;inset:0;background:rgba(20,18,14,.5);display:flex;align-items:center;justify-content:center;z-index:70;">
     <div style="background:#fff;border-radius:16px;padding:20px;width:860px;max-width:94vw;height:560px;max-height:88vh;box-shadow:0 20px 60px rgba(0,0,0,.3);display:flex;flex-direction:column;">
@@ -1363,6 +1419,7 @@
           <button onClick="{{ closeModal }}" style="height:30px;padding:0 12px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;font-size:12.5px;">关闭</button>
         </div>
         <div style="display:flex;align-items:center;gap:7px;margin-top:10px;flex-wrap:wrap;">
+          <sc-if value="{{ meetHost }}"><span title="会议主持" style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:20px;background:#1A1814;color:#fff;border:1px solid #1A1814;font-family:inherit;font-size:11.5px;font-weight:650;"><span>{{ meetHost.avatar }}</span>主持 · {{ meetHost.name }}</span></sc-if>
           <span style="font-size:11.5px;color:#A39E94;">参会:</span>
           <sc-for list="{{ meetAttendees }}" as="at"><button onClick="{{ at.summon }}" title="让 {{ at.name }} 发言" style="display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 10px;border-radius:20px;background:#fff;border:1px solid {{ at.color }};cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:600;color:#3C3933;"><span>{{ at.avatar }}</span>{{ at.name }}</button></sc-for>
           <button onClick="{{ toggleMeetRoster }}" style="height:26px;padding:0 11px;border-radius:20px;background:#F0EEE9;border:1px dashed #C9C4BA;cursor:pointer;font-family:inherit;font-size:11.5px;font-weight:600;color:#6B6760;">＋@ 员工加入</button>
@@ -1405,7 +1462,7 @@
     <div style="background:#fff;border-radius:18px;padding:30px;width:360px;box-shadow:0 30px 80px rgba(0,0,0,.4);">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;"><div style="width:30px;height:30px;border-radius:9px;background:{{ acc }};color:#1A1814;font-weight:800;display:flex;align-items:center;justify-content:center;">M</div><div style="font-size:18px;font-weight:800;">Maestro 登录</div></div>
       <div style="font-size:12.5px;color:#8A857C;margin:2px 0 18px;">默认管理员 admin / admin,登录后可在右下角账号里改密码</div>
-      <input id="lg-name" placeholder="用户名" style="width:100%;height:38px;border:1px solid #E6E3DC;border-radius:10px;padding:0 12px;font-family:inherit;font-size:14px;box-sizing:border-box;margin-bottom:10px;">
+      <input id="lg-name" placeholder="用户名" onkeydown="{{ onLoginKey }}" style="width:100%;height:38px;border:1px solid #E6E3DC;border-radius:10px;padding:0 12px;font-family:inherit;font-size:14px;box-sizing:border-box;margin-bottom:10px;">
       <input id="lg-pw" type="password" placeholder="密码" onkeydown="{{ onLoginKey }}" style="width:100%;height:38px;border:1px solid #E6E3DC;border-radius:10px;padding:0 12px;font-family:inherit;font-size:14px;box-sizing:border-box;">
       <sc-if value="{{ loginErr }}"><div style="color:#DC5B52;font-size:12.5px;margin-top:10px;">{{ loginErr }}</div></sc-if>
       <button onClick="{{ submitLogin }}" style="width:100%;height:40px;margin-top:16px;border-radius:10px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;">登录</button>

@@ -49,3 +49,16 @@ test('setStep 为同一步骤做 upsert', () => {
   assert.equal(t.steps[0].status, 'done');
   assert.equal(t.steps[0].output, 'ok');
 });
+
+test('createMeeting 重新开会时清空同任务旧会议消息', () => {
+  const s = open(':memory:');
+  const id = s.createTask('开发一个 DMS 系统');
+  s.createMeeting(id, ['pm']);
+  s.addMeetingMsg(id, { role: 'system', name: '会议室', text: '旧会议记录' });
+  assert.equal(s.listMeetingMsgs(id).length, 1);
+
+  s.createMeeting(id, ['arch']);
+
+  assert.deepEqual(s.getMeeting(id).attendees, ['arch']);
+  assert.equal(s.listMeetingMsgs(id).length, 0);
+});

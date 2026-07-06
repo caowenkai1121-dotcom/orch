@@ -38,7 +38,7 @@ test('#9 lintPlan 捕获结构错:重复id/缺指派/loop缺body/空', () => {
   assert.ok(lintPlan({ steps: [{ id: 'a' }] }).some((p) => /未指派执行器/.test(p)));       // 无 hasRole → 查 agent
   assert.ok(lintPlan({ steps: [{ id: 'a' }] }, true).some((p) => /未指派员工/.test(p)));    // hasRole → 查 role
   assert.ok(lintPlan({ steps: [{ id: 'q', type: 'loop', body: [] }] }).some((p) => /缺 body/.test(p)));
-  assert.deepEqual(lintPlan({ steps: [{ id: 'a', agent: 'claude', deps: [] }, { id: 'b', agent: 'claude', deps: ['a'] }] }), []); // 健康→无问题
+  assert.deepEqual(lintPlan({ steps: [{ id: 'a', agent: 'claude', prompt: 'p', deps: [] }, { id: 'b', agent: 'claude', prompt: 'q', deps: ['a'] }] }), []); // 健康→无问题
 });
 
 test('提速:员工模式首版可接受(role合法)直接用,不花昂贵回喂;重复id交 sanitizeDeps 去重', async () => {
@@ -62,6 +62,32 @@ test('#9 员工模式:非法role坏计划仍带问题回喂重拆一次(rmOk失�
   const plan = await makePlan('做个东西', { mode: 'llm', agents: ['claude'], roles, depts: [], refine: false, templatesDir: TPL, claude });
   assert.equal(call, 2);                                        // 非法 role 触发回喂重拆
   assert.deepEqual([...new Set(plan.steps.map((s) => s.id))].sort(), ['a', 'b']);
+});
+
+test('计划体检:叶子步骤缺 prompt 会被回喂重拆', async () => {
+  let call = 0;
+  const claude = { async run() {
+    call++;
+    return call === 1
+      ? { output: '{"steps":[{"id":"a","role":"r1","deps":[]}]}', success: true }
+      : { output: '{"steps":[{"id":"a","role":"r1","prompt":"写入 a.md 并说明验收","deps":[]}]}', success: true };
+  } };
+  const roles = [{ id: 'r1', dept: 'dev', name: 'Dev', description: '', prompt: '角色', executor: 'claude' }];
+  const plan = await makePlan('做个东西', { mode: 'llm', agents: ['claude'], roles, depts: [], refine: false, templatesDir: TPL, claude });
+  assert.equal(call, 2);
+  assert.match(plan.steps[0].prompt, /写入 a\.md/);
+});
+
+test('计划诊断:复杂计划缺质量门会给出健康提示', () => {
+  const { diagnosePlan } = require('../planner');
+  const r = diagnosePlan({ steps: [
+    { id: 'scaffold_ui', agent: 'claude', prompt: '创建 index.html', deps: [], expected_outcome: '落盘页面' },
+    { id: 'impl_logic', agent: 'claude', prompt: '创建 app.js', deps: ['scaffold_ui'], expected_outcome: '落盘脚本' },
+    { id: 'impl_style', agent: 'claude', prompt: '创建 style.css', deps: ['scaffold_ui'], expected_outcome: '落盘样式' },
+    { id: 'write_docs', agent: 'claude', prompt: '编写 README.md', deps: ['impl_logic', 'impl_style'], expected_outcome: '落盘说明' },
+  ] });
+  assert.ok(r.score < 100);
+  assert.ok(r.issues.some((x) => /质量门|验收/.test(x.message)));
 });
 
 test('#9 执行器模式:结构坏(重复id)计划带问题回喂 fromLLM 重拆一次', async () => {

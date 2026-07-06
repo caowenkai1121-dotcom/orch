@@ -325,6 +325,9 @@ class MaestroBase extends RT.Component {
 }
 
 
+// 本地时区时间(ts 存 UTC ISO,直接 slice 会差出时区,如中国 +8h)
+function tsLocal(iso, withSec) { if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return ''; const z = (n) => (n < 10 ? '0' + n : '' + n); return z(d.getHours()) + ':' + z(d.getMinutes()) + (withSec ? ':' + z(d.getSeconds()) : ''); }
+
 // —— 迷你 Markdown 渲染(零依赖,够用) ——
 function mdEsc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function mdInline(s) {
@@ -418,6 +421,17 @@ class Maestro extends MaestroBase {
     this._pending = true;
     setTimeout(() => { this._pending = false; this.setState({}); }, 200);
   }
+  // 高频 status 事件合并刷新:trailing 去抖,一波状态变更只拉一次全量+详情,防客户端自我 DDoS
+  scheduleLiveRefresh() {
+    if (this._liveRefreshT) return;
+    this._liveRefreshT = setTimeout(() => {
+      this._liveRefreshT = null;
+      this.fetchAll();
+      if (typeof this.state.taskId === 'number') this.fetchRelay(this.state.taskId);
+      const aid = this._activeId != null ? this._activeId : this.live.activeId;
+      if (aid != null) this.fetchPlan(aid);
+    }, 400);
+  }
 
   toast(msg) { this.live.toastMsg = msg; this.setState({}); clearTimeout(this._toastT); this._toastT = setTimeout(() => { this.live.toastMsg = ''; this.setState({}); }, 2600); }
 
@@ -483,9 +497,11 @@ class Maestro extends MaestroBase {
     v.onProjQuickKey = (e) => { if (e.key === 'Enter') this.projQuickLaunch(); };
     // 新建任务:执行器为可点选 chip(勾选后才显示其模型/思考级别);支持多选
     const ntSel = this.state.ntAgents || [];
-    v.ntAgentChips = (this.AGENTS || []).filter((a) => a.enabled !== false).map((a) => { const on = ntSel.indexOf(a.id) >= 0; return { id: a.id, name: a.name, on, bg: on ? '#1A1814' : '#fff', fg: on ? '#fff' : '#3C3933', bd: on ? '#1A1814' : '#ECEAE4', toggle: () => this.toggleNtAgent(a.id) }; }); // #1 停用 agent 不显示
+    v.ntAgentChips = (this.AGENTS || []).filter((a) => a.enabled !== false && (a.kind || 'cli') === 'cli').map((a) => { const on = ntSel.indexOf(a.id) >= 0; return { id: a.id, name: a.name, on, bg: on ? '#1A1814' : '#fff', fg: on ? '#fff' : '#3C3933', bd: on ? '#1A1814' : '#ECEAE4', toggle: () => this.toggleNtAgent(a.id) }; }); // #1 停用不显;仅 CLI(服务端本就滤掉非 CLI,显了也无效,误导)
     v.modelPick = this.modelPickers().filter((mp) => ntSel.indexOf(mp.agent) >= 0); // 只显已勾选执行器的模型选择
     v.hasModelPick = v.modelPick.length > 0;
+    v.refreshModels = () => this.fetchModelDiscovery(true);
+    v.modelDiscoveryHint = this.live.modelDiscovery ? '已按本机配置自动扫描模型' : '模型自动扫描中';
     // 剧本选项(新建任务)
     if ((this.state.modal === 'task' || this.state.screen === 'dashboard' || this.state.screen === 'tasks') && !this.live.playbooks) { this.live.playbooks = []; this.fetchPlaybooks(); }
     // 剧本管理(任务页)
@@ -548,12 +564,28 @@ class Maestro extends MaestroBase {
     // 回放(canReplay 依赖 curT,在后面补)
     v.openReplay = () => this.openReplay();
     v.modalReplay = this.state.modal === 'replay';
+    v.modalGraphStep = this.state.modal === 'graphStep';
+    const gs = this.state.graphStep || {};
+    v.graphStepTitle = gs.shortTitle || gs.title || '';
+    v.graphStepId = gs.stepId || gs.rawTitle || gs.title || '';
+    v.graphStepRole = gs.roleLine || gs.agent || '';
+    v.graphStepExecutor = gs.executorLabel || '';
+    v.graphStepDuration = gs.durationLabel || '';
+    v.graphStepStatus = gs.skTxt || gs.sk || '';
+    v.graphStepOutcome = gs.outcome || '';
+    v.graphStepWhy = gs.assignWhy || '';
+    v.graphStepBlock = gs.blockReason || '';
+    v.graphStepProcessLabel = gs.processLabel || '';
+    v.graphStepOrchestrationReason = gs.orchestrationReason || '';
+    v.graphStepMeetingAgenda = gs.meetingAgenda || '';
+    v.graphStepLogs = gs.logText || gs.logPreview || '暂无日志';
+    v.openGraphStepTask = () => { const id = this._activeId != null ? this._activeId : this.live.activeId; if (id != null) { this.setState({ modal: null }); this.go('task', { taskId: id }); } }; // 用画布当前查看的任务(canvasTaskId),不是永远跳最新任务
     const rp2 = this.live.replay || { events: [], logsByStep: {} };
     v.repTitle = rp2.task || '';
     v.repEvents = (rp2.events || []).map((e, i) => {
       const d = e.data;
       const txt = e.type === 'status' && d && d.step ? (d.step + ' → ' + d.v) : e.type === 'plan' ? ('拆解计划(' + ((d && d.steps) || '?') + '步)') : e.type + (typeof d === 'string' ? ': ' + d : '');
-      return { i, time: (e.ts || '').slice(11, 19), txt, sel: i === this.state.repSel, bg: i === this.state.repSel ? '#FFF6D6' : 'transparent', pick: () => this.setState({ repSel: i }) };
+      return { i, time: tsLocal(e.ts, true), txt, sel: i === this.state.repSel, bg: i === this.state.repSel ? '#FFF6D6' : 'transparent', pick: () => this.setState({ repSel: i }) };
     });
     const selEv = (rp2.events || [])[this.state.repSel || 0];
     const selStep = selEv && selEv.data && selEv.data.step;
@@ -575,6 +607,7 @@ class Maestro extends MaestroBase {
     v.meetOpen = mtg.status === 'open';
     v.meetClosing = mtg.status === 'closing';
     v.meetTaskTitle = mtg.task || '';
+    v.meetHost = mtg.host || null;
     v.meetAttendees = (mtg.attendees || []).map((a) => ({ ...a, summon: () => this.summonEmp(a.id) }));
     v.meetMsgs = (mtg.msgs || []).map((m) => ({
       name: m.name, avatar: m.avatar, text: m.text, ts: m.ts, showHead: !m.sys,
@@ -627,6 +660,7 @@ class Maestro extends MaestroBase {
     }));
     v.planCount = this.PLAN.length;
     v.planAgents = new Set(this.PLAN.map((p) => p.agent)).size;
+    v.planHealth = ((this.PLAN || []).find((p) => p.healthLabel) || {}).healthLabel || '';
     const r = this.RELAY || [];
     v.taskRounds = r.length; v.taskAgentN = new Set(r.map((x) => x.who)).size;
     // 人员行分配按钮 + 每 agent 实时控制台
@@ -650,11 +684,8 @@ class Maestro extends MaestroBase {
     v.naCmd = ea ? (ea.command || '') : '';
     v.naArgs = ea ? (Array.isArray(ea.args) ? ea.args.join(' ') : '') : '';
     v.naModel = ea && ea.model && ea.model !== '—' ? ea.model : '';
-    // #3 默认大模型:下拉枚举(按执行器给已知模型;保留已存的自定义值)
-    const MODELS = { claude: [{ v: '', n: '默认' }, { v: 'claude-fable-5', n: 'Fable 5' }, { v: 'claude-opus-4-8', n: 'Opus 4.8' }], codex: [{ v: '', n: '默认' }, { v: 'gpt-5.5', n: 'GPT-5.5' }, { v: 'gpt-5.4', n: 'GPT-5.4' }] };
     const dm = ea && ea.defModel ? ea.defModel : '';
-    const dmOpts = (ea && MODELS[ea.id]) ? MODELS[ea.id].slice() : [{ v: '', n: '默认' }];
-    if (dm && !dmOpts.some((o) => o.v === dm)) dmOpts.push({ v: dm, n: dm });
+    const dmOpts = ea ? this.agentModelOptions(ea, dm) : [{ v: '', n: '默认' }];
     v.naDefModelOpts = dmOpts.map((o) => ({ ...o, sel: o.v === dm })).sort((a, b) => (a.sel ? 0 : 1) - (b.sel ? 0 : 1)); // 当前值置顶=默认选中
     const naDe = ea && ea.defEffort ? ea.defEffort : '';
     v.naEffOpts = [{ v: '', n: '思考:默认' }, { v: 'low', n: '低' }, { v: 'medium', n: '中' }, { v: 'high', n: '高' }, { v: 'xhigh', n: '超高' }, { v: 'max', n: '极限' }].map((o) => ({ ...o, sel: o.v === naDe })).sort((a, b) => (a.sel ? 0 : 1) - (b.sel ? 0 : 1)); // 当前值置顶=默认选中
@@ -704,8 +735,17 @@ class Maestro extends MaestroBase {
     v.modalDept = this.state.modal === 'dept';
     v.submitDept = () => this.submitDept();
     v.allAgents = (this.AGENTS || []).map((a) => ({ id: a.id, name: a.name }));
-    v.naKind = ea && ea.kind ? ea.kind : 'cli';
-    v.kindOpts = [{ id: 'cli', name: 'CLI 智能体(claude/codex 类)' }, { id: 'llm', name: '大模型(DeepSeek 等)' }, { id: 'video', name: '视频模型(Seedance 等)' }, { id: 'voice', name: '语音模型' }].sort((a, b) => (a.id === v.naKind ? 0 : 1) - (b.id === v.naKind ? 0 : 1));
+    // 类型 state 驱动(onchange 重渲染):API 型只显 地址/Key/模型 三项,CLI 型显命令行相关
+    v.naKind = this.state.naKind || (ea && ea.kind) || 'cli';
+    v.naIsCli = v.naKind === 'cli';
+    v.naIsApi = v.naKind !== 'cli';
+    v.onNaKind = (e) => this.setState({ naKind: e.currentTarget.value });
+    v.naBaseUrl = ea && ea.baseUrl ? ea.baseUrl : '';
+    v.naKeyPh = (ea && ea.hasKey) ? 'API Key(留空=保留已存 Key)' : 'API Key';
+    v.naModelPh = v.naIsApi ? '模型 ID(如 deepseek-chat / glm-4)' : '模型标签(可选,仅展示)';
+    // 固定顺序 + ref 同步选中值:不能再按当前值置顶排序——onchange 触发重渲后 option 重排会让 selectedIndex 指向别的类型(提交成错误 kind)
+    v.kindOpts = [{ id: 'cli', name: 'CLI 智能体(claude/codex 类)' }, { id: 'llm', name: '大模型(DeepSeek 等 · API 接入)' }, { id: 'video', name: '视频模型(Seedance 等)' }, { id: 'voice', name: '语音模型' }];
+    v.naKindRef = (el) => { if (el && el.value !== v.naKind) el.value = v.naKind; };
     v.naDept = ea && ea.dept ? ea.dept : ((this.DEPTS[0] && this.DEPTS[0].id) || 'dev');
     v.deptOpts = (this.DEPTS || []).map((d) => ({ id: d.id, name: d.name })).sort((a, b) => (a.id === v.naDept ? 0 : 1) - (b.id === v.naDept ? 0 : 1)); // 当前部门置顶=默认选中
     // —— 部门员工(角色) ——
@@ -728,7 +768,7 @@ class Maestro extends MaestroBase {
     v.resetEmpLearning = () => this.resetEmpLearning();
     v.modalHire = this.state.modal === 'hire';
     v.submitHire = () => this.submitHire();
-    v.execOpts = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli').map((a) => ({ id: a.id, name: a.name }));
+    v.execOpts = (this.AGENTS || []).filter((a) => (a.kind || 'cli') === 'cli' || a.hasApi).map((a) => ({ id: a.id, name: a.name + (a.hasApi ? '(API)' : '') })); // API 大模型可当员工执行器(会议发言/文本产出;实现步自动回退 CLI)
     // —— 部门工作流程(可编辑) + 执行器池 + 部门任务 ——
     v.newDeptTask = () => this.newDeptTask();
     const empName = {}; (v.deptEmployees || []).forEach((e) => { empName[e.id] = e; });
@@ -781,7 +821,13 @@ class Maestro extends MaestroBase {
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
     v.canRename = !!(curT && canMod);
     v.renameTaskUI = () => this.renameTaskUI();
-    v.meetBanner = !!(curT && curT.sk === 'meeting');
+    const hasMeeting = !!(curT && curT.hasMeeting);
+    const meetingActive = !!(hasMeeting && curT.meetingStatus !== 'closed');
+    const meetingMsgLabel = curT && curT.meetingMsgCount ? (' · ' + curT.meetingMsgCount + ' 条消息') : '';
+    v.meetBanner = hasMeeting;
+    v.meetBannerTitle = meetingActive ? '方案会议进行中' : '方案会议记录';
+    v.meetBannerDesc = meetingActive ? '员工正在讨论需求,你可参与并 @ 员工;讨论完点「结束会议 · 生成方案」即开始实现。' : ('本任务已开会讨论,可查看完整会议过程、主持总结和参会意见' + meetingMsgLabel + '。');
+    v.meetBannerButton = meetingActive ? '进入会议室 →' : '查看会议记录 →';
     v.enterMeeting = () => this.openMeetingRoom(this.state.taskId);
     // 失败任务:置顶错误摘要(取失败步骤输出末段,免翻接力记录)
     if (curT && curT.sk === 'failed') {
@@ -813,6 +859,12 @@ class Maestro extends MaestroBase {
     // #1 决策回答
     v.canAnswer = !!(curT && curT.sk === 'awaiting_input' && canMod);
     v.question = curT ? (curT.question || '') : '';
+    v.isRouteChoice = !!(curT && curT.blockedStep === '__route_choice');
+    v.routeChoiceOptions = [
+      { title: 'A · 快速实现', hint: '原型、小演示、少拆分', pick: () => this.answerRouteChoice('A') },
+      { title: 'B · 标准编排', hint: '产品、设计、工程、测试拆分', pick: () => this.answerRouteChoice('B') },
+      { title: 'C · 深度会议', hint: '复杂系统先会议再执行', pick: () => this.answerRouteChoice('C') },
+    ];
     v.answerTask = () => this.answerTask();
     // #3 产出预览
     v.openDir = () => this.openDir();
@@ -842,7 +894,7 @@ class Maestro extends MaestroBase {
     if (curT && this.live.versionsFor !== this.state.taskId) this.fetchVersions(this.state.taskId);
     const versions = (curT && this.live.versionsFor === this.state.taskId && this.live.versions) || [];
     v.hasVersions = versions.length > 0;
-    v.planVersions = versions.map((pv) => ({ version: pv.version, reason: pv.reason || '(初始计划)', when: (pv.created_at || '').slice(0, 16).replace('T', ' '), steps: pv.steps, restore: () => this.restoreVersion(pv.version) }));
+    v.planVersions = versions.map((pv) => ({ version: pv.version, reason: pv.reason || '(初始计划)', when: pv.created_at ? new Date(pv.created_at).toLocaleString() : '', steps: pv.steps, restore: () => this.restoreVersion(pv.version) }));
     v.downloadZip = () => this.downloadZip();
     v.downloadReport = () => this.downloadReport();
     v.copyPreview = () => this.copyPreview();
@@ -858,7 +910,7 @@ class Maestro extends MaestroBase {
     // —— 任务会话化:对话流 + 控制面 + 实时输出 ——
     if (curT && this.live.msgsFor !== this.state.taskId) this.fetchMsgs(this.state.taskId);
     v.taskMsgs = ((this.live.msgsFor === this.state.taskId && this.live.msgs) || []).slice(-30).map((m) => ({
-      mine: m.who === 'user', txt: m.text, time: (m.ts || '').slice(11, 16),
+      mine: m.who === 'user', txt: m.text, time: tsLocal(m.ts),
       al: m.who === 'user' ? 'flex-end' : 'flex-start',
       label: m.who === 'user' ? '' : (m.who === 'system' ? '⚙ 系统' : '🤖 团队'),
       bg: m.who === 'user' ? '#1A1814' : (m.who === 'system' ? '#F0EEE9' : '#F4F2ED'), fg: m.who === 'user' ? '#fff' : '#3C3933',
@@ -916,6 +968,13 @@ class Maestro extends MaestroBase {
   }
   // —— 任务会话化 ——
   fetchMsgs(id) { fetch('/api/msgs/' + id).then((r) => r.ok ? r.json() : []).then((m) => { this.live.msgs = Array.isArray(m) ? m : []; this.live.msgsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchModelDiscovery(refresh) {
+    this.live.modelDiscoveryAsked = true;
+    fetch('/api/agents/model-discovery' + (refresh ? '?refresh=1' : ''))
+      .then((r) => r.ok ? r.json() : { agents: {} })
+      .then((d) => { this.live.modelDiscovery = d || { agents: {} }; this.scheduleRender(); if (refresh) this.toast('✓ 已刷新模型扫描'); })
+      .catch(() => { this.live.modelDiscovery = { agents: {} }; this.scheduleRender(); });
+  }
   sendTaskMsg() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     const el = document.getElementById('tm-input'); const text = el ? el.value.trim() : '';
@@ -960,6 +1019,10 @@ class Maestro extends MaestroBase {
     if (!answer.trim()) return;
     const t = (this.TASKS || []).find((x) => x.id === id);
     fetch('/task/' + id + '/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: t && t.blockedStep, answer: answer.trim() }) }).then(() => this.fetchAll()).catch(() => {});
+  }
+  answerRouteChoice(choice) {
+    const id = this.state.taskId; if (typeof id !== 'number') return;
+    fetch('/task/' + id + '/answer', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ stepId: '__route_choice', answer: choice }) }).then(() => this.fetchAll()).catch(() => {});
   }
   openDir() { const id = this.state.taskId; if (typeof id !== 'number') return; fetch('/task/' + id + '/open', { method: 'POST' }).catch(() => {}); }
   downloadZip() { const id = this.state.taskId; if (typeof id !== 'number') return; window.open('/api/download/' + id, '_blank'); }
@@ -1093,6 +1156,10 @@ class Maestro extends MaestroBase {
   openReplay() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     fetch('/api/replay/' + id).then((r) => r.json()).then((d) => { this.live.replay = d; this.setState({ modal: 'replay', repSel: 0 }); }).catch(() => {});
+  }
+  openGraphStep(stepId) {
+    const row = (this.PLAN || []).find((p) => p.title === stepId || p.stepId === stepId);
+    if (row) this.setState({ modal: 'graphStep', graphStep: row });
   }
   // —— Webhook ——
   fetchHook() { fetch('/api/me/hook').then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
@@ -1298,11 +1365,11 @@ class Maestro extends MaestroBase {
     };
     P.forEach((p) => lv(p.title));
     const cols = {}; P.forEach((p) => { const d = depth[p.title] || 0; (cols[d] = cols[d] || []).push(p.title); });
-    const pos = {}; const W = 200, H = 66, GX = 260, GY = 118;
+    const pos = {}; const W = 220, H = 86, GX = 285, GY = 132;
     Object.keys(cols).forEach((d) => { cols[d].forEach((id, i) => { pos[id] = { x: 40 + (Number(d) + 1) * GX, y: 30 + i * GY }; }); }); // +1 列给起点腾位
     const col = { queued: '#C9C5BB', working: '#F0B400', done: '#2E9E5B', failed: '#DC5B52' };
     const SKTXT = { queued: '排队', working: '进行中', done: '完成 ✓', failed: '失败' };
-    const nodes = P.map((p) => ({ title: p.title, agent: p.agent, avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814', seq: p.n, skTxt: SKTXT[p.sk] || p.sk, skBg: (col[p.sk] || '#C9C5BB') + '22', skC: p.sk === 'queued' ? '#6B6760' : (col[p.sk] || '#6B6760'), pulse: p.sk === 'working', blockReason: p.blockReason || '' }));
+    const nodes = P.map((p) => ({ title: p.shortTitle || p.title, rawTitle: p.title, stepId: p.stepId || p.title, agent: p.roleLine || p.agent, roleLine: p.roleLine || p.agent, executorLabel: p.executorLabel || '', metaLine: p.metaLine || [p.executorLabel, p.durationLabel].filter(Boolean).join(' · '), durationLabel: p.durationLabel || '', logPreview: p.logPreview || '', logText: p.logText || '', outcome: p.outcome || '', processLabel: p.processLabel || '', orchestrationReason: p.orchestrationReason || '', meetingAgenda: p.meetingAgenda || '', avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814', seq: p.n, skTxt: SKTXT[p.sk] || p.sk, skBg: (col[p.sk] || '#C9C5BB') + '22', skC: p.sk === 'queued' ? '#6B6760' : (col[p.sk] || '#6B6760'), pulse: p.sk === 'working', blockReason: p.blockReason || '', hintLine: p.blockReason || (p.sk === 'working' || p.sk === 'failed' ? (p.logPreview || '') : ''), open: () => this.openGraphStep(p.title) }));
     const edges = []; let ei = 0;
     P.forEach((p) => (p.deps || []).forEach((dp) => {
       if (!pos[dp] || !pos[p.title]) return;
@@ -1318,7 +1385,7 @@ class Maestro extends MaestroBase {
     const roots = P.filter((p) => !p.deps || !p.deps.length).map((p) => p.title);
     const oy = roots.length ? roots.reduce((a, id) => a + pos[id].y, 0) / roots.length : 30;
     const anyRun = P.some((p) => p.sk === 'working');
-    nodes.unshift({ origin: true, title: '▶ 开始 · 任务下发', agent: this.activeTitle || '编排目标', avatar: '◆', aColor: '#F0B400', x: 40, y: oy, dot: '#F0B400', sk: 'origin', nbg: '#1A1814', nfg: '#fff', seq: '', skTxt: '', skBg: 'transparent', skC: '#C9C5BB', blockReason: '' });
+    nodes.unshift({ origin: true, title: '▶ 开始 · 任务下发', agent: this.activeTitle || '编排目标', roleLine: this.activeTitle || '编排目标', metaLine: '', avatar: '◆', aColor: '#F0B400', x: 40, y: oy, dot: '#F0B400', sk: 'origin', nbg: '#1A1814', nfg: '#fff', seq: '', skTxt: '', skBg: 'transparent', skC: '#C9C5BB', blockReason: '', hintLine: '', open: () => {} });
     roots.forEach((id) => { const x1 = 40 + W, y1 = oy + H / 2, x2 = pos[id].x, y2 = pos[id].y + H / 2; const mx = (x1 + x2) / 2; const sk = byId[id].sk; edges.unshift({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: sk === 'done' ? '#2E9E5B' : '#F0B400', flow: sk !== 'done', dash: sk === 'working', dur: '2.2s' }); });
     // 终点「完成 · 交付」:所有无下游的步骤汇入;全部完成 → 绿
     const hasDown = new Set(); P.forEach((p) => (p.deps || []).forEach((d) => hasDown.add(d)));
@@ -1326,7 +1393,7 @@ class Maestro extends MaestroBase {
     const allDone = P.length > 0 && P.every((p) => p.sk === 'done');
     const ex = 40 + (Math.max(...Object.keys(cols).map(Number)) + 2) * GX;
     const eyv = leaves.length ? leaves.reduce((a, id) => a + pos[id].y, 0) / leaves.length : 30;
-    nodes.push({ origin: true, title: allDone ? '✓ 完成 · 已交付' : '⏳ 完成 · 交付', agent: allDone ? '全部步骤已完成' : '等待全部步骤完成', avatar: allDone ? '✓' : '⏳', aColor: allDone ? '#2E9E5B' : '#8A857C', x: ex, y: eyv, dot: allDone ? '#2E9E5B' : '#C9C5BB', sk: 'end', nbg: allDone ? '#1F7A46' : '#F0EEE9', nfg: allDone ? '#fff' : '#6B6760', seq: '', skTxt: '', skBg: 'transparent', skC: '#C9C5BB', blockReason: '' });
+    nodes.push({ origin: true, title: allDone ? '✓ 完成 · 已交付' : '⏳ 完成 · 交付', agent: allDone ? '全部步骤已完成' : '等待全部步骤完成', roleLine: allDone ? '全部步骤已完成' : '等待全部步骤完成', metaLine: '', avatar: allDone ? '✓' : '⏳', aColor: allDone ? '#2E9E5B' : '#8A857C', x: ex, y: eyv, dot: allDone ? '#2E9E5B' : '#C9C5BB', sk: 'end', nbg: allDone ? '#1F7A46' : '#F0EEE9', nfg: allDone ? '#fff' : '#6B6760', seq: '', skTxt: '', skBg: 'transparent', skC: '#C9C5BB', blockReason: '', hintLine: '', open: () => {} });
     leaves.forEach((id) => { const x1 = pos[id].x + W, y1 = pos[id].y + H / 2, x2 = ex, y2 = eyv + H / 2; const mx = (x1 + x2) / 2; const sk = byId[id].sk; edges.push({ d: `M${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`, color: sk === 'done' ? '#2E9E5B' : '#CFCBC1', flow: sk === 'working' || anyRun && sk !== 'done', dash: sk === 'working', dur: '2.6s' }); });
     edges.forEach((e) => { e.pstyle = e.dash ? 'stroke-dasharray:6 6;animation:dash 1s linear infinite;' : ''; });
     nodes.forEach((n) => { n.subc = n.origin ? (n.nfg === '#fff' ? '#C9C5BB' : '#8A857C') : '#8A857C'; n.still = !n.pulse; });
@@ -1349,15 +1416,31 @@ class Maestro extends MaestroBase {
     }
   }
 
-  // 内置执行器的大模型+思考级别选项(仅对已存在的 claude/codex 显示)
+  // 执行器模型选项:优先用后端从本机 CLI/API 自动发现到的真实模型。
+  safeDomId(id) { return String(id || '').replace(/[^A-Za-z0-9_-]/g, '_'); }
+  agentModelOptions(agent, selected) {
+    const found = ((this.live.modelDiscovery || {}).agents || {})[agent.id] || {};
+    const opts = [{ v: '', n: found.current ? ('默认(' + found.current + ')') : '默认' }];
+    const seen = new Set(['']);
+    const add = (id, label) => {
+      const v = String(id || '').trim();
+      if (!v || seen.has(v)) return;
+      seen.add(v);
+      opts.push({ v, n: label || v });
+    };
+    add(selected, selected);
+    add(agent.defModel, agent.defModel);
+    add(found.current, found.current);
+    (found.options || []).forEach((o) => add(o.id, o.name || o.id));
+    return opts;
+  }
   modelPickers() {
     const EFF = [{ v: '', n: '思考:默认' }, { v: 'low', n: '低' }, { v: 'medium', n: '中' }, { v: 'high', n: '高' }, { v: 'xhigh', n: '超高' }];
-    const CAT = {
-      claude: { label: 'Claude', selId: 'nt-model-claude', effId: 'nt-effort-claude', opts: [{ v: '', n: '默认' }, { v: 'claude-fable-5', n: 'Fable 5' }, { v: 'claude-opus-4-8', n: 'Opus 4.8' }], effOpts: EFF.concat([{ v: 'max', n: '极限' }]) },
-      codex: { label: 'Codex', selId: 'nt-model-codex', effId: 'nt-effort-codex', opts: [{ v: '', n: '默认' }, { v: 'gpt-5.5', n: 'GPT-5.5' }, { v: 'gpt-5.4', n: 'GPT-5.4' }], effOpts: EFF },
-    };
-    const have = new Set((this.AGENTS || []).map((a) => a.id));
-    return Object.keys(CAT).filter((id) => have.has(id)).map((id) => ({ agent: id, ...CAT[id] }));
+    return (this.AGENTS || []).filter((a) => a.enabled !== false && (a.kind || 'cli') === 'cli').map((a) => {
+      const sid = this.safeDomId(a.id);
+      const isClaude = /claude/i.test(a.id + ' ' + a.name + ' ' + a.command);
+      return { agent: a.id, label: a.name, selId: 'nt-model-' + sid, effId: 'nt-effort-' + sid, opts: this.agentModelOptions(a, ''), effOpts: isClaude ? EFF.concat([{ v: 'max', n: '极限' }]) : EFF };
+    });
   }
   // 项目内快捷下发:任务归属当前项目
   projQuickLaunch() {
@@ -1390,6 +1473,7 @@ class Maestro extends MaestroBase {
     if (/成本上限|日成本|ORCH_DAILY_BUDGET/i.test(s)) return '💡 已达成本上限,任务未执行/暂停(非报错)。提高上限(全局 ORCH_DAILY_BUDGET,或新建任务时的「成本上限」)后重新下发本任务,或次日0点(本地)重置后再试。';
     if (/rate limit|usage limit|session limit|429/i.test(s)) return '💡 执行器限额,系统通常会自动排定重试(最多2次),也可稍后手动重试。';
     if (/not logged in|未登录|请登录|login|unauthor|authenticat|credential|api[ _-]?key|401/i.test(s)) return '💡 执行器未登录/凭证失效(无人值守首要失败源)。在终端登录该 CLI(如 claude、codex login)后重试;顶栏「执行器未就绪」也会提示。';
+    if (/超出自定义 CLI 命令行上限/.test(s)) return '💡 该步提示词过长,自定义 CLI 走命令行有 ~8K 上限。把该步/任务交给 claude 或 codex 执行(走 stdin 无长度限制),或缩短任务描述。';
     if (/超时|timeout|timed out/i.test(s)) return '💡 步骤执行超时。可能任务太大,可拆成更小的需求重新下发,或重试。';
     if (/cannot find module|module not found|no such file|命令未找到|not found|command not found/i.test(s)) return '💡 缺少依赖/文件。产出可能引用了未安装的包,重试时员工会尝试补齐。';
     if (/permission|denied|EACCES|EPERM/i.test(s)) return '💡 权限问题。检查产出目录写权限或执行器配置。';
@@ -1453,8 +1537,8 @@ class Maestro extends MaestroBase {
     const s = window.prompt('设「' + name + '」总成本上限($,0 或空=不限):', cur > 0 ? String(cur) : ''); if (s == null) return;
     fetch('/api/people/' + id + '/budget', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ budget: Number(s) || 0 }) }).then(() => { this.toast('✓ 已设用户成本上限'); this.fetchAll(); }).catch(() => {});
   }
-  newAgent() { this.setState({ modal: 'agent', editAgent: null }); }
-  editCurAgent() { const a = this.AGENTS.find((x) => x.id === this.state.agentId); if (a) this.setState({ modal: 'agent', editAgent: a }); }
+  newAgent() { this.setState({ modal: 'agent', editAgent: null, naKind: 'cli' }); }
+  editCurAgent() { const a = this.AGENTS.find((x) => x.id === this.state.agentId); if (a) this.setState({ modal: 'agent', editAgent: a, naKind: a.kind || 'cli' }); }
   delCurAgent() { const id = this.state.agentId; if (!id || !window.confirm('删除该 Agent?')) return; fetch('/api/agents/' + id, { method: 'DELETE' }).then(() => { this.setState({ screen: 'agents' }); this.fetchAll(); }).catch(() => {}); }
   newProject() { this.setState({ modal: 'project' }); }
   submitProject() {
@@ -1491,7 +1575,7 @@ class Maestro extends MaestroBase {
   }
   newPerson() { this.setState({ modal: 'person', assignPid: null }); }
   assignPerson(pid) { this.setState({ modal: 'person', assignPid: pid }); }
-  closeModal() { this.setState({ modal: null, assignPid: null, taskDept: null }); }
+  closeModal() { this.setState({ modal: null, assignPid: null, taskDept: null, naKind: null }); }
 
   submitTask() {
     const text = (document.getElementById('nt-text') || {}).value || '';
@@ -1532,10 +1616,16 @@ class Maestro extends MaestroBase {
     if (!name.trim()) return;
     if (kind === 'cli' && !command.trim()) return; // CLI 类必须有命令
     const body = { name: name.trim(), command: command.trim(), kind, args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept'), default_model: g('na-defmodel'), default_effort: g('na-defeffort') };
+    if (kind !== 'cli') { // API 型:三项接入(地址/Key/模型)
+      body.base_url = g('na-baseurl').trim();
+      body.api_key = g('na-key').trim(); // 编辑留空=服务端保留旧 Key
+      if (!body.base_url) { this.toast('✗ 需填模型地址(如 https://api.deepseek.com/v1)'); return; }
+      if (!g('na-model').trim()) { this.toast('✗ 需填模型 ID(如 deepseek-chat)'); return; }
+    }
     const ea = this.state.editAgent;
     if (ea) { body.color = ea.color; body.avatar = ea.avatar; }
     fetch(ea ? '/api/agents/' + ea.id : '/api/agents', { method: ea ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-      .then((r) => r.json()).then(() => { this.setState({ modal: null, editAgent: null }); this.fetchAll(); }).catch(() => {});
+      .then((r) => r.json()).then(() => { this.setState({ modal: null, editAgent: null, naKind: null }); this.fetchAll(); this.fetchModelDiscovery(true); }).catch(() => {});
   }
   submitPerson() {
     const ids = [...document.querySelectorAll('.np-agent:checked')].map((c) => c.value);
@@ -1556,6 +1646,7 @@ class Maestro extends MaestroBase {
     return fetch('/api/all').then((r) => { if (r.status === 401) { if (!this.state.needLogin) { this.state.needLogin = true; this.scheduleRender(); } return null; } return r.json(); }).then((d) => {
       if (!d) return;
       this.live.loaded = true; // 首帧数据到手(401 早返回不置真,留给登录页)
+      if (!this.live.modelDiscoveryAsked) this.fetchModelDiscovery(false);
       if (this.state.needLogin) this.state.needLogin = false;
       this.state.me = d.me || null;
       this.AGENTS = d.agents || []; this.DEPTS = d.depts || []; this.BOARDS = d.boards || {};
@@ -1603,9 +1694,15 @@ class Maestro extends MaestroBase {
           if (this.state.modal === 'meeting' && m.taskId === this.state.meetingId) this.fetchMeeting(m.taskId);
           if (m.data === 'closed') this.fetchAll(); // 会议结束→任务转执行,刷新状态
         } else if (m.type === 'plan' || m.type === 'status' || m.type === 'task' || m.type === 'agents' || m.type === 'apps') {
-          this.fetchAll().then(() => this.notifyTask(m)); // 先刷新拿到最新failReason,再桌面通知(含失败原因)
-          if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }
-          if (this.live.activeId != null) this.fetchPlan(this.live.activeId);
+          // status 是每步每次状态变更广播(多任务并发每秒几十条),每条都全量 fetchAll+relay+plan = 客户端自我 DDoS。
+          // task/plan/agents/apps 是低频关键事件,立即刷 + 通知;status 合并去抖(400ms trailing),UI 无感、请求量降一个量级。
+          if (m.type === 'status') this.scheduleLiveRefresh();
+          else {
+            this.fetchAll().then(() => this.notifyTask(m)); // 先刷新拿到最新failReason,再桌面通知(含失败原因)
+            if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); if (m.type === 'task') this.fetchFiles(this.state.taskId); }
+            const aid = this._activeId != null ? this._activeId : this.live.activeId; // 刷画布当前查看任务的计划(选了历史任务时原来只刷最新任务,画布不更新)
+            if (aid != null) this.fetchPlan(aid);
+          }
         }
       };
       ws.onclose = () => { this.live.wsConnected = false; this.scheduleRender(); setTimeout(() => this.openWS(), 2000); };

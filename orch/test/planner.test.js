@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
-const { fromTemplate, makePlan } = require('../planner');
+const { fromTemplate, makePlan, validateCrewPlan } = require('../planner');
 
 const TPL = path.join(__dirname, '..', 'templates');
 
@@ -37,6 +37,61 @@ test('员工模式:按部门员工拆分,角色提示词注入,执行器解析',
   assert.equal(plan.steps[0].agent, 'claude');            // 执行器解析
   assert.match(plan.steps[0].prompt, /你是前端开发工程师/); // 角色提示词注入
   assert.equal(plan.steps[1].agent, 'codex');
+});
+
+test('员工模式:总调度目录包含员工能力摘要并要求先分析任务', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '建前端', prompt: '【身份】前端\n【交付物标准】必须交付可运行页面、样式文件和自测记录。\n【工作流程】先读现状再实现。', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收', prompt: '【身份】验收\n【判定】必须输出 PASS/FAIL 和可复现问题清单。', executor: 'codex' },
+  ];
+  const depts = [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }];
+  let rolePrompt = '';
+  const fakeClaude = { async run({ prompt }) {
+    if (/任务分派专家/.test(prompt)) return { output: 'engineering', success: true };
+    rolePrompt = prompt;
+    return { output: '{"steps":[{"id":"build","role":"engineering-frontend-developer","prompt":"做页面","deps":[]},{"id":"verify","role":"testing-reality-checker","prompt":"验收","deps":["build"]}]}', success: true };
+  } };
+  const plan = await makePlan('开发可运行首页并验收', { mode: 'llm', agents: ['claude', 'codex'], roles, depts, refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.match(rolePrompt, /交付:必须交付可运行页面/);
+  assert.match(rolePrompt, /testing-reality-checker\(真实验收:验收\)/); // 分层目录:非主部门员工一句话简介(完整卡执行时注入)
+  assert.match(rolePrompt, /先在心中完成任务分析/);
+  assert.match(rolePrompt, /主产物/);
+  assert.equal(plan.steps[0].role, 'engineering-frontend-developer');
+  assert.equal(plan.steps[1].role, 'testing-reality-checker');
+});
+
+test('员工模式:缺验收契约时自动补 expected_outcome', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '建前端页面', prompt: '【身份】前端', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '质量验收与核查', prompt: '【身份】验收\n【判定】输出 PASS/FAIL。', executor: 'codex' },
+  ];
+  const fakeClaude = { async run({ prompt }) {
+    if (/任务分派专家/.test(prompt)) return { output: 'engineering', success: true };
+    return { output: '{"steps":[{"id":"build","role":"engineering-frontend-developer","prompt":"实现页面","deps":[]},{"id":"verify","role":"testing-reality-checker","prompt":"验证页面","deps":["build"]}]}', success: true };
+  } };
+  const plan = await makePlan('做一个可运行页面并验收', { mode: 'llm', agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.match(plan.steps[0].expected_outcome, /真实完成本步要求/);
+  assert.match(plan.steps[1].expected_outcome, /PASS\/FAIL/);
+});
+
+test('员工模式:总调度目录包含关键规则流程与交接摘要', async () => {
+  const roles = [
+    { id: 'engineering-minimal-change-engineer', dept: 'engineering', name: '最小变更', description: '精准小改', prompt: '【身份】最小变更工程师\n【关键规则】只修被要求内容,拒绝范围蔓延。\n【工作流程】先定位最小影响面,再写最小差异。\n【交接】输出改动文件、默认假设和后续事项。', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收', prompt: '【身份】验收\n【判定】输出 PASS/FAIL。', executor: 'codex' },
+  ];
+  let rolePrompt = '';
+  const fakeClaude = { async run({ prompt }) {
+    if (/任务分派专家/.test(prompt)) return { output: 'engineering', success: true };
+    rolePrompt = prompt;
+    return { output: '{"steps":[{"id":"fix","role":"engineering-minimal-change-engineer","prompt":"修复问题","deps":[]},{"id":"verify","role":"testing-reality-checker","prompt":"验收","deps":["fix"]}]}', success: true };
+  } };
+  await makePlan('修复一个页面按钮错误并验收', { mode: 'llm', agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: false, templatesDir: __dirname, claude: fakeClaude });
+  // 分层目录:主负责部门(工程部)员工带完整能力档案;其他部门(测试部)只给一句话简介
+  assert.match(rolePrompt, /规则:只修被要求内容/);
+  assert.match(rolePrompt, /流程:先定位最小影响面/);
+  assert.match(rolePrompt, /交接:输出改动文件/);
+  const testingSeg = rolePrompt.split('\n').find((l) => l.startsWith('测试部:')) || '';
+  assert.ok(!/判定:/.test(testingSeg), '非主部门员工应为一句话简介(无档案段), 实际=' + testingSeg.slice(0, 80));
 });
 
 test('员工模式:执行器不在所选范围时回退到首个所选', async () => {
@@ -264,4 +319,351 @@ test('新功能:复杂计划(≥4步≥2角色)前置代码强制方案会议', 
   const simple = { steps: [{ id: 'x', role: 'arch', deps: [] }, { id: 'y', role: 'fe', deps: ['x'] }] };
   prependMeeting(simple, roleMap);
   assert.equal(simple.steps.length, 2);                                // <4步:不开会
+});
+
+test('明确简单员工任务走快速规划,不调用LLM深度拆分', async () => {
+  let calls = 0;
+  const roles = [
+    { id: 'engineering-minimal-change-engineer', dept: 'engineering', name: '最小变更', description: '修复按钮、文案和小范围代码变更', prompt: 'p', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const claude = { async run() { calls++; throw new Error('简单任务不应调用LLM'); } };
+  const plan = await makePlan('修复登录按钮文案', { agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: true, templatesDir: __dirname, claude });
+  assert.equal(calls, 0);
+  assert.equal(plan.planning_stats.route, 'fast-simple');
+  assert.equal(plan.planning_stats.llm_calls, 0);
+  assert.equal(plan.steps.length, 1);
+  assert.equal(plan.steps[0].role, 'engineering-minimal-change-engineer');
+  assert.equal(plan.steps[0].agent, 'claude');
+});
+
+test('短但明确的任务不做需求细化,只保留一次规划调用', async () => {
+  let calls = 0;
+  const claude = { async run() {
+    calls++;
+    return { output: '{"steps":[{"id":"fix_copy","agent":"claude","prompt":"修复按钮文案","deps":[]}]}', success: true };
+  } };
+  const plan = await makePlan('修复登录按钮文案', { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude });
+  assert.equal(calls, 1);
+  assert.equal(plan.steps[0].id, 'fix_copy');
+});
+
+test('复杂员工规划用本地主部门判断,不额外调用任务分派LLM', async () => {
+  let calls = 0;
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面、组件、交互实现', prompt: 'p', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const claude = { async run() {
+    calls++;
+    return { output: '{"steps":[{"id":"impl_frontend","role":"engineering-frontend-developer","prompt":"实现客户列表、编辑和权限校验页面","deps":[]},{"id":"verify","role":"testing-reality-checker","prompt":"验收客户管理后台","deps":["impl_frontend"]}]}', success: true };
+  } };
+  const plan = await makePlan('开发一个客户管理后台,包含列表、编辑、权限校验和验收', { agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: false, templatesDir: __dirname, claude });
+  assert.equal(calls, 1);
+  assert.equal(plan.planning_stats.llm_calls, 1);
+  assert.equal(plan.planning_stats.main_dept, 'engineering');
+  assert.equal(plan.steps[0].role, 'engineering-frontend-developer');
+});
+
+test('高置信复杂业务不能降级成单步执行器,员工规划失败时走多角色会议保底', async () => {
+  const roles = [
+    { id: 'product-product-manager', dept: 'product', name: '产品经理', description: '需求拆解与产品范围', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '架构、交易接口和数据模型', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面、行情看板、交易交互', prompt: 'p', executor: 'claude' },
+    { id: 'security-risk-analyst', dept: 'security', name: '风控分析师', description: '交易安全、权限、风控', prompt: 'p', executor: 'codex' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const depts = [
+    { id: 'product', name: '产品部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+  ];
+  const claude = { async run() { throw new Error('模拟员工LLM规划失败'); } };
+  const plan = await makePlan('股票交易网站', { agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+  assert.notEqual(plan.planning_stats.route, 'fallback');
+  assert.match(plan.planning_stats.route, /complex/);
+  assert.ok(plan.meeting, '复杂任务应强制进入方案会议');
+  assert.ok(plan.steps.length >= 5, '复杂任务不能压成单步');
+  assert.ok(plan.steps.some((s) => s.role === 'engineering-backend-architect'));
+  assert.ok(plan.steps.some((s) => s.role === 'engineering-frontend-developer'));
+});
+
+test('复杂股票交易网站保底编排优先派工程主责和关键专业员工', async () => {
+  const roles = [
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: 'PRD与路线图', prompt: 'p', executor: 'claude' },
+    { id: 'design-ux-architect', dept: 'design', name: 'UX架构师', description: '信息架构与交互', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '后端架构、数据库与API', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发工程师', description: '前端界面与组件', prompt: 'p', executor: 'claude' },
+    { id: 'security-appsec-engineer', dept: 'security', name: '应用安全工程师', description: '应用安全、权限与风控', prompt: 'p', executor: 'codex' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '接口测试与CI', prompt: 'p', executor: 'codex' },
+    { id: 'finance-investment-researcher', dept: 'finance', name: '投资研究员', description: '金融与股票研究', prompt: 'p', executor: 'claude' },
+  ];
+  const depts = [
+    { id: 'product', name: '产品部' },
+    { id: 'design', name: '设计部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+    { id: 'finance', name: '金融部' },
+  ];
+  const claude = { async run() { throw new Error('模拟规划失败'); } };
+  const plan = await makePlan('开发一个复杂的股票交易网站（验证智能编排）', { mode: 'llm', agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+  const used = new Set();
+  const walk = (steps) => (steps || []).forEach((s) => { if (s.role) used.add(s.role); if (s.body) walk(s.body); });
+  walk(plan.steps);
+  assert.equal(plan.planning_stats.route, 'complex-fallback');
+  assert.equal(plan.planning_stats.main_dept, 'engineering');
+  assert.equal(plan.meeting.mainDept, 'engineering');
+  assert.ok(used.has('product-manager'));
+  assert.ok(used.has('engineering-backend-architect'));
+  assert.ok(used.has('engineering-frontend-developer'));
+  assert.ok(used.has('security-appsec-engineer'));
+  assert.ok(used.has('testing-api-tester'));
+});
+
+test('复杂股票交易网站LLM多步但错派角色时仍启用保底编排', async () => {
+  const roles = [
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: 'PRD与路线图', prompt: 'p', executor: 'claude' },
+    { id: 'design-ux-architect', dept: 'design', name: 'UX架构师', description: '信息架构与交互', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '后端架构、数据库与API', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发工程师', description: '前端界面与组件', prompt: 'p', executor: 'claude' },
+    { id: 'security-appsec-engineer', dept: 'security', name: '应用安全工程师', description: '应用安全、权限与风控', prompt: 'p', executor: 'codex' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '接口测试与CI', prompt: 'p', executor: 'codex' },
+    { id: 'level-designer', dept: 'game-development', name: '关卡设计师', description: '关卡与遭遇设计', prompt: 'p', executor: 'claude' },
+    { id: 'legal-policy-writer', dept: 'legal', name: '制度文件撰写专家', description: '隐私政策与合规制度', prompt: 'p', executor: 'claude' },
+    { id: 'academic-historian', dept: 'academic', name: '历史学家', description: '历史一致性质量门', prompt: 'p', executor: 'claude' },
+  ];
+  const depts = [
+    { id: 'product', name: '产品部' },
+    { id: 'design', name: '设计部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+    { id: 'game-development', name: '游戏开发部' },
+    { id: 'legal', name: '法务部' },
+    { id: 'academic', name: '学术部' },
+  ];
+  const claude = { async run() { return { output: JSON.stringify({ steps: [
+    { id: 'scope_requirements', role: 'product-manager', prompt: '需求范围', deps: [] },
+    { id: 'system_architecture', role: 'engineering-backend-architect', prompt: '技术架构', deps: ['scope_requirements'] },
+    { id: 'ux_interaction', role: 'design-ux-architect', prompt: '交互设计', deps: ['scope_requirements'] },
+    { id: 'backend_domain', role: 'level-designer', prompt: '业务域设计', deps: ['system_architecture'] },
+    { id: 'risk_review', role: 'legal-policy-writer', prompt: '风险复核', deps: ['backend_domain'] },
+    { id: 'acceptance_test', role: 'academic-historian', prompt: '验收', deps: ['risk_review'] },
+  ] }), success: true }; } };
+  const plan = await makePlan('开发一个复杂的股票交易网站', { mode: 'llm', agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+  const used = new Set();
+  const walk = (steps) => (steps || []).forEach((s) => { if (s.role) used.add(s.role); if (s.body) walk(s.body); });
+  walk(plan.steps);
+  assert.equal(plan.planning_stats.route, 'complex-fallback');
+  assert.ok(used.has('engineering-frontend-developer'));
+  assert.ok(used.has('security-appsec-engineer'));
+  assert.ok(used.has('testing-api-tester'));
+  assert.ok(!used.has('level-designer'));
+  assert.ok(!used.has('academic-historian'));
+});
+
+test('高风险复杂任务会议:参会员工覆盖产品架构前端安全测试并带固定议程', async () => {
+  const roles = [
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: '产品范围', prompt: 'p', executor: 'claude' },
+    { id: 'design-ux-architect', dept: 'design', name: 'UX架构师', description: '交互', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '交易接口', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '交易界面', prompt: 'p', executor: 'claude' },
+    { id: 'security-appsec-engineer', dept: 'security', name: '应用安全工程师', description: '安全与风控', prompt: 'p', executor: 'codex' },
+    { id: 'security-penetration-tester', dept: 'security', name: '渗透测试员', description: '安全测试与攻击面验证', prompt: 'p', executor: 'codex' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '测试验收', prompt: 'p', executor: 'codex' },
+  ];
+  const depts = [
+    { id: 'product', name: '产品部' },
+    { id: 'design', name: '设计部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+  ];
+  const claude = { async run() { throw new Error('触发本地复杂保底'); } };
+  const plan = await makePlan('开发一个复杂的股票交易网站', { agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+
+  assert.ok(plan.meeting.attendees.length >= 4);
+  assert.ok(plan.meeting.attendees.length <= 5);
+  assert.ok(plan.meeting.attendees.includes('product-manager') || plan.meeting.hostRole === 'product-manager');
+  assert.ok(plan.meeting.attendees.includes('engineering-backend-architect'));
+  assert.ok(plan.meeting.attendees.includes('engineering-frontend-developer'));
+  assert.ok(plan.meeting.attendees.includes('security-appsec-engineer') || plan.meeting.attendees.includes('testing-api-tester'));
+  assert.ok(plan.meeting.attendees.includes('testing-api-tester'), '测试席位应优先测试部员工,不能被安全渗透测试员抢占');
+  assert.deepEqual(plan.meeting.agenda, ['目标澄清', '方案推进', '反方质询', '风险复核', '经理裁决']);
+  assert.equal(plan.meeting.debateRounds, 1);
+});
+
+test('复杂任务会议显式指定主持人且优先总调度', async () => {
+  const roles = [
+    { id: 'chief-orchestrator', dept: '__system', name: '总调度', description: '了解全部部门和员工能力,负责会议主持和最终裁决', prompt: 'p', executor: 'claude' },
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: '产品范围', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '业务架构和接口', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面实现', prompt: 'p', executor: 'claude' },
+    { id: 'security-appsec-engineer', dept: 'security', name: '应用安全工程师', description: '权限与安全', prompt: 'p', executor: 'codex' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const depts = [
+    { id: '__system', name: '系统' },
+    { id: 'product', name: '产品部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+  ];
+  const claude = { async run() { throw new Error('触发本地复杂保底'); } };
+  const plan = await makePlan('开发一个DMS 供应商管理系统', { agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+
+  assert.equal(plan.meeting.hostRole, 'chief-orchestrator');
+  assert.equal(plan.meeting.hostName, '总调度');
+  assert.ok(plan.meeting.hostCatalog && /产品部/.test(plan.meeting.hostCatalog));
+  assert.ok(plan.meeting.hostCatalog && /后端架构师/.test(plan.meeting.hostCatalog));
+  assert.equal(plan.steps.find((s) => s.id === 'decide_plan').role, 'chief-orchestrator');
+  assert.ok(!plan.meeting.attendees.includes('chief-orchestrator'), '主持人不应占用普通参会席位');
+});
+
+test('低置信歧义任务不擅自规划,返回A/B/C选择项', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面实现', prompt: 'p', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  let calls = 0;
+  const claude = { async run() { calls++; throw new Error('歧义任务不应直接调LLM'); } };
+  const plan = await makePlan('做一个网站', { agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: true, templatesDir: __dirname, claude });
+  assert.equal(calls, 0);
+  assert.equal(plan.routing.lane, 'needs_choice');
+  assert.equal(plan.planning_stats.route, 'awaiting-route-choice');
+  assert.deepEqual(plan.routing.options.map((o) => o.id), ['A', 'B', 'C']);
+  assert.equal(plan.steps.length, 0);
+});
+
+test('缩写系统需求拿不准时让用户选择,不擅自单步执行', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面实现', prompt: 'p', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  let calls = 0;
+  const claude = { async run() { calls++; throw new Error('缩写歧义任务不应直接调LLM'); } };
+  const plan = await makePlan('开发一个DMS系统', { agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: true, templatesDir: __dirname, claude });
+
+  assert.equal(calls, 0);
+  assert.equal(plan.routing.lane, 'needs_choice');
+  assert.equal(plan.planning_stats.route, 'awaiting-route-choice');
+  assert.equal(plan.steps.length, 0);
+});
+
+test('业务对象管理系统属于复杂交付,员工规划失败也必须多员工会议保底', async () => {
+  const roles = [
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: '需求范围与业务流程', prompt: 'p', executor: 'claude' },
+    { id: 'design-ux-architect', dept: 'design', name: 'UX架构师', description: '信息架构与交互', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '业务建模、接口和数据库', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '管理后台页面和组件', prompt: 'p', executor: 'claude' },
+    { id: 'security-appsec-engineer', dept: 'security', name: '应用安全工程师', description: '权限、安全与审计', prompt: 'p', executor: 'codex' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '接口和验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const depts = [
+    { id: 'product', name: '产品部' },
+    { id: 'design', name: '设计部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+  ];
+  const claude = { async run() { throw new Error('模拟员工LLM规划失败'); } };
+  const plan = await makePlan('开发一个DMS 供应商管理系统', { mode: 'llm', agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+  const used = new Set();
+  const walk = (steps) => (steps || []).forEach((s) => { if (s.role) used.add(s.role); if (s.body) walk(s.body); });
+  walk(plan.steps);
+
+  assert.equal(plan.routing.lane, 'complex');
+  assert.match(plan.planning_stats.route, /complex/);
+  assert.ok(plan.meeting, '复杂业务系统应先开方案会议');
+  assert.ok(plan.steps.length >= 5, '复杂业务系统不能压成单步 build');
+  assert.ok(used.has('product-manager'));
+  assert.ok(used.has('engineering-backend-architect'));
+  assert.ok(used.has('engineering-frontend-developer'));
+  assert.ok(used.has('security-appsec-engineer') || used.has('testing-api-tester'));
+});
+
+test('流程类型:复杂股票交易网站标记为高风险复核流程', async () => {
+  const roles = [
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: 'PRD与范围', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '交易接口和数据库', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '交易页面和行情看板', prompt: 'p', executor: 'claude' },
+    { id: 'security-appsec-engineer', dept: 'security', name: '应用安全工程师', description: '权限、安全、风控', prompt: 'p', executor: 'codex' },
+    { id: 'testing-api-tester', dept: 'testing', name: 'API测试员', description: '接口和验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const depts = [
+    { id: 'product', name: '产品部' },
+    { id: 'engineering', name: '工程部' },
+    { id: 'security', name: '安全部' },
+    { id: 'testing', name: '测试部' },
+  ];
+  const claude = { async run() { throw new Error('触发本地复杂保底'); } };
+  const plan = await makePlan('开发一个复杂的股票交易网站', { agents: ['claude', 'codex'], roles, depts, refine: true, templatesDir: __dirname, claude });
+
+  assert.equal(plan.process.type, 'risk_review');
+  assert.equal(plan.process.risk_review, true);
+  assert.equal(plan.process.debate_rounds, 1);
+  assert.match(plan.process.reason, /股票|交易|金融|风险|复杂/);
+  assert.equal(plan.planning_stats.process_type, 'risk_review');
+});
+
+test('流程类型:低置信歧义任务标记为 ask_user', async () => {
+  const roles = [
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面实现', prompt: 'p', executor: 'claude' },
+    { id: 'testing-reality-checker', dept: 'testing', name: '真实验收', description: '验收测试', prompt: 'p', executor: 'codex' },
+  ];
+  const claude = { async run() { throw new Error('歧义任务不应调用模型'); } };
+  const plan = await makePlan('做一个网站', { agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: true, templatesDir: __dirname, claude });
+
+  assert.equal(plan.process.type, 'ask_user');
+  assert.equal(plan.planning_stats.process_type, 'ask_user');
+  assert.equal(plan.routing.lane, 'needs_choice');
+});
+
+test('计划复核:发现非法依赖和缺失员工', () => {
+  const roles = [
+    { id: 'backend', dept: 'engineering', name: '后端', description: 'API', prompt: 'p', executor: 'claude' },
+  ];
+  const plan = { task: '开发交易系统', steps: [
+    { id: 'build', role: 'missing-role', prompt: '实现', deps: ['future'] },
+    { id: 'future', role: 'backend', prompt: '后续', deps: ['future'] },
+  ] };
+
+  const result = validateCrewPlan(plan, roles, '开发交易系统');
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((x) => /员工|role/.test(x)));
+  assert.ok(result.errors.some((x) => /依赖|deps/.test(x)));
+});
+
+test('风险复核流程缺少安全/风险/测试角色时不通过', () => {
+  const roles = [
+    { id: 'product-manager', dept: 'product', name: '产品经理', description: '产品', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-backend-architect', dept: 'engineering', name: '后端架构师', description: '交易接口', prompt: 'p', executor: 'claude' },
+    { id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '页面', prompt: 'p', executor: 'claude' },
+  ];
+  const plan = { task: '开发企业门户', process: { type: 'risk_review' }, steps: [
+    { id: 'scope', role: 'product-manager', prompt: '需求', deps: [] },
+    { id: 'backend', role: 'engineering-backend-architect', prompt: '后端', deps: ['scope'] },
+    { id: 'frontend', role: 'engineering-frontend-developer', prompt: '前端', deps: ['backend'] },
+    { id: 'acceptance', role: 'engineering-frontend-developer', prompt: '验收', deps: ['frontend'] },
+  ] };
+
+  const result = validateCrewPlan(plan, roles, '开发企业门户');
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((x) => /安全|风险|测试/.test(x)));
+});
+
+test('makePlan 输出应带 validation', async () => {
+  const roles = [{ id: 'engineering-frontend-developer', dept: 'engineering', name: '前端开发', description: '前端', prompt: 'p', executor: 'claude' }];
+  const depts = [{ id: 'engineering', name: '工程' }];
+  const fakeClaude = {
+    async run() {
+      return { output: '{"steps":[{"id":"build","role":"engineering-frontend-developer","prompt":"开发页面","deps":[]}]}', success: true };
+    },
+  };
+
+  const plan = await makePlan('开发企业门户', { mode: 'llm', agents: ['claude'], roles, depts, refine: false, templatesDir: __dirname, claude: fakeClaude });
+  assert.ok(plan.validation && typeof plan.validation === 'object');
+  assert.equal(typeof plan.validation.ok, 'boolean');
 });

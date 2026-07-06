@@ -9,13 +9,25 @@ test('审查修复:shArg 在 POSIX 单引号杜绝命令替换,Windows 保持 JS
   assert.equal(shArg('x', 'win32'), '"x"');                                       // Windows 保持原行为
 });
 
-test('审查修复:claude 只读档 --disallowedTools 放在 prompt 之后(变参不吞 prompt)', () => {
+test('claude prompt 走 stdin:args 不含 prompt(避 Windows ~8K 命令行上限),只读档 --disallowedTools 置末尾', () => {
   const { buildArgs } = require('../adapters/claude');
-  const a = buildArgs({ prompt: 'THEPROMPT', permission: 'read' });
-  const di = a.indexOf('--disallowedTools'), pi = a.findIndex((x) => String(x).includes('THEPROMPT'));
-  assert.ok(pi >= 0, 'prompt 应在 args 中');
-  assert.ok(di > pi, 'prompt 必须在 --disallowedTools 之前(否则变参吞 prompt), args=' + JSON.stringify(a));
-  assert.equal(buildArgs({ prompt: 'x' }).indexOf('--disallowedTools'), -1); // 非只读档无此标志
+  const a = buildArgs({ permission: 'read' });
+  assert.ok(!a.some((x) => String(x).includes('THEPROMPT')), 'prompt 不应再进命令行参数');
+  const di = a.indexOf('--disallowedTools');
+  assert.ok(di >= 0 && a.slice(di + 1).every((x) => !String(x).startsWith('--')), '--disallowedTools 变参应在末尾,后随仅工具名');
+  assert.equal(buildArgs({}).indexOf('--disallowedTools'), -1); // 非只读档无此标志
+});
+
+test('jsonl:input 经 stdin 写给子进程(长 prompt 不再受命令行长度限制)', async () => {
+  const { runJsonl } = require('../adapters/jsonl');
+  const long = 'X'.repeat(20000) + '_END'; // 远超 8191 命令行上限
+  const r = await runJsonl({
+    cmd: 'node', args: ['-e', '"let b=[];process.stdin.on(\'data\',(c)=>b.push(c));process.stdin.on(\'end\',()=>console.log(JSON.stringify({ok:Buffer.concat(b).length})))"'],
+    parse: (line) => { try { const j = JSON.parse(line); return { text: 'len:' + j.ok }; } catch (e) { return {}; } },
+    onLine: () => {}, input: long,
+  });
+  assert.ok(r.success, 'stdin 子进程应正常退出');
+  assert.ok(r.output.includes('len:' + long.length), '子进程应完整收到 stdin, 实际=' + r.output.trim());
 });
 
 test('审查修复:parse 崩(裸 null 行)在 jsonl handle 被兜底,不掀翻进程', () => {

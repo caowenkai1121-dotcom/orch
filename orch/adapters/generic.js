@@ -21,6 +21,14 @@ function make(def) {
         if (dockerOk()) { callArgs = dockerArgs(workdir, def.image, def.command, [...baseArgs, ...modelArgs, shArg(prompt)]); cmd = 'docker'; }
         else onLine('[warn] Docker 不可用,回退本地执行');
       }
+      // Windows 命令行 ~8191 字符硬上限:自定义 CLI 的 prompt 仍走命令行(各家 stdin 支持不一,不盲改)。
+      // 超限与其神秘 spawn 失败,不如明确报错——可诊断、可换 claude/codex(prompt 走 stdin,无长度限制)重派。
+      const cmdLen = String(cmd || '').length + callArgs.join(' ').length;
+      if (process.platform === 'win32' && cmdLen > 7500) {
+        const msg = '提示词组装后约 ' + cmdLen + ' 字符,超出自定义 CLI 命令行上限(~8K)。本步请改用 claude/codex 执行(它们的提示词走 stdin,无长度限制)。';
+        onLine('✗ ' + msg);
+        return { output: msg, success: false };
+      }
       const res = await runCli(cmd, callArgs, workdir, onLine, onChild);
       if (onUsage) { // inferred:按字符数/4 估 token
         const inTok = Math.ceil((prompt || '').length / 4), outTok = Math.ceil((res.output || '').length / 4);

@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { runPlan } = require('../engine');
+const { runPlan, ASK } = require('../engine');
 
 function ctx(adapters, extra) {
   return Object.assign({ adapters, workspace: { make: () => '.' }, onLog: () => {}, onStatus: () => {} }, extra || {});
@@ -337,6 +337,19 @@ test('#5 expected_outcome 注入本步简报,gate 继承实现步契约', async 
   await runPlan(plan, ctx({ i: impl, g: gate }));
   assert.match(implP, /预期产出[\s\S]*login\.html/); // 契约注入实现步自身
   assert.match(gateP, /login\.html/);                // gate 无自带契约 → 继承实现步作验收标准
+});
+
+test('问我模式仍注入交付铁律与交接备忘', async () => {
+  let seen = '';
+  const a = { async run({ prompt }) { seen = prompt; return { output: 'ok', success: true }; } };
+  await runPlan(
+    { steps: [{ id: 's', agent: 'a', prompt: 'p', deps: [] }] },
+    ctx({ a }, { askMode: true, preamble: ASK })
+  );
+  assert.match(seen, /交付铁律/);
+  assert.match(seen, /真实写入磁盘文件/);
+  assert.match(seen, /交接备忘/);
+  assert.match(seen, /NEED_DECISION/);
 });
 
 test('#12 replanMode: NEED_REPLAN 冒泡触发 onReplan,发信号步不计done,下游不跑', async () => {
