@@ -8,6 +8,48 @@ const { runTask, meetingUserMsg, summonEmployee, endMeeting, resumeTask } = requ
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+test('会议室:主持人先说明主题,参会员工举手排队后由主持收束', async () => {
+  const store = open(':memory:');
+  const dir = path.join(os.tmpdir(), 'orch-meet-host-queue-' + process.pid);
+  fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+  const id = store.createTask('前端使用 vue 后段使用 java springboot 开发一个 天气小工具网站');
+  store.setTaskDir(id, dir);
+  store.addDept({ id: 'eng', name: '工程部', color: '#7C6FD9' });
+  store.addRole({ id: 'host', dept: 'eng', name: '主持人', prompt: '负责主持会议和生成纪要', executor: 'claude' });
+  store.addRole({ id: 'arch', dept: 'eng', name: '架构师', prompt: '负责架构', executor: 'claude' });
+  store.addRole({ id: 'qa', dept: 'eng', name: '测试员', prompt: '负责验收', executor: 'claude' });
+  const plan = {
+    task: '前端使用 vue 后段使用 java springboot 开发一个 天气小工具网站',
+    steps: [
+      { id: 'meet_arch', role: 'arch', agent: 'claude', prompt: '开场观点', deps: [] },
+      { id: 'meet_qa', role: 'qa', agent: 'claude', prompt: '开场观点', deps: [] },
+      { id: 'decide_plan', role: 'host', agent: 'claude', prompt: '综合方案', deps: ['meet_arch', 'meet_qa'] },
+      { id: 'impl', role: 'arch', agent: 'claude', prompt: '按方案实现', deps: ['decide_plan'] },
+    ],
+    meeting: { hostRole: 'host', attendees: ['arch', 'qa'], meetIds: ['meet_arch', 'meet_qa'], decideId: 'decide_plan' },
+  };
+  const echo = { async run({ prompt }) {
+    if (/会议共识判定/.test(prompt)) return { output: '{"status":"consensus","reason":"全员已发言且无疑问"}', success: true };
+    if (/方案讨论会主持/.test(prompt)) return { output: '## 决议\n按天气工具方案执行\n## 行动项\n架构师实现\n## 验收口径\n测试员验收\n## 风险清单\n无\n## 待解决问题\n无', success: true };
+    return { output: '观点明确。风险无。建议按计划执行。待确认项无。', success: true };
+  } };
+  const deps = { store, adapters: { claude: echo }, workspace: { make: () => dir }, runs: new Map(), onEvent: () => {}, makePlan: async () => plan };
+
+  await runTask(id, deps);
+  await wait(160);
+
+  const msgs = store.listMeetingMsgs(id);
+  const firstSpeaker = msgs.find((m) => m.role !== 'system');
+  const allText = msgs.map((m) => m.text).join('\n');
+  assert.equal(firstSpeaker.role, 'host');
+  assert.match(firstSpeaker.text, /主题|议题|天气小工具/);
+  assert.match(allText, /架构师.*举手|举手.*架构师/);
+  assert.match(allText, /测试员.*举手|举手.*测试员/);
+  assert.match(allText, /没有疑问|还有疑问/);
+  assert.match(allText, /会议纪要|结束会议/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('会议室:首轮发言达成一致后自动结束会议并继续执行', async () => {
   const store = open(':memory:');
   const dir = path.join(os.tmpdir(), 'orch-meet-auto-close-' + process.pid);

@@ -383,6 +383,7 @@
                         <span style="font-size:11.5px;color:#B6B1A7;">{{ s.dep }}</span>
                       </div>
                       <sc-if value="{{ s.assignWhy }}"><div style="font-size:11.5px;color:#4B3E86;margin-top:8px;line-height:1.45;">🎯 为何选他: {{ s.assignWhy }}</div></sc-if>
+                      <sc-if value="{{ s.skillLabel }}"><div style="font-size:11.5px;color:#5B4BC4;margin-top:6px;line-height:1.45;">技能标签: {{ s.skillLabel }}</div></sc-if>
                       <sc-if value="{{ s.outcome }}"><div style="font-size:11.5px;color:#6B6760;margin-top:8px;line-height:1.45;">验收: {{ s.outcome }}</div></sc-if>
                       <sc-if value="{{ s.knowledgeLabel }}"><div style="font-size:11.5px;color:#5B4BC4;margin-top:4px;line-height:1.45;">知识引用: {{ s.knowledgeLabel }}</div></sc-if>
                     </div>
@@ -1091,9 +1092,12 @@
               <div style="background:#fff;border:1px solid #E9E7E1;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(20,18,14,.04);">
                 <button onClick="{{ a.open }}" style-hover="opacity:.92" style="width:100%;border:none;background:#F7F6F3;cursor:pointer;padding:0;display:block;height:150px;overflow:hidden;"><iframe src="{{ a.url }}" scrolling="no" style="width:100%;height:150px;border:none;pointer-events:none;background:#fff;"></iframe></button>
                 <div style="padding:12px 14px;display:flex;align-items:center;gap:8px;">
-                  <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ a.name }}</div><div style="font-size:11px;color:#A39E94;font-family:'JetBrains Mono',monospace;">{{ a.entry }} · {{ a.updated }}</div></div>
+                  <div style="flex:1;min-width:0;"><div style="font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ a.name }}</div><div style="display:flex;gap:5px;margin-top:4px;align-items:center;flex-wrap:wrap;"><span style="font-size:10.5px;color:#6B6760;background:#F2F0EA;border-radius:999px;padding:2px 6px;">{{ a.typeLabel }}</span><span style="font-size:10.5px;color:#6B6760;background:#FFF6D6;border-radius:999px;padding:2px 6px;">{{ a.statusLabel }}</span></div><div style="font-size:11px;color:#A39E94;font-family:'JetBrains Mono',monospace;margin-top:4px;">{{ a.entry }} · {{ a.updated }}</div></div>
                   <button onClick="{{ a.openTask }}" title="查看源任务" style="height:30px;padding:0 10px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;cursor:pointer;font-family:inherit;color:#6B6760;">源任务</button>
                   <button onClick="{{ a.open }}" style="height:30px;padding:0 12px;border-radius:8px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;font-size:12px;cursor:pointer;font-family:inherit;">运行</button>
+                  <sc-if value="{{ a.canOps }}"><button onClick="{{ a.restart }}" title="重启应用" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">↻</button></sc-if>
+                  <sc-if value="{{ a.canOps }}"><button onClick="{{ a.logs }}" title="查看运行日志" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">≡</button></sc-if>
+                  <sc-if value="{{ a.canOps }}"><button onClick="{{ a.stop }}" title="停止应用" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">■</button></sc-if>
                   <sc-if value="{{ a.canDel }}"><button onClick="{{ a.del }}" style="height:30px;width:32px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-size:13px;">🗑</button></sc-if>
                 </div>
               </div>
@@ -1136,10 +1140,11 @@
           <span style="font-size:11.5px;color:#A39E94;">{{ modelDiscoveryHint }}</span>
           <button onClick="{{ refreshModels }}" style="height:26px;padding:0 9px;border-radius:7px;background:#fff;border:1px solid #E6E3DC;color:#6B6760;font-size:11.5px;font-weight:600;cursor:pointer;font-family:inherit;">刷新模型</button>
           <sc-for list="{{ modelPick }}" as="mp">
-            <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;"><span style="color:#3C3933;">{{ mp.label }}</span>
-              <select id="{{ mp.selId }}" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12.5px;flex-wrap:wrap;"><span style="color:#3C3933;">{{ mp.label }}</span>
+              <select id="{{ mp.selId }}" title="模型候选" style="width:170px;height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;box-sizing:border-box;color:#3C3933;">
                 <sc-for list="{{ mp.opts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
               </select>
+              <input id="{{ mp.customId }}" placeholder="自定义模型 ID" style="width:150px;height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;box-sizing:border-box;">
               <select id="{{ mp.effId }}" title="思考级别" style="height:30px;border:1px solid #E6E3DC;border-radius:8px;padding:0 7px;font-family:inherit;font-size:12px;">
                 <sc-for list="{{ mp.effOpts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
               </select>
@@ -1188,13 +1193,14 @@
       <input id="na-model" value="{{ naModel }}" placeholder="{{ naModelPh }}" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;margin-bottom:9px;box-sizing:border-box;">
       <sc-if value="{{ naIsCli }}">
       <div style="display:flex;gap:9px;margin-bottom:9px;">
-        <select id="na-defmodel" title="默认大模型(用户没指定时用)" style="flex:1;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 9px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
+        <select id="na-defmodel" title="默认大模型(用户没指定时用)" style="flex:1;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 9px;font-family:inherit;box-sizing:border-box;color:#3C3933;min-width:0;">
           <sc-for list="{{ naDefModelOpts }}" as="o"><option value="{{ o.v }}">默认模型: {{ o.n }}</option></sc-for>
         </select>
         <select id="na-defeffort" style="width:130px;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 8px;font-family:inherit;box-sizing:border-box;color:#3C3933;">
           <sc-for list="{{ naEffOpts }}" as="o"><option value="{{ o.v }}">{{ o.n }}</option></sc-for>
         </select>
       </div>
+      <input id="na-defmodel-custom" placeholder="自定义默认模型 ID(列表没有时填写)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
       <input id="na-caps" value="{{ naCaps }}" placeholder="能力(逗号分隔),如 代码生成,重构" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
       <input id="na-image" value="{{ naImage }}" placeholder="容器镜像(选填,任务选容器隔离时用)" style="width:100%;height:34px;border:1px solid #E6E3DC;border-radius:9px;padding:0 10px;font-family:inherit;box-sizing:border-box;margin-bottom:9px;">
       </sc-if>
@@ -1370,7 +1376,9 @@
         <div style="border:1px solid #E9E7E1;border-radius:10px;padding:9px 11px;background:#FAF9F6;"><div style="font-size:10.5px;color:#A39E94;">状态 / 用时</div><div style="font-size:12.5px;font-weight:650;margin-top:3px;">{{ graphStepStatus }} {{ graphStepDuration }}</div></div>
       </div>
       <sc-if value="{{ graphStepProcessLabel }}"><div style="margin-bottom:6px;font-size:12px;color:#5F6673;line-height:1.5;">流程：{{ graphStepProcessLabel }}<sc-if value="{{ graphStepOrchestrationReason }}"> · {{ graphStepOrchestrationReason }}</sc-if></div></sc-if>
+      <sc-if value="{{ graphStepTrace }}"><div style="margin-bottom:6px;font-size:12px;color:#5F6673;line-height:1.5;">回放摘要：{{ graphStepTrace }}</div></sc-if>
       <sc-if value="{{ graphStepMeetingAgenda }}"><div style="margin-bottom:10px;font-size:12px;color:#5F6673;line-height:1.5;">会议议程：{{ graphStepMeetingAgenda }}</div></sc-if>
+      <sc-if value="{{ graphStepSkills }}"><div style="margin-bottom:10px;font-size:12px;color:#4B3E86;background:#F1EEFB;border:1px solid #D9CFF2;border-radius:9px;padding:8px 10px;">技能标签: {{ graphStepSkills }}</div></sc-if>
       <sc-if value="{{ graphStepBlock }}"><div style="margin-bottom:10px;font-size:12px;color:#9A7400;background:#FBF4DE;border:1px solid #F1E3B6;border-radius:9px;padding:8px 10px;">{{ graphStepBlock }}</div></sc-if>
       <sc-if value="{{ graphStepOutcome }}"><div style="margin-bottom:10px;font-size:12px;color:#3C3933;background:#F7F6F3;border:1px solid #E9E7E1;border-radius:9px;padding:8px 10px;">验收: {{ graphStepOutcome }}</div></sc-if>
       <sc-if value="{{ graphStepWhy }}"><div style="margin-bottom:10px;font-size:12px;color:#4B3E86;background:#F1EEFB;border:1px solid #D9CFF2;border-radius:9px;padding:8px 10px;">🎯 为何选他: {{ graphStepWhy }}</div></sc-if>

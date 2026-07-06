@@ -216,7 +216,7 @@ function buildAll(store, user) {
   const today = store.usageToday();
   today.byAgent = (store.usageTodayByAgent ? store.usageTodayByAgent() : []).map((r) => ({ agent: (ROLE[r.agent] && ROLE[r.agent].label) || r.agent, cost: Math.round(r.c * 1000) / 1000, tokens: r.i + r.o, calls: r.n }));
   today.allTime = store.usageAllTime ? Math.round(store.usageAllTime().cost * 1000) / 1000 : 0;
-  const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/output/' + a.task_id + '/' + a.entry, updated: rel(a.created_at) }));
+  const apps = store.listApps().map((a) => ({ id: a.id, name: a.name, taskId: a.task_id, entry: a.entry, url: '/apps/' + a.id + '/', type: a.type || 'static', status: a.status || 'ready', error: a.last_error || '', updated: rel(a.created_at) }));
   // 员工绩效榜:有记录的员工按落盘数排,含成功率(落盘/(落盘+空转))
   const dmetaN = {}; store.listDepts().forEach((d) => { dmetaN[d.id] = d.name; });
   const topEmployees = allRoles.filter((r) => r.dept !== '__system' && ((r.done_count || 0) + (r.empty_count || 0)) > 0)
@@ -262,6 +262,41 @@ function stepDurations(store, taskId) {
 
 function compactText(s, n) {
   return String(s || '').replace(/\s+/g, ' ').trim().slice(0, n || 80);
+}
+
+function skillTagsOf() {
+  const txt = Array.from(arguments).map((x) => String(x || '')).join(' ').toLowerCase();
+  const defs = [
+    ['前端', /前端|frontend|front-end|ui|页面|组件|样式|web|vue|react/],
+    ['Vue', /vue/],
+    ['后端', /后端|backend|server|spring|java|接口|api/],
+    ['Spring Boot', /spring\s*boot|springboot/],
+    ['Java', /java|jdk/],
+    ['数据库', /mysql|postgres|sqlite|redis|数据库|schema|sql/],
+    ['测试', /测试|验收|回归|qa|test|verify/],
+    ['安全', /安全|权限|登录|鉴权|风控|risk|security/],
+    ['发布', /发布|部署|应用广场|publish|deploy|manifest/],
+    ['知识检索', /知识|检索|mfs|context|上下文/],
+    ['会议协作', /会议|讨论|debate|meeting/],
+    ['交易风控', /股票|交易|金融|行情|风控/],
+    ['业务系统', /dms|供应商|管理系统|erp|crm|订单|库存/],
+  ];
+  const out = [];
+  defs.forEach((d) => { if (d[1].test(txt) && !out.includes(d[0])) out.push(d[0]); });
+  return out.slice(0, 8);
+}
+
+function traceSummaryOf(plan) {
+  const p = plan || {};
+  const process = p.process || {};
+  const meeting = p.meeting || {};
+  const labels = { fast: '快速执行', sequential: '顺序编排', hierarchical: '经理调度', debate: '有界辩论', risk_review: '风险复核', ask_user: '等待选择' };
+  const parts = [];
+  if (process.type) parts.push(labels[process.type] || process.type);
+  if (p.planning_stats && p.planning_stats.route) parts.push(p.planning_stats.route);
+  if (meeting.attendees && meeting.attendees.length) parts.push('会议 ' + meeting.attendees.length + ' 人');
+  if (process.reason) parts.push(compactText(process.reason, 72));
+  return parts.join(' · ');
 }
 
 function promptTaskText(prompt) {
@@ -361,6 +396,8 @@ function plan(store, id) {
   const processLabels = { fast: '快速执行', sequential: '顺序编排', hierarchical: '经理调度', debate: '有界辩论', risk_review: '风险复核', ask_user: '等待选择' };
   const meetingAgenda = p.meeting && Array.isArray(p.meeting.agenda) ? p.meeting.agenda.join('、') : '';
   const healthLabel = diag.score == null ? '' : ('健康 ' + diag.score + ((diag.issues && diag.issues.length) ? ' · ' + diag.issues[0].message : ''));
+  const traceSummary = traceSummaryOf(p);
+  const planSkillText = [t.text, p.task, process.reason, meetingAgenda].join(' ');
   let n = 0; const out = [];
   const push = (s, dep, deps) => {
     const emp = s.role && RV[s.role];
@@ -374,7 +411,8 @@ function plan(store, id) {
     const logText = detail.text || logPreview;
     const durationLabel = durs[s.id] || '';
     const metaLine = [roleLine, emp ? executorLabel : '', durationLabel].filter(Boolean).join(' · ');
-    out.push({ n: ++n, stepId: s.id, title: s.id, shortTitle: shortStepTitle(s, emp), agent: emp ? (emp.deptName + '·' + emp.name) : r.label, roleLine, executorLabel, durationLabel, metaLine, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (deps && deps.length ? '依赖 ' + deps.join(',') : ''), deps: deps || [], outcome: s.expected_outcome || '', assignWhy: s.why || '', knowledgeLabel: know.length ? know.join('、') : '', healthLabel, logPreview, logText, processType: process.type || '', processLabel: processLabels[process.type] || '', orchestrationReason: process.reason || '', meetingAgenda });
+    const skillTags = skillTagsOf(planSkillText, s.id, s.prompt, s.role, s.expected_outcome, emp && emp.name);
+    out.push({ n: ++n, stepId: s.id, title: s.id, shortTitle: shortStepTitle(s, emp), agent: emp ? (emp.deptName + '·' + emp.name) : r.label, roleLine, executorLabel, durationLabel, metaLine, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (deps && deps.length ? '依赖 ' + deps.join(',') : ''), deps: deps || [], outcome: s.expected_outcome || '', assignWhy: s.why || '', knowledgeLabel: know.length ? know.join('、') : '', healthLabel, logPreview, logText, processType: process.type || '', processLabel: processLabels[process.type] || '', orchestrationReason: process.reason || '', meetingAgenda, skillTags, skillLabel: skillTags.join('、'), traceSummary });
   };
   // 展开 loop 为串联 body,并把依赖链重写到子步骤(保证画布连线不断):
   // body[0] 继承 loop.deps, body[i] 依赖 body[i-1];下游引用 loop id → 改指最后一个 body

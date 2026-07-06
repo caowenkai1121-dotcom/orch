@@ -578,19 +578,24 @@ class Maestro extends MaestroBase {
     v.graphStepProcessLabel = gs.processLabel || '';
     v.graphStepOrchestrationReason = gs.orchestrationReason || '';
     v.graphStepMeetingAgenda = gs.meetingAgenda || '';
+    v.graphStepSkills = gs.skillLabel || '';
+    v.graphStepTrace = gs.traceSummary || '';
     v.graphStepLogs = gs.logText || gs.logPreview || '暂无日志';
     v.openGraphStepTask = () => { const id = this._activeId != null ? this._activeId : this.live.activeId; if (id != null) { this.setState({ modal: null }); this.go('task', { taskId: id }); } }; // 用画布当前查看的任务(canvasTaskId),不是永远跳最新任务
     const rp2 = this.live.replay || { events: [], logsByStep: {} };
     v.repTitle = rp2.task || '';
     v.repEvents = (rp2.events || []).map((e, i) => {
       const d = e.data;
-      const txt = e.type === 'status' && d && d.step ? (d.step + ' → ' + d.v) : e.type === 'plan' ? ('拆解计划(' + ((d && d.steps) || '?') + '步)') : e.type + (typeof d === 'string' ? ': ' + d : '');
+      const txt = e.type === 'status' && d && d.step ? (d.step + ' → ' + d.v)
+        : e.type === 'plan' ? ('拆解计划(' + ((d && d.steps) || '?') + '步)')
+        : e.type === 'orchestration_decision' ? ('编排决策: ' + ((d && d.trace_summary) || [d && d.process_type, d && d.route, d && d.reason].filter(Boolean).join(' · ')))
+        : e.type + (typeof d === 'string' ? ': ' + d : '');
       return { i, time: tsLocal(e.ts, true), txt, sel: i === this.state.repSel, bg: i === this.state.repSel ? '#FFF6D6' : 'transparent', pick: () => this.setState({ repSel: i }) };
     });
     const selEv = (rp2.events || [])[this.state.repSel || 0];
     const selStep = selEv && selEv.data && selEv.data.step;
-    v.repStep = selStep || '(任务级事件)';
-    v.repLogs = selStep ? ((rp2.logsByStep || {})[selStep] || []).join('\n') : ((rp2.logsByStep || {})[''] || []).join('\n');
+    v.repStep = selStep || (selEv && selEv.type === 'orchestration_decision' ? '编排决策' : '(任务级事件)');
+    v.repLogs = selStep ? ((rp2.logsByStep || {})[selStep] || []).join('\n') : (selEv ? JSON.stringify(selEv.data, null, 2) : ((rp2.logsByStep || {})[''] || []).join('\n'));
     // Webhook(账号弹窗)
     if (this.state.modal === 'account' && !this.live.hookUrl) this.fetchHook();
     v.hookUrl = this.live.hookUrl ? (location.origin + this.live.hookUrl) : '…';
@@ -685,6 +690,7 @@ class Maestro extends MaestroBase {
     v.naArgs = ea ? (Array.isArray(ea.args) ? ea.args.join(' ') : '') : '';
     v.naModel = ea && ea.model && ea.model !== '—' ? ea.model : '';
     const dm = ea && ea.defModel ? ea.defModel : '';
+    v.naDefModel = dm;
     const dmOpts = ea ? this.agentModelOptions(ea, dm) : [{ v: '', n: '默认' }];
     v.naDefModelOpts = dmOpts.map((o) => ({ ...o, sel: o.v === dm })).sort((a, b) => (a.sel ? 0 : 1) - (b.sel ? 0 : 1)); // 当前值置顶=默认选中
     const naDe = ea && ea.defEffort ? ea.defEffort : '';
@@ -954,7 +960,9 @@ class Maestro extends MaestroBase {
     const openApp = this.state.openApp;
     v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
     v.closeApp = () => this.setState({ openApp: null });
-    v.apps = (this.live.apps || []).map((a) => ({ ...a, canDel: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), openTask: () => this.go('task', { taskId: a.taskId }), del: () => this.delApp(a.id) }));
+    const appTypeLabel = (t) => t === 'fullstack' ? '前后端' : (t === 'process' ? '进程' : '静态');
+    const appStatusLabel = (s) => ({ ready: '可访问', running: '运行中', starting: '启动中', stopped: '已停止', failed: '失败' }[s || 'ready'] || (s || '可访问'));
+    v.apps = (this.live.apps || []).map((a) => ({ ...a, typeLabel: appTypeLabel(a.type), statusLabel: appStatusLabel(a.status), canDel: !!(this.state.me && this.state.me.admin), canOps: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), openTask: () => this.go('task', { taskId: a.taskId }), restart: () => this.restartApp(a.id), stop: () => this.stopApp(a.id), logs: () => this.showAppLogs(a.id), del: () => this.delApp(a.id) }));
     if (v.isApps) { v.crumbRoot = '工作区'; v.crumbLeaf = '应用广场'; }
     return v;
   }
@@ -1041,6 +1049,13 @@ class Maestro extends MaestroBase {
       .then((r) => r.json()).then((d) => { if (d && d.ok !== false) this.setState({ screen: 'apps', openApp: null }); this.fetchAll(); }).catch(() => {});
   }
   delApp(id) { fetch('/api/apps/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
+  restartApp(id) { fetch('/api/apps/' + id + '/restart', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {}); }
+  stopApp(id) { fetch('/api/apps/' + id + '/stop', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {}); }
+  showAppLogs(id) {
+    fetch('/api/apps/' + id + '/logs').then((r) => r.ok ? r.json() : []).then((rows) => {
+      window.alert((rows || []).slice(-80).join('\n') || '暂无运行日志');
+    }).catch(() => window.alert('读取日志失败'));
+  }
   continueTask() { this.setState({ modal: 'continue' }); }
   continueSubmit() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
@@ -1369,7 +1384,7 @@ class Maestro extends MaestroBase {
     Object.keys(cols).forEach((d) => { cols[d].forEach((id, i) => { pos[id] = { x: 40 + (Number(d) + 1) * GX, y: 30 + i * GY }; }); }); // +1 列给起点腾位
     const col = { queued: '#C9C5BB', working: '#F0B400', done: '#2E9E5B', failed: '#DC5B52' };
     const SKTXT = { queued: '排队', working: '进行中', done: '完成 ✓', failed: '失败' };
-    const nodes = P.map((p) => ({ title: p.shortTitle || p.title, rawTitle: p.title, stepId: p.stepId || p.title, agent: p.roleLine || p.agent, roleLine: p.roleLine || p.agent, executorLabel: p.executorLabel || '', metaLine: p.metaLine || [p.executorLabel, p.durationLabel].filter(Boolean).join(' · '), durationLabel: p.durationLabel || '', logPreview: p.logPreview || '', logText: p.logText || '', outcome: p.outcome || '', processLabel: p.processLabel || '', orchestrationReason: p.orchestrationReason || '', meetingAgenda: p.meetingAgenda || '', avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814', seq: p.n, skTxt: SKTXT[p.sk] || p.sk, skBg: (col[p.sk] || '#C9C5BB') + '22', skC: p.sk === 'queued' ? '#6B6760' : (col[p.sk] || '#6B6760'), pulse: p.sk === 'working', blockReason: p.blockReason || '', hintLine: p.blockReason || (p.sk === 'working' || p.sk === 'failed' ? (p.logPreview || '') : ''), open: () => this.openGraphStep(p.title) }));
+    const nodes = P.map((p) => ({ title: p.shortTitle || p.title, rawTitle: p.title, stepId: p.stepId || p.title, agent: p.roleLine || p.agent, roleLine: p.roleLine || p.agent, executorLabel: p.executorLabel || '', metaLine: p.metaLine || [p.executorLabel, p.durationLabel].filter(Boolean).join(' · '), durationLabel: p.durationLabel || '', logPreview: p.logPreview || '', logText: p.logText || '', outcome: p.outcome || '', processLabel: p.processLabel || '', orchestrationReason: p.orchestrationReason || '', meetingAgenda: p.meetingAgenda || '', skillLabel: p.skillLabel || '', traceSummary: p.traceSummary || '', avatar: p.avatar, aColor: p.color, x: pos[p.title].x, y: pos[p.title].y, dot: col[p.sk] || '#C9C5BB', sk: p.sk, nbg: '#fff', nfg: '#1A1814', seq: p.n, skTxt: SKTXT[p.sk] || p.sk, skBg: (col[p.sk] || '#C9C5BB') + '22', skC: p.sk === 'queued' ? '#6B6760' : (col[p.sk] || '#6B6760'), pulse: p.sk === 'working', blockReason: p.blockReason || '', hintLine: p.blockReason || (p.sk === 'working' || p.sk === 'failed' ? (p.logPreview || '') : ''), open: () => this.openGraphStep(p.title) }));
     const edges = []; let ei = 0;
     P.forEach((p) => (p.deps || []).forEach((dp) => {
       if (!pos[dp] || !pos[p.title]) return;
@@ -1439,7 +1454,7 @@ class Maestro extends MaestroBase {
     return (this.AGENTS || []).filter((a) => a.enabled !== false && (a.kind || 'cli') === 'cli').map((a) => {
       const sid = this.safeDomId(a.id);
       const isClaude = /claude/i.test(a.id + ' ' + a.name + ' ' + a.command);
-      return { agent: a.id, label: a.name, selId: 'nt-model-' + sid, effId: 'nt-effort-' + sid, opts: this.agentModelOptions(a, ''), effOpts: isClaude ? EFF.concat([{ v: 'max', n: '极限' }]) : EFF };
+      return { agent: a.id, label: a.name, selId: 'nt-model-' + sid, customId: 'nt-model-custom-' + sid, effId: 'nt-effort-' + sid, opts: this.agentModelOptions(a, ''), effOpts: isClaude ? EFF.concat([{ v: 'max', n: '极限' }]) : EFF };
     });
   }
   // 项目内快捷下发:任务归属当前项目
@@ -1511,8 +1526,14 @@ class Maestro extends MaestroBase {
     setTimeout(() => { // 填 DOM(标题+大模型),避免 render 覆盖
       if (!t) return;
       const set = (id, v) => { const el = document.getElementById(id); if (el != null && v != null) el.value = v; };
+      const setModel = (mp, v) => {
+        const sel = document.getElementById(mp.selId); const custom = document.getElementById(mp.customId);
+        const has = sel && Array.from(sel.options || []).some((o) => o.value === v);
+        if (sel) sel.value = has ? v : '';
+        if (custom) custom.value = has ? '' : (v || '');
+      };
       set('nt-text', t.title);
-      (this.modelPickers() || []).forEach((mp) => { const m = t.models && t.models[mp.agent]; if (m) { set(mp.selId, m.model || ''); set(mp.effId, m.effort || ''); } });
+      (this.modelPickers() || []).forEach((mp) => { const m = t.models && t.models[mp.agent]; if (m) { setModel(mp, m.model || ''); set(mp.effId, m.effort || ''); } });
     }, 80);
   }
   // —— 弹窗 ——
@@ -1593,7 +1614,8 @@ class Maestro extends MaestroBase {
     const dept = this.state.taskDept || null; // 部门任务:按该部门流程拆分
     const models = {}; // 用户为已选执行器选的大模型+思考级别(没选=用该 agent 默认)
     (this.modelPickers() || []).filter((mp) => agents.indexOf(mp.agent) >= 0).forEach((mp) => {
-      const m = (document.getElementById(mp.selId) || {}).value || '';
+      const custom = ((document.getElementById(mp.customId) || {}).value || '').trim();
+      const m = custom || ((document.getElementById(mp.selId) || {}).value || '');
       const e = (document.getElementById(mp.effId) || {}).value || '';
       if (m || e) models[mp.agent] = { model: m || null, effort: e || null };
     });
@@ -1615,7 +1637,8 @@ class Maestro extends MaestroBase {
     const name = g('na-name'), command = g('na-cmd'), kind = g('na-kind') || 'cli';
     if (!name.trim()) return;
     if (kind === 'cli' && !command.trim()) return; // CLI 类必须有命令
-    const body = { name: name.trim(), command: command.trim(), kind, args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept'), default_model: g('na-defmodel'), default_effort: g('na-defeffort') };
+    const defModel = g('na-defmodel-custom').trim() || g('na-defmodel').trim();
+    const body = { name: name.trim(), command: command.trim(), kind, args: g('na-args').split(/\s+/).filter(Boolean), model: g('na-model'), caps: g('na-caps').split(/[,，]/).map((s) => s.trim()).filter(Boolean), image: g('na-image'), dept: g('na-dept'), default_model: defModel, default_effort: g('na-defeffort') };
     if (kind !== 'cli') { // API 型:三项接入(地址/Key/模型)
       body.base_url = g('na-baseurl').trim();
       body.api_key = g('na-key').trim(); // 编辑留空=服务端保留旧 Key

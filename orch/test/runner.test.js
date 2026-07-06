@@ -16,6 +16,7 @@ test('countRecentFiles 按mtime数本步产出,排除task_plan/findings', async 
   fs.writeFileSync(path.join(dir, 'new.html'), 'y');     // 本步窗口内产出
   fs.writeFileSync(path.join(dir, 'task_plan.md'), 'z'); // 引擎共享文件 → 排除
   fs.writeFileSync(path.join(dir, 'findings.md'), 'z');  // 团队共享文件 → 排除
+  fs.writeFileSync(path.join(dir, '会议纪要.md'), 'z');  // 会议产物 → 排除
   assert.equal(countRecentFiles(dir, since), 1);         // 只数 new.html(old.txt 早于 since;共享文件排除)
   assert.equal(countRecentFiles(dir, 0), 2);             // since=0 → old+new,仍不含共享文件
   fs.rmSync(dir, { recursive: true, force: true });
@@ -131,6 +132,30 @@ test('执行步骤:注入任务目录Markdown知识检索片段', async () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('执行步骤:按 Open Tag 式上下文 scope 限制知识检索', async () => {
+  const store = open(':memory:');
+  const dir = path.join(os.tmpdir(), 'orch-run-context-scope-' + process.pid);
+  fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(path.join(dir, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'docs', '命中.md'), '# 命中\n\nUNIQUE_ALLOWED_SCOPE SQLite 约定。\n', 'utf8');
+  fs.writeFileSync(path.join(dir, '未授权.md'), '# 未授权\n\nUNIQUE_DENIED_SCOPE SQLite 约定。\n', 'utf8');
+  const id = store.createTask('实现 SQLite 缓存');
+  store.setTaskDir(id, dir);
+  store.addEvent(id, 'context', { scopes: ['task://docs'], source: 'test' });
+  let seen = '';
+  const echo = { async run({ prompt }) { seen = prompt; return { output: 'ok', success: true }; } };
+  await runTask(id, {
+    store, adapters: { claude: echo },
+    workspace: { make: () => dir, merge: () => {} },
+    onEvent: () => {},
+    makePlan: async () => ({ task: 'x', steps: [{ id: 'impl_cache', agent: 'claude', prompt: '实现缓存模块', deps: [], expected_outcome: '缓存模块真实落盘' }] }),
+  });
+  assert.match(seen, /UNIQUE_ALLOWED_SCOPE/);
+  assert.doesNotMatch(seen, /UNIQUE_DENIED_SCOPE/);
+  const data = JSON.parse(store.getEvents(id).find((e) => e.type === 'knowledge').data);
+  assert.equal(data.scopes[0], 'task://docs');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('#12 动态重规划:diverge 步发 NEED_REPLAN → 快照旧计划、就剩余重拆、续跑至完成', async () => {
   const store = open(':memory:');
   const id = store.createTask('建站', 'proj', 'me', { replan: true });
@@ -219,6 +244,10 @@ test('编排决策:规划完成后写事件并沉淀到task_plan', async () => {
   assert.ok(data.validation_warnings.includes('复杂计划角色较少'));
   assert.ok(Array.isArray(data.validation_errors));
   assert.ok(data.validation_errors.includes('缺少安全复核'));
+  assert.equal(data.step_count, 1);
+  assert.ok(Array.isArray(data.skills));
+  assert.ok(data.skills.includes('交易风控'));
+  assert.match(data.trace_summary, /风险复核/);
   const text = fs.readFileSync(path.join(dir, 'task_plan.md'), 'utf8');
   assert.match(text, /## 编排决策/);
   assert.match(text, /risk_review/);

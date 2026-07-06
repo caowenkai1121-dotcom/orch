@@ -72,3 +72,62 @@ test('发现 OpenAI 兼容 API Agent 的 /models 列表且不输出密钥', asyn
     await new Promise((resolve) => srv.close(resolve));
   }
 });
+
+test('发现 Claude 缓存对象中的第三方模型 value', async () => {
+  const home = tmpHome();
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+    additionalModelOptionsCache: [
+      { value: 'claude-sonnet-5[1m]', label: 'Sonnet', description: 'display name only' },
+      { value: 'openrouter/anthropic/claude-opus-4.1', label: 'OpenRouter Claude' },
+    ],
+  }));
+  const store = open(':memory:');
+  store.seed();
+  store.setAgentDefaults('claude', '', '');
+
+  const out = await discoverModels(store, { home });
+  const ids = out.agents.claude.options.map((o) => o.id);
+
+  assert.ok(ids.includes('claude-sonnet-5'));
+  assert.ok(ids.includes('openrouter/anthropic/claude-opus-4.1'));
+  assert.ok(!ids.includes('Sonnet'));
+});
+
+test('发现 Claude 模型访问缓存中的对象 key', async () => {
+  const home = tmpHome();
+  fs.writeFileSync(path.join(home, '.claude.json'), JSON.stringify({
+    clientDataCacheSlots: {
+      slot: { data: { cedar_lagoon: { 'claude-fable': true, 'claude-mythos': true, '': true } } },
+    },
+  }));
+  const store = open(':memory:');
+  store.seed();
+  store.setAgentDefaults('claude', '', '');
+
+  const out = await discoverModels(store, { home });
+  const ids = out.agents.claude.options.map((o) => o.id);
+
+  assert.ok(ids.includes('claude-fable'));
+  assert.ok(ids.includes('claude-mythos'));
+});
+
+test('发现 CLI 参数中的自定义模型', async () => {
+  const store = open(':memory:');
+  store.addAgent({ id: 'gemini', name: 'Gemini', kind: 'cli', command: 'gemini', args: ['-p', '--model', 'gemini-2.5-pro'], model: 'gemini CLI' });
+  store.addAgent({ id: 'qwen', name: 'Qwen', kind: 'cli', command: 'qwen', args: ['-m=qwen3-coder-plus'], model: 'qwen CLI' });
+
+  const out = await discoverModels(store, { home: tmpHome() });
+
+  assert.ok(out.agents.gemini.options.map((o) => o.id).includes('gemini-2.5-pro'));
+  assert.ok(out.agents.qwen.options.map((o) => o.id).includes('qwen3-coder-plus'));
+});
+
+test('发现 CLI Agent 保存的第三方模型 ID', async () => {
+  const store = open(':memory:');
+  store.addAgent({ id: 'kimi', name: 'Kimi', kind: 'cli', command: 'kimi', args: ['-p'], model: 'kimi-k2-instruct' });
+
+  const out = await discoverModels(store, { home: tmpHome() });
+
+  assert.equal(out.agents.kimi.current, 'kimi-k2-instruct');
+  assert.deepEqual(out.agents.kimi.options.map((o) => o.id), ['kimi-k2-instruct']);
+});

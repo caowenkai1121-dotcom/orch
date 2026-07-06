@@ -1,5 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const { open } = require('../store');
 
 test('审查修复:auto-id 防碰撞——删中间记录后新增同名不静默覆盖', () => {
@@ -37,6 +40,37 @@ test('建任务并取回', () => {
   const t = s.getTask(id);
   assert.equal(t.text, '做登录');
   assert.equal(t.status, 'pending');
+});
+
+test('createTask 清理复用 task_id 的旧会议残留', () => {
+  const s = open(':memory:');
+  const old = s.createTask('开发一个复杂股票交易网站');
+  s.createMeeting(old, ['arch']);
+  s.addMeetingMsg(old, { role: 'system', name: '会议室', text: '旧股票会议记录' });
+  s.db.prepare('DELETE FROM tasks WHERE id=?').run(old); // 模拟旧版本/异常清理留下孤儿会议
+
+  const id = s.createTask('前端使用 vue 后段使用 java springboot 开发一个 天气小工具网站');
+
+  assert.equal(id, old);
+  assert.equal(s.getMeeting(id), null);
+  assert.equal(s.listMeetingMsgs(id).length, 0);
+});
+
+test('open 清理没有对应任务的孤儿会议', () => {
+  const file = path.join(os.tmpdir(), 'orch-orphan-meeting-' + process.pid + '.db');
+  fs.rmSync(file, { force: true });
+  let s = open(file);
+  const id = s.createTask('旧任务');
+  s.createMeeting(id, ['arch']);
+  s.addMeetingMsg(id, { role: 'system', name: '会议室', text: '孤儿会议记录' });
+  s.db.prepare('DELETE FROM tasks WHERE id=?').run(id);
+  s.db.close();
+
+  s = open(file);
+  assert.equal(s.getMeeting(id), null);
+  assert.equal(s.listMeetingMsgs(id).length, 0);
+  s.db.close();
+  fs.rmSync(file, { force: true });
 });
 
 test('setStep 为同一步骤做 upsert', () => {

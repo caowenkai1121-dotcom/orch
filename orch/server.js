@@ -10,6 +10,8 @@ const api = require('./api');
 const boot = require('./bootstrap');
 const perm = require('./perm');
 const modelDiscovery = require('./model_discovery');
+const contextGateway = require('./context_gateway');
+const appRuntime = require('./app_runtime');
 const { killTree } = require('./adapters/steptimeout'); // 按 PID 杀子进程树(POSIX 杀 shell 的子=真 agent,防孤儿),与超时守卫同一实现
 
 // 进程级兜底:单个未捕获异常/悬空 rejection 不掀翻整个编排器——进程挂掉 = 所有运行中任务瞬间成僵尸、子进程成孤儿,
@@ -59,7 +61,7 @@ app.post('/hook/:token', (req, res) => {
   // dept 支持传名称或 id;playbook 传名称或 id
   let dept = null; if (b.dept) { const d = store.listDepts().find((x) => x.id === b.dept || x.name === b.dept); dept = d ? d.id : null; }
   let playbook = null; if (b.playbook) { const pb = store.listPlaybooks().find((x) => String(x.id) === String(b.playbook) || x.name === b.playbook); playbook = pb ? pb.id : null; }
-  const id = createAndRunTask(p.name, { text, project: b.project, dept, playbook, refine: false });
+  const id = createAndRunTask(p.name, { text, project: b.project, dept, playbook, refine: false, thread: b.thread, context: b.context, scopes: b.scopes, source: b.source || 'webhook' });
   store.addEvent(id, 'webhook', { by: p.id, dept, playbook });
   res.json({ id });
 });
@@ -93,6 +95,22 @@ app.get('/api/agents/model-discovery', async (req, res) => {
     res.json(data);
   } catch (e) {
     res.status(500).json({ agents: {}, error: (e && e.message) || String(e) });
+  }
+});
+
+app.post('/api/context/preflight', async (req, res) => {
+  try {
+    const b = req.body || {};
+    let taskDir = ROOT;
+    if (b.taskId) {
+      const t = store.getTask(Number(b.taskId));
+      if (!canSeeTask(req.user, t)) return res.status(403).json({ error: '无权限' });
+      taskDir = t.dir || ROOT;
+    }
+    const data = await contextGateway.preflight({ taskDir, scopes: b.scopes || ['task://'] });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e && e.message) || String(e) });
   }
 });
 
@@ -192,7 +210,16 @@ function createAndRunTask(ownerName, body) {
   const approve = !!body.approve || store.projectApprove(project); // #4 任务级 或 项目级(admin 开启)审批,任一开启则须审批
   const id = store.createTask(body.text, project, ownerName, { budget: body.budget, approve, isolate: body.isolate, ask: body.ask, replan: body.replan, models });
   const ws = taskWorkspace(store.getTask(id));
-  store.setTaskDir(id, ws.make()); // 持久化产出目录(供预览/打开)
+  const dir = ws.make();
+  store.setTaskDir(id, dir); // 持久化产出目录(供预览/打开)
+  const scopes = contextGateway.parseScopes(body.scopes);
+  const effectiveScopes = scopes.length ? scopes : ['task://'];
+  try {
+    if (body.thread || body.context) contextGateway.writeExternalContext(dir, { source: body.source || 'external', thread: body.thread, context: body.context });
+    if (store.addEvent) store.addEvent(id, 'context', { source: body.source || ((body.thread || body.context) ? 'external' : 'task'), scopes: effectiveScopes, thread: !!body.thread, context: !!body.context });
+  } catch (e) {
+    if (store.addEvent) store.addEvent(id, 'context_error', { message: (e && e.message) || String(e) });
+  }
   // 全局日成本总护栏(无人值守防失控):今日累计花费已达上限则建任务但不执行,标失败可重试
   const cap = Number(process.env.ORCH_DAILY_BUDGET) || 0;
   if (cap > 0) {
@@ -351,21 +378,92 @@ app.get('/api/files/:id', (req, res) => {
 });
 
 // 一键发布到应用广场(仅管理员)
-app.post('/api/apps', adminOnly, (req, res) => {
+app.post('/api/apps', adminOnly, async (req, res) => {
   const taskId = Number(req.body && req.body.taskId); const t = store.getTask(taskId);
   if (!t || !t.dir) return res.json({ ok: false });
-  let entry = req.body && req.body.entry;
-  if (!entry) { const fl = listFilesIn(t.dir); entry = fl.find((f) => /(^|\/)index\.html$/i.test(f)) || fl.find((f) => /\.html$/i.test(f)) || fl[0]; }
-  if (!entry) return res.json({ ok: false, error: '无可发布入口' });
-  const appId = store.addApp({ name: (req.body && req.body.name) || t.text, taskId, dir: t.dir, entry });
+  const detected = appRuntime.detect(t.dir, { entry: req.body && req.body.entry });
+  let entry = detected.entry;
+  if (!entry && !detected.startCmd) { const fl = listFilesIn(t.dir); entry = fl.find((f) => /(^|\/)index\.html$/i.test(f)) || fl.find((f) => /\.html$/i.test(f)) || fl[0]; }
+  if (!entry && !detected.startCmd) return res.json({ ok: false, error: '无可发布入口' });
+  const appId = store.addApp({ name: (req.body && req.body.name) || t.text, taskId, dir: t.dir, entry, type: detected.type, staticDir: detected.staticDir, startCmd: detected.startCmd, apiPrefix: detected.apiPrefix, healthPath: detected.healthPath, port: detected.port });
+  if (detected.startCmd) {
+    const row = store.getApp(appId);
+    try {
+      await appRuntime.ensureStarted(row, { update: (patch) => { Object.assign(row, patch); store.setAppRuntime(appId, patch); broadcastRaw({ type: 'apps' }); }, timeoutMs: 8000 });
+    } catch (e) {
+      store.setAppRuntime(appId, { status: 'failed', lastError: (e && e.message) || String(e) });
+    }
+  }
   broadcastRaw({ type: 'apps' });
-  res.json({ id: appId, entry });
+  const appRow = store.getApp(appId);
+  res.json({ id: appId, entry: appRow.entry, type: appRow.type, status: appRow.status, error: appRow.last_error || '' });
 });
 app.delete('/api/apps/:id', adminOnly, (req, res) => {
+  appRuntime.stopApp(Number(req.params.id));
   store.deleteApp(Number(req.params.id)); broadcastRaw({ type: 'apps' }); res.json({ ok: true });
 });
+app.post('/api/apps/:id/stop', adminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  appRuntime.stopApp(id);
+  store.setAppRuntime(id, { status: 'stopped' });
+  broadcastRaw({ type: 'apps' });
+  res.json({ ok: true });
+});
+app.post('/api/apps/:id/restart', adminOnly, async (req, res) => {
+  const id = Number(req.params.id); const row = store.getApp(id);
+  if (!row) return res.status(404).json({ ok: false });
+  appRuntime.stopApp(id);
+  if (!row.start_cmd) { store.setAppRuntime(id, { status: 'ready' }); broadcastRaw({ type: 'apps' }); return res.json({ ok: true }); }
+  try {
+    await appRuntime.ensureStarted(row, { update: (patch) => { Object.assign(row, patch); store.setAppRuntime(id, patch); broadcastRaw({ type: 'apps' }); }, timeoutMs: 8000 });
+    res.json({ ok: true });
+  } catch (e) {
+    store.setAppRuntime(id, { status: 'failed', lastError: (e && e.message) || String(e) });
+    broadcastRaw({ type: 'apps' });
+    res.json({ ok: false, error: (e && e.message) || String(e) });
+  }
+});
+app.get('/api/apps/:id/logs', adminOnly, (req, res) => res.json(appRuntime.logs(Number(req.params.id))));
 
 // 继续开发:在原任务上追加新一轮步骤(不新建任务),复用产出目录
+function appRouteRel(req) { return [].concat(req.params.splat || []).join('/'); }
+function appApiHit(row, rel) {
+  if (!row.start_cmd) return false;
+  if (!row.static_dir) return true;
+  const p = String(row.api_prefix || '/api').replace(/^\/+|\/+$/g, '');
+  return !!p && (rel === p || rel.startsWith(p + '/'));
+}
+async function servePublishedApp(req, res) {
+  const row = store.getApp(Number(req.params.id));
+  if (!row) return res.sendStatus(404);
+  const rel = appRouteRel(req);
+  if (appApiHit(row, rel)) {
+    try {
+      await appRuntime.ensureStarted(row, { update: (patch) => { Object.assign(row, patch); store.setAppRuntime(row.id, patch); broadcastRaw({ type: 'apps' }); }, timeoutMs: 8000 });
+      return appRuntime.proxyRequest(row, req, res, rel);
+    } catch (e) {
+      store.setAppRuntime(row.id, { status: 'failed', lastError: (e && e.message) || String(e) });
+      broadcastRaw({ type: 'apps' });
+      return res.status(502).send((e && e.message) || String(e));
+    }
+  }
+  const staticDir = row.static_dir || (row.entry ? path.posix.dirname(row.entry) : '');
+  const base = path.resolve(row.dir, staticDir || '.');
+  const entry = path.resolve(row.dir, row.entry || 'index.html');
+  let target = rel ? path.resolve(base, rel) : entry;
+  if (target !== base && !target.startsWith(base + path.sep) && target !== entry) return res.sendStatus(403);
+  try {
+    if (!fs.existsSync(target) || fs.statSync(target).isDirectory()) target = entry;
+    if (target !== base && !target.startsWith(base + path.sep) && target !== entry) return res.sendStatus(403);
+    return res.sendFile(target);
+  } catch (e) {
+    return res.sendStatus(404);
+  }
+}
+app.get('/apps/:id', servePublishedApp);
+app.all('/apps/:id/', servePublishedApp);
+app.all('/apps/:id/*splat', servePublishedApp);
+
 app.post('/task/:id/continue', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   const text = ((req.body && req.body.text) || '').trim();

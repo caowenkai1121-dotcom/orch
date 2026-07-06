@@ -12,7 +12,9 @@ function open(file) {
       ask INTEGER, dir TEXT, blocked_step TEXT, question TEXT, parent INTEGER,
       created_at TEXT, updated_at TEXT);
     CREATE TABLE IF NOT EXISTS apps(
-      id INTEGER PRIMARY KEY, name TEXT, task_id INTEGER, dir TEXT, entry TEXT, created_at TEXT);
+      id INTEGER PRIMARY KEY, name TEXT, task_id INTEGER, dir TEXT, entry TEXT,
+      type TEXT, static_dir TEXT, start_cmd TEXT, api_prefix TEXT, health_path TEXT,
+      port INTEGER, status TEXT, last_error TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS projects(
       id TEXT PRIMARY KEY, name TEXT, client TEXT, created_at TEXT);
     CREATE TABLE IF NOT EXISTS steps(
@@ -88,20 +90,44 @@ function open(file) {
   ensureCol('roles', 'empty_count', 'INTEGER');
   ensureCol('people', 'hook_token', 'TEXT');
   ensureCol('tasks', 'replan', 'INTEGER'); // #12 动态重规划 opt-in
+  ensureCol('apps', 'type', 'TEXT');
+  ensureCol('apps', 'static_dir', 'TEXT');
+  ensureCol('apps', 'start_cmd', 'TEXT');
+  ensureCol('apps', 'api_prefix', 'TEXT');
+  ensureCol('apps', 'health_path', 'TEXT');
+  ensureCol('apps', 'port', 'INTEGER');
+  ensureCol('apps', 'status', 'TEXT');
+  ensureCol('apps', 'last_error', 'TEXT');
   // 自增 id 防碰撞:原 COUNT(*)+1 在删除中间记录后会重算出已存在的 id,配合 INSERT OR REPLACE 静默覆盖另一条记录(数据丢失)。逐个 bump 到空闲。
   const freeAutoId = (table, base) => { let n = db.prepare('SELECT COUNT(*) n FROM ' + table).get().n + 1, id = base + '-' + n; while (db.prepare('SELECT 1 FROM ' + table + ' WHERE id=?').get(id)) id = base + '-' + (++n); return id; };
+  const taskArtifactTables = ['steps', 'logs', 'events', 'usage', 'task_messages', 'plan_versions', 'meetings', 'meeting_msgs'];
+  const clearTaskArtifacts = (id) => {
+    taskArtifactTables.forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id));
+    db.prepare('DELETE FROM apps WHERE task_id=?').run(id);
+  };
+  db.prepare('SELECT m.task_id FROM meetings m LEFT JOIN tasks t ON t.id=m.task_id WHERE t.id IS NULL OR m.created_at < t.created_at').all()
+    .forEach((r) => { db.prepare('DELETE FROM meeting_msgs WHERE task_id=?').run(r.task_id); db.prepare('DELETE FROM meetings WHERE task_id=?').run(r.task_id); });
   return {
     createTask(text, project, owner, opts) {
       const now = new Date().toISOString();
       const o = opts || {};
-      return db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,replan,parent,models,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      const id = db.prepare('INSERT INTO tasks(text,status,project,owner,budget,approve,isolate,ask,replan,parent,models,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
         .run(text, 'pending', project || '默认项目', owner || '操作者', o.budget || 0, o.approve ? 1 : 0, o.isolate || 'none', o.ask ? 1 : 0, o.replan ? 1 : 0, o.parent || null, o.models ? JSON.stringify(o.models) : null, now, now).lastInsertRowid;
+      clearTaskArtifacts(id); // SQLite rowid 可复用;防旧 steps/会议/应用附身到新任务
+      return id;
     },
     addApp(d) {
-      return db.prepare('INSERT INTO apps(name,task_id,dir,entry,created_at) VALUES(?,?,?,?,?)')
-        .run(d.name || '应用', d.taskId, d.dir || '', d.entry || 'index.html', new Date().toISOString()).lastInsertRowid;
+      return db.prepare('INSERT INTO apps(name,task_id,dir,entry,type,static_dir,start_cmd,api_prefix,health_path,port,status,last_error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+        .run(d.name || '应用', d.taskId, d.dir || '', d.entry || 'index.html', d.type || 'static', d.staticDir || d.static_dir || '', d.startCmd || d.start_cmd || '', d.apiPrefix || d.api_prefix || '/api', d.healthPath || d.health_path || '/', Number(d.port) || 0, d.status || (d.startCmd || d.start_cmd ? 'stopped' : 'ready'), d.lastError || d.last_error || '', new Date().toISOString()).lastInsertRowid;
     },
     listApps() { return db.prepare('SELECT * FROM apps ORDER BY id DESC').all(); },
+    getApp(id) { return db.prepare('SELECT * FROM apps WHERE id=?').get(id); },
+    setAppRuntime(id, d) {
+      const cur = this.getApp(id); if (!cur) return false;
+      db.prepare('UPDATE apps SET port=?, status=?, last_error=? WHERE id=?')
+        .run(d.port == null ? cur.port : Number(d.port), d.status == null ? cur.status : d.status, d.lastError == null ? (d.last_error == null ? cur.last_error : d.last_error) : d.lastError, id);
+      return true;
+    },
     isPublishedTask(taskId) { return !!db.prepare('SELECT 1 FROM apps WHERE task_id=? LIMIT 1').get(taskId); }, // 已发布到应用广场→产出视为公开(仅登录用户)
     // 项目级知识/约定:按项目名(任务用名引用)持久化,注入每个任务简报,免每任务从零猜技术栈
     projectKnowledge(name) { const r = db.prepare('SELECT knowledge FROM project_knowledge WHERE project=?').get(name); return (r && r.knowledge) || ''; },
@@ -134,8 +160,7 @@ function open(file) {
     renameTask(id, text) { db.prepare('UPDATE tasks SET text=?, updated_at=? WHERE id=?').run(String(text || '').slice(0, 2000), new Date().toISOString(), id); }, // #1 任务重命名
     deleteTask(id) { // 级联清任务及其全部关联数据
       db.prepare('DELETE FROM tasks WHERE id=?').run(id);
-      ['steps', 'logs', 'events', 'usage', 'task_messages', 'plan_versions', 'meetings', 'meeting_msgs'].forEach((t) => db.prepare('DELETE FROM ' + t + ' WHERE task_id=?').run(id)); // 含会议数据:task id(rowid)删除后会被复用,残留会议会附身到新任务
-      db.prepare('DELETE FROM apps WHERE task_id=?').run(id); // 已发布应用也移除
+      clearTaskArtifacts(id); // 含会议数据:task id(rowid)删除后会被复用,残留会议会附身到新任务
     },
     setTaskDecision(id, stepId, question) { db.prepare('UPDATE tasks SET blocked_step=?, question=? WHERE id=?').run(stepId, question, id); },
     clearTaskDecision(id) { db.prepare('UPDATE tasks SET blocked_step=NULL, question=NULL WHERE id=?').run(id); },

@@ -105,6 +105,38 @@ test('删除任务:级联清 steps/logs/events/usage/msgs/apps', () => {
   assert.equal(s.listApps().filter((a) => a.task_id === id).length, 0);
 });
 
+test('应用发布:保存前后端分离运行元数据', () => {
+  const { open } = require('../store');
+  const s = open(':memory:'); s.seed();
+  const tid = s.createTask('DMS supplier system', '默认项目', 'admin', {});
+  s.setTaskDir(tid, '/dms');
+  const appId = s.addApp({
+    name: 'DMS',
+    taskId: tid,
+    dir: '/dms',
+    entry: 'frontend/dist/index.html',
+    type: 'fullstack',
+    staticDir: 'frontend/dist',
+    startCmd: 'node api.js',
+    apiPrefix: '/api',
+    healthPath: '/health',
+    port: 31001,
+    status: 'stopped',
+  });
+  let app = s.getApp(appId);
+  assert.equal(app.type, 'fullstack');
+  assert.equal(app.static_dir, 'frontend/dist');
+  assert.equal(app.start_cmd, 'node api.js');
+  assert.equal(app.api_prefix, '/api');
+  assert.equal(app.health_path, '/health');
+  assert.equal(app.port, 31001);
+  assert.equal(app.status, 'stopped');
+  s.setAppRuntime(appId, { status: 'running', port: 31002, lastError: '' });
+  app = s.getApp(appId);
+  assert.equal(app.status, 'running');
+  assert.equal(app.port, 31002);
+});
+
 test('步骤产出核验:commitStep返回改动文件数,relay标注', () => {
   const { open } = require('../store');
   const { relay } = require('../api');

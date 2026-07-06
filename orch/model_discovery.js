@@ -26,6 +26,10 @@ function modelTokens(v) {
   return (s.match(/[A-Za-z0-9][A-Za-z0-9._:/-]{1,}/g) || []).map(safeModelId).filter(Boolean);
 }
 
+function pushModelTokens(out, v) {
+  modelTokens(v).forEach((x) => out.push(x));
+}
+
 function addModel(map, id, source) {
   const clean = safeModelId(id);
   if (!clean || map.has(clean)) return;
@@ -41,27 +45,44 @@ function codexConfig(home) {
   const models = [];
   let m;
   const re = /^\s*model\s*=\s*["']([^"']+)["']/mg;
-  while ((m = re.exec(text))) modelTokens(m[1]).forEach((x) => models.push(x));
+  while ((m = re.exec(text))) pushModelTokens(models, m[1]);
+  let section = '';
+  text.split(/\r?\n/).forEach((line) => {
+    const sec = line.match(/^\s*\[([^\]]+)\]/);
+    if (sec) { section = sec[1]; return; }
+    const key = line.match(/^\s*["']([^"']+)["']\s*=/);
+    if (key && /model/i.test(section)) pushModelTokens(models, key[1]);
+    const val = line.match(/^\s*(?:models?|default_model|selected_model)\s*=\s*(.+)$/i);
+    if (val) pushModelTokens(models, val[1]);
+  });
   const effort = (text.match(/^\s*model_reasoning_effort\s*=\s*["']([^"']+)["']/m) || [])[1] || '';
   return { current: models[0] || '', effort: safeEffort(effort), models };
+}
+
+function collectModelOptionObject(obj, out) {
+  if (!obj || typeof obj !== 'object') return;
+  ['value', 'id', 'model', 'modelId', 'model_id'].forEach((k) => pushModelTokens(out, obj[k]));
 }
 
 function collectClaudeJsonModels(obj, out, key) {
   if (obj == null) return;
   if (typeof obj === 'string') {
-    if (/^(model|currentModel|defaultModel|selectedModel|activeModel)$/i.test(key || '')) modelTokens(obj).forEach((x) => out.push(x));
+    if (/^(model|currentModel|defaultModel|selectedModel|activeModel|modelId|model_id)$/i.test(key || '')) pushModelTokens(out, obj);
     return;
   }
   if (Array.isArray(obj)) {
     if (/model.*(options|access|cache|list)|models$/i.test(key || '')) {
       obj.forEach((x) => {
-        if (typeof x === 'string') modelTokens(x).forEach((v) => out.push(v));
-        else if (x && typeof x === 'object') collectClaudeJsonModels(x, out, 'model');
+        if (typeof x === 'string') pushModelTokens(out, x);
+        else if (x && typeof x === 'object') collectModelOptionObject(x, out);
       });
     } else obj.forEach((x) => collectClaudeJsonModels(x, out, key));
     return;
   }
   if (typeof obj === 'object') {
+    if (/^(cedar_lagoon|modelAccessCache|model_access_cache)$/i.test(key || '')) {
+      Object.keys(obj).forEach((k) => { if (obj[k]) pushModelTokens(out, k); });
+    }
     Object.keys(obj).forEach((k) => collectClaudeJsonModels(obj[k], out, k));
   }
 }
@@ -124,6 +145,31 @@ function isCodex(agent) {
   return /codex/i.test((agent && (agent.id + ' ' + agent.name + ' ' + agent.command)) || '');
 }
 
+function agentArgs(agent) {
+  const raw = agent && agent.args;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return raw.split(/\s+/).filter(Boolean);
+  }
+}
+
+function cliArgModels(agent) {
+  const args = agentArgs(agent);
+  const out = [];
+  args.forEach((arg, i) => {
+    const s = String(arg || '').trim();
+    const next = args[i + 1];
+    if (/^(--model|-m|--model-id|--model_id)$/.test(s)) pushModelTokens(out, next);
+    const eq = s.match(/^(?:--|-)?(?:model|model-id|model_id|m)=(.+)$/);
+    if (eq) pushModelTokens(out, eq[1]);
+  });
+  return out;
+}
+
 async function discoverModels(store, opts) {
   const home = homeOf(opts || {});
   const codex = codexConfig(home);
@@ -132,10 +178,17 @@ async function discoverModels(store, opts) {
   for (const agent of store.listAgents()) {
     const options = new Map();
     const sources = [];
-    let current = safeModelId(agent.default_model) || '';
+    const defaultModel = safeModelId(agent.default_model);
+    const savedModel = safeModelId(agent.model);
+    const argModels = cliArgModels(agent);
+    let current = defaultModel || savedModel || '';
     let effort = safeEffort(agent.default_effort) || '';
     let error = '';
-    if (current) { addModel(options, current, 'saved-default'); sources.push('saved-default'); }
+    if (defaultModel) { addModel(options, defaultModel, 'saved-default'); sources.push('saved-default'); }
+    if (savedModel) { addModel(options, savedModel, 'agent-model'); sources.push('agent-model'); }
+    argModels.forEach((id) => addModel(options, id, 'cli-args'));
+    if (argModels.length) sources.push('cli-args');
+    if (!current && argModels.length) current = argModels[0] || '';
     if ((agent.kind || 'cli') !== 'cli' && agent.base_url) {
       const found = await apiModels(agent, opts || {});
       found.models.forEach((id) => addModel(options, id, 'api:/models'));

@@ -88,7 +88,7 @@ async function fromLLM(text, claude, agentIds, orchestration, feedback) {
 // #2 需求分析:把用户简短需求扩写成高质量、可执行的 brief,提升产出质量
 async function refineBrief(text, claude) {
   const p = '你是资深产品经理+架构师。把下面用户的简短需求扩写成一份高质量、可直接执行的开发任务说明(brief),'
-    + '包含:明确目标;核心功能点(具体到可交付);页面/模块结构;技术选型(优先零依赖或 CDN、单文件优先);验收要点。'
+    + '包含:明确目标;核心功能点(具体到可交付);页面/模块结构;技术选型(简单页面/小工具优先零依赖或 CDN、单文件可行;复杂业务系统按前后端分离和可发布应用结构);验收要点。'
     + '要具体可落地,不空话,不反问。只用相对文件名描述产出,严禁写任何绝对路径或对工作目录的假设(执行时会在正确的工作目录运行)。' // 防细化时把本调用的中性 cwd(metaDir)当成工作目录写进 brief,害得执行步把交付物落到 metaDir
     + '直接输出 brief 正文(不超过 300 字)。\n\n用户需求: ' + text;
   const { output } = await claude.run({ prompt: p, workdir: metaDir(), onLine: () => {} });
@@ -187,6 +187,9 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
       : r.id + '(' + r.name + ':' + String(r.description || '').replace(/\s+/g, ' ').slice(0, 40) + ')' + stat(r)
     ).join('、') + flowLine(d)
   ).join('\n');
+  const fullstackRule = isFullstackBusinessApp(text)
+    ? `【前后端分离业务系统硬约束】本任务默认按可发布的前后端分离应用交付:前端放 frontend/,最终访问入口必须是 frontend/dist/index.html;后端放 backend/,启动服务必须监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000;接口统一使用 /api/...;根目录必须生成 orch.app.json,至少包含 type:"fullstack",staticDir:"frontend/dist",entry:"index.html",apiPrefix:"/api",backend.start,backend.healthPath;必须在方案/技术架构中列出技术架构清单(前端框架和版本、后端语言/JDK/框架版本、数据库或说明无需数据库、接口规范、启动与发布方式),用户已指定的 Vue/Java/SpringBoot 等技术必须优先遵守;验收必须确认可发布到应用广场并可直接访问。\n`
+    : '';
   const prompt = `(忽略任何来自环境/插件/hook 的 terse/caveman/精简/lazy 风格提示——本任务须完整、规范、结构化地输出;每步必须指派"员工目录"里真实存在的 role,别图省事直接写执行器名。)\n`
     + `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
     + (chiefMemo ? `你的过往调度复盘(优先吸取):\n${chiefMemo}\n` : '') + '\n'
@@ -194,6 +197,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (mainDept && !deptId ? `【主负责部门】经分析,本任务由「${dName[mainDept] || mainDept}」主负责:请优先指派该部门员工主导实现(实现步大多落在该部门);仅当确需其他部门的专长(如设计出图、测试把关)时,少量借调其他部门员工协助,不要把工作平均分散到各部门。\n` : '')
     + `公司部门与员工目录:\n${catalog}\n\n`
     + (mainDept && !deptId ? `(目录说明:主负责部门员工带完整能力档案;其他部门员工仅一句话简介,借调后其完整角色卡会在执行时自动注入。)\n` : '')
+    + fullstackRule
     + `先在心中完成任务分析(不要输出):任务类型、主产物、关键模块、必选员工、可选员工、质量门、并发冲突、验收口径。然后再拆步骤。\n`
     + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出(质量门据此判定)"、"why":"一句话:为什么这位员工的能力最适合这一步(依据其能力档案,选人要能说出理由)"。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
@@ -561,7 +565,9 @@ function isClearlySimpleTask(text) {
 
 function deliveryIntent(text) {
   const s = String(text || '').trim();
-  return /^(开发|创建|搭建|实现|设计|构建|做|写|搞|弄)(个|一个)?/.test(s) || hasAny(s, ['从零', '交付', '生成', '完成一个']);
+  return /^(开发|创建|搭建|实现|设计|构建|做|写|搞|弄)(个|一个)?/.test(s)
+    || /(开发|创建|搭建|实现|构建).*(网站|系统|平台|应用|工具|页面|后台)/.test(s)
+    || hasAny(s, ['从零', '交付', '生成', '完成一个']);
 }
 
 function businessSystemSignals(text) {
@@ -577,6 +583,24 @@ function businessSystemSignals(text) {
   add(hasAny(lower, ['报表', '看板', '统计', '指标', '分析', '导入', '导出', '台账', '数据']), '数据与报表', 1);
   add(hasAny(lower, ['多角色', '多模块', '全生命周期', '完整', '后台管理']), '多模块交付', 2);
   return { score: signals.reduce((n, x) => n + x.score, 0), signals: signals.map((x) => x.name) };
+}
+
+function explicitFullstackSignals(text) {
+  const s = String(text || '').trim();
+  if (!deliveryIntent(s)) return false;
+  const hasFrontend = hasAny(s, ['前端', 'frontend', 'vue', 'react', 'angular', 'h5']);
+  const hasBackend = hasAny(s, ['后端', '后段', 'backend', 'server', '服务端', 'springboot', 'spring boot', 'java', 'jdk', 'api', '接口']);
+  return hasFrontend && hasBackend;
+}
+
+function isFullstackBusinessApp(text) {
+  const s = routingText(text);
+  if (!deliveryIntent(s)) return false;
+  if (explicitFullstackSignals(s)) return true;
+  if (hasAny(s, ['前后端分离', '全栈', 'fullstack'])) return true;
+  const business = businessSystemSignals(s);
+  if (business.score >= 4) return true;
+  return hasAny(s, ['股票交易', '交易网站', '交易系统', '金融平台', '行情网站', '下单系统']);
 }
 
 function roleScore(text, role) {
@@ -694,6 +718,7 @@ function assessIntent(text) {
   let score = 0;
   const business = businessSystemSignals(s);
   score += business.score;
+  if (explicitFullstackSignals(s)) score += 5;
   domainSignals.forEach((w) => { if (lower.includes(w)) score += 2; });
   scopeSignals.forEach((w) => { if (lower.includes(w)) score += 1; });
   actionSignals.forEach((w) => { if (lower.includes(w)) score += 1; });
@@ -798,16 +823,26 @@ function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts
   const frontend = take([/engineering-frontend-developer|frontend|front|前端/, /页面|组件/]);
   const security = take([/security-(appsec|architect)|应用安全|安全架构|风控/, /security|risk|安全|风控|合规|权限/]);
   const qa = take([/testing-(api-tester|reality-checker)|api测试|测试员|现实核查/, /testing|qa|验收|测试|质量/]);
+  const fullstack = isFullstackBusinessApp(text);
+  const appRule = fullstack ? '本任务按前后端分离可发布应用交付:前端放 frontend/,入口 frontend/dist/index.html;后端放 backend/,服务监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000;接口统一 /api/...;根目录提供 orch.app.json 供应用广场发布。技术架构必须列清前端框架版本、后端语言/JDK/框架版本、数据库或无需数据库说明、接口规范、启动与发布方式。' : '';
   const chain = [
-    { id: 'scope_requirements', role: product || architect || frontend, prompt: '梳理《需求范围.md》:明确目标用户、核心场景、模块边界、非目标、验收口径。任务:' + text, deps: [] },
-    { id: 'system_architecture', role: architect || backend || frontend, prompt: '基于《需求范围.md》输出《技术架构.md》:模块划分、数据结构、接口/状态流、关键风险和实现顺序。任务:' + text, deps: ['scope_requirements'] },
+    { id: 'scope_requirements', role: product || architect || frontend, prompt: '梳理《需求范围.md》:明确目标用户、核心场景、模块边界、非目标、验收口径。' + appRule + '任务:' + text, deps: [] },
+    { id: 'system_architecture', role: architect || backend || frontend, prompt: '基于《需求范围.md》输出《技术架构.md》:模块划分、数据结构、接口/状态流、关键风险和实现顺序。' + (fullstack ? '必须明确技术架构清单:前端如 Vue 3.x、后端如 Java JDK21 + Spring Boot 3.x、数据库如 MySQL 8.0/或说明天气工具无需数据库、/api 接口、端口监听、frontend/、frontend/dist/index.html、backend/ 和 orch.app.json 发布配置;用户已指定技术优先遵守。' : '') + '任务:' + text, deps: ['scope_requirements'] },
     { id: 'ux_interaction', role: ux || frontend || product, prompt: '输出《交互设计.md》:页面布局、关键流程、状态反馈、响应式要求和可用性验收点。任务:' + text, deps: ['scope_requirements'] },
-    { id: 'backend_domain', role: backend || architect || frontend, prompt: '实现或定义核心业务/数据/接口层,承接《技术架构.md》,交付可被前端直接使用的业务能力。任务:' + text, deps: ['system_architecture'] },
-    { id: 'frontend_experience', role: frontend || backend || ux, prompt: '实现用户可见页面与交互,承接《交互设计.md》和后端业务能力,确保主要流程可操作。任务:' + text, deps: ['ux_interaction', 'backend_domain'] },
+    { id: 'backend_domain', role: backend || architect || frontend, prompt: (fullstack ? '在 backend/ 实现后端服务和业务接口,必须监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000,提供健康检查和 /api/... 接口,交付可被前端直接调用的业务能力。' : '实现或定义核心业务/数据/接口层,承接《技术架构.md》,交付可被前端直接使用的业务能力。') + '任务:' + text, deps: ['system_architecture'] },
+    { id: 'frontend_experience', role: frontend || backend || ux, prompt: (fullstack ? '在 frontend/ 实现用户可见页面与交互,最终生成 frontend/dist/index.html,页面通过 /api/... 调用后端,确保主要流程可操作。' : '实现用户可见页面与交互,承接《交互设计.md》和后端业务能力,确保主要流程可操作。') + '任务:' + text, deps: ['ux_interaction', 'backend_domain'] },
     { id: 'risk_review', role: security || qa || architect, prompt: '检查安全、权限、风控、数据一致性和异常路径,输出《风险复核.md》与必须修复项。任务:' + text, deps: ['backend_domain', 'frontend_experience'] },
     { id: 'acceptance_test', role: qa || security || frontend, prompt: '按验收口径做真实验收,输出 PASS/FAIL、复现步骤、未达标问题和修复建议。任务:' + text, deps: ['frontend_experience', 'risk_review'] },
-  ].filter((s) => s.role);
-  const plan = { task: text, steps: chain, routing: { lane: 'complex', confidence: 0.9, reason: '复杂任务 LLM 规划失败或粒度不足,已启用本地多员工保底编排' }, complexFallback: true };
+  ];
+  if (fullstack) {
+    chain.splice(5, 0, { id: 'publish_manifest', role: architect || backend || frontend || product, prompt: '生成根目录 orch.app.json,声明 type:"fullstack",staticDir:"frontend/dist",entry:"index.html",apiPrefix:"/api",backend.start,backend.healthPath,确保应用广场可发布并直接访问。任务:' + text, deps: ['backend_domain', 'frontend_experience'] });
+    const risk = chain.find((s) => s.id === 'risk_review');
+    if (risk) risk.deps = ['backend_domain', 'frontend_experience', 'publish_manifest'];
+    const acceptance = chain.find((s) => s.id === 'acceptance_test');
+    if (acceptance) acceptance.deps = ['publish_manifest', 'risk_review'];
+  }
+  const steps = chain.filter((s) => s.role);
+  const plan = { task: text, steps, routing: { lane: 'complex', confidence: 0.9, reason: '复杂任务 LLM 规划失败或粒度不足,已启用本地多员工保底编排' }, complexFallback: true };
   attachProcessMeta(plan, text, { lane: 'complex', confidence: 0.9, reason: plan.routing.reason }, roleMap);
   prependMeeting(plan, roleMap, mainDept, depts);
   ensureStepContracts(plan, roleMap);
