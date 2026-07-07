@@ -167,6 +167,13 @@ async function ensureStarted(app, opts) {
   if (!cmd) return app;
   const update = opts && opts.update;
   const preferred = Number(app.port) || 0;
+  const healthPath = app.health_path || app.healthPath || '/';
+  if (preferred && String(app.status || '').toLowerCase() === 'running' && await waitHttp(preferred, healthPath, 1200)) {
+    patch(update, { port: preferred, status: 'running', lastError: '' });
+    app.port = preferred;
+    app.status = 'running';
+    return app;
+  }
   const port = preferred && await portAvailable(preferred) ? preferred : await freePort();
   patch(update, { port, status: 'starting', lastError: '' });
   const logs = [];
@@ -191,7 +198,7 @@ async function ensureStarted(app, opts) {
   });
   running.set(id, { child, logs });
   const timeoutMs = Math.max(Number((opts && opts.timeoutMs) || 0), startupTimeoutMs(app));
-  const ok = await waitHttp(port, app.health_path || app.healthPath || '/', timeoutMs);
+  const ok = await waitHttp(port, healthPath, timeoutMs);
   if (!ok) {
     stopApp(id);
     patch(update, { status: 'failed', lastError: 'health check timeout' });

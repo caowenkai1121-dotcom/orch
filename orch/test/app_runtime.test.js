@@ -110,6 +110,31 @@ test('app runtime: falls back to free port when manifest port is occupied', asyn
   }
 });
 
+test('app runtime: reuses live running backend after orchestrator restart', async () => {
+  const live = http.createServer((req, res) => res.end('live'));
+  await new Promise((resolve) => live.listen(0, '127.0.0.1', resolve));
+  const port = live.address().port;
+  const dir = tmp('orch-app-reuse-live');
+  fs.writeFileSync(path.join(dir, 'spawned.js'), [
+    "const fs = require('fs');",
+    "fs.writeFileSync('spawned.txt', 'spawned');",
+    "setInterval(() => {}, 1000);",
+  ].join('\n'), 'utf8');
+  const app = { id: 101, dir, status: 'running', start_cmd: 'node spawned.js', port, health_path: '/' };
+
+  try {
+    await runtime.ensureStarted(app, { update: (patch) => Object.assign(app, patch), timeoutMs: 1000 });
+
+    assert.equal(app.port, port);
+    assert.equal(app.status, 'running');
+    assert.ok(!fs.existsSync(path.join(dir, 'spawned.txt')));
+  } finally {
+    await new Promise((resolve) => live.close(resolve));
+    runtime.stopApp(app.id);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('app runtime: rewrites published Vue asset and API absolute paths', () => {
   const html = [
     '<script type="module" crossorigin src="/assets/index-CD2_olrR.js"></script>',
