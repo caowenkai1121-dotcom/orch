@@ -115,6 +115,9 @@ test('app runtime: rewrites published Vue asset and API absolute paths', () => {
     '<script type="module" crossorigin src="/assets/index-CD2_olrR.js"></script>',
     '<link rel="modulepreload" crossorigin href="/assets/vue-vendor-Cj2UIMw7.js">',
     '<link rel="stylesheet" crossorigin href="/assets/index-BkOuRwwm.css">',
+    '<link rel="icon" href="/favicon.svg">',
+    '<img src="/logo.png">',
+    '<a href="/docs">docs</a>',
     '<script>fetch("/api/health")</script>',
   ].join('\n');
   const css = '.hero{background:url(/assets/bg.png)}';
@@ -122,6 +125,9 @@ test('app runtime: rewrites published Vue asset and API absolute paths', () => {
 
   assert.match(runtime.rewritePublishedText(html, 3), /src="\/apps\/3\/assets\/index-CD2_olrR\.js"/);
   assert.match(runtime.rewritePublishedText(html, 3), /href="\/apps\/3\/assets\/index-BkOuRwwm\.css"/);
+  assert.match(runtime.rewritePublishedText(html, 3), /href="\/apps\/3\/favicon\.svg"/);
+  assert.match(runtime.rewritePublishedText(html, 3), /src="\/apps\/3\/logo\.png"/);
+  assert.match(runtime.rewritePublishedText(html, 3), /href="\/docs"/);
   assert.match(runtime.rewritePublishedText(html, 3), /fetch\("\/apps\/3\/api\/health"\)/);
   assert.match(runtime.rewritePublishedText(css, 3), /url\(\/apps\/3\/assets\/bg\.png\)/);
   assert.match(runtime.rewritePublishedText(js, 3), /"\/apps\/3\/api\/weather\/current"/);
@@ -139,8 +145,8 @@ test('app runtime: rewrites Vite dynamic preload asset paths', () => {
 
   const out = runtime.rewritePublishedText(js, 3);
 
-  assert.match(out, /"\/apps\/3\/assets\/WeatherDashboard\.js"/);
-  assert.match(out, /"\/apps\/3\/assets\/WeatherDashboard\.css"/);
+  assert.match(out, /"apps\/3\/assets\/WeatherDashboard\.js"/);
+  assert.match(out, /"apps\/3\/assets\/WeatherDashboard\.css"/);
   assert.match(out, /"\.\/local\.js"/);
 });
 

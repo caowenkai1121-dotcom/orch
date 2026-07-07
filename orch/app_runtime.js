@@ -107,12 +107,15 @@ function patch(update, data) { if (typeof update === 'function') update(data); }
 
 function rewritePublishedText(text, appId) {
   const base = '/apps/' + encodeURIComponent(String(appId)) + '/';
+  const relBase = base.replace(/^\//, '');
   const apiBase = base.replace(/\/$/, '') + '/api';
   return String(text || '')
     .replace(/(["'=])\/assets\//g, '$1' + base + 'assets/')
-    .replace(/(["'`])assets\//g, '$1' + base + 'assets/')
+    .replace(/(["'`])assets\//g, '$1' + relBase + 'assets/')
+    .replace(/(["'=])\/(?!apps\/|api\/)([^"'`<>\s?#]+\.(?:m?js|css|svg|png|jpe?g|gif|webp|ico|json|webmanifest|txt|woff2?|ttf|eot|wasm|map))/gi, '$1' + base + '$2')
     .replace(/url\((['"]?)\/assets\//g, 'url($1' + base + 'assets/')
     .replace(/url\((['"]?)assets\//g, 'url($1' + base + 'assets/')
+    .replace(/url\((['"]?)\/(?!apps\/|api\/)([^'")\s?#]+\.(?:m?js|css|svg|png|jpe?g|gif|webp|ico|json|webmanifest|txt|woff2?|ttf|eot|wasm|map))/gi, 'url($1' + base + '$2')
     .replace(/(["'`])\/api(?=\/)/g, '$1' + apiBase);
 }
 
