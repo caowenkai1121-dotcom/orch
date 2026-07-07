@@ -7,7 +7,7 @@ function homeOf(opts) {
 }
 
 function safeModelId(v) {
-  const s = String(v || '').replace(/\x1b\[[0-9;]*m/g, '').trim();
+  const s = String(v || '').replace(/\x1b\[[0-9;]*m/g, '').replace(/\[[0-9;]*m$/g, '').trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{1,}$/.test(s)) return '';
   if (/^(model|models|default|true|false|null|none)$/i.test(s)) return '';
   if (/^\d+m?$/i.test(s)) return '';
@@ -106,6 +106,20 @@ function claudeConfig(home) {
   return { current: models[0] || '', models };
 }
 
+function claudeEnvConfig(env) {
+  const e = env || process.env || {};
+  const names = [
+    'ANTHROPIC_MODEL',
+    'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    'CLAUDE_CODE_SUBAGENT_MODEL',
+  ];
+  const models = [];
+  names.forEach((k) => pushModelTokens(models, e[k]));
+  return { current: models[0] || '', models };
+}
+
 function modelsEndpoint(baseUrl) {
   const base = String(baseUrl || '').replace(/\/+$/, '');
   if (!base) return '';
@@ -174,6 +188,7 @@ async function discoverModels(store, opts) {
   const home = homeOf(opts || {});
   const codex = codexConfig(home);
   const claude = claudeConfig(home);
+  const claudeEnv = claudeEnvConfig((opts && opts.env) || process.env);
   const agents = {};
   for (const agent of store.listAgents()) {
     const options = new Map();
@@ -203,7 +218,10 @@ async function discoverModels(store, opts) {
     } else if (isClaude(agent)) {
       claude.models.forEach((id) => addModel(options, id, 'claude-config'));
       if (claude.models.length) sources.push('claude-config');
+      claudeEnv.models.forEach((id) => addModel(options, id, 'claude-env'));
+      if (claudeEnv.models.length) sources.push('claude-env');
       if (!current) current = claude.current || '';
+      if (!current) current = claudeEnv.current || '';
     }
     if (current) addModel(options, current, 'current');
     agents[agent.id] = {
@@ -217,4 +235,4 @@ async function discoverModels(store, opts) {
   return { agents };
 }
 
-module.exports = { discoverModels, modelsEndpoint, safeModelId, safeEffort };
+module.exports = { discoverModels, modelsEndpoint, safeModelId, safeEffort, claudeEnvConfig };

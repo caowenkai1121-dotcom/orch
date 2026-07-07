@@ -111,6 +111,31 @@ test('发现 Claude 模型访问缓存中的对象 key', async () => {
   assert.ok(ids.includes('claude-mythos'));
 });
 
+test('发现服务端 Claude 环境变量中的第三方模型', async () => {
+  const store = open(':memory:');
+  store.seed();
+  store.setAgentDefaults('claude', '', '');
+  store.updateAgent('claude', { name: 'Claude', command: 'claude', args: ['-p'], model: 'claude CLI', caps: [] });
+
+  const out = await discoverModels(store, {
+    home: tmpHome(),
+    env: {
+      ANTHROPIC_MODEL: 'deepseek-v4-pro',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'deepseek-v4-pro\u001b[1m',
+      CLAUDE_CODE_SUBAGENT_MODEL: 'qwen3-coder-plus',
+      ANTHROPIC_API_KEY: 'sk-should-not-leak',
+    },
+  });
+  const row = out.agents.claude;
+  const ids = row.options.map((o) => o.id);
+
+  assert.equal(row.current, 'deepseek-v4-pro');
+  assert.ok(ids.includes('deepseek-v4-pro'));
+  assert.ok(ids.includes('qwen3-coder-plus'));
+  assert.equal(JSON.stringify(row).includes('sk-should-not-leak'), false);
+  assert.match(row.source, /claude-env/);
+});
+
 test('发现 CLI 参数中的自定义模型', async () => {
   const store = open(':memory:');
   store.addAgent({ id: 'gemini', name: 'Gemini', kind: 'cli', command: 'gemini', args: ['-p', '--model', 'gemini-2.5-pro'], model: 'gemini CLI' });
