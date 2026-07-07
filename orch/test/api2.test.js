@@ -51,3 +51,35 @@ test('api.plan 输出编排回放摘要和技能标签', () => {
   assert.match(rows[0].traceSummary, /complex-fullstack/);
   assert.match(rows[0].traceSummary, /会议/);
 });
+
+test('api.planMeta 输出计划复核元信息和可执行建议', () => {
+  const s = open(':memory:'); s.seed();
+  const tid = s.createTask('前端使用 Vue 后端使用 Java SpringBoot 开发一个 DMS 供应商管理系统并发布', '默认项目', 'admin', {});
+  s.setPlan(tid, {
+    process: { type: 'risk_review', reason: '前后端分离业务系统,需要先复核架构和发布路径' },
+    planning_stats: { route: 'complex-fullstack', quality_score: 86 },
+    meeting: { attendees: ['product-manager', 'engineering-backend-architect'] },
+    delivery_blueprint: {
+      summary: 'Vue 3 + Java JDK21 + Spring Boot 3 + MySQL 8',
+      sections: ['技术架构', '目录结构', 'API清单'],
+      checklist: ['frontend/dist/index.html 可访问', 'backend/ 可启动', 'orch.app.json 已生成'],
+    },
+    diagnostics: { score: 86, issues: [{ level: 'warn', message: '缺少发布前浏览器验收记录' }] },
+    validation: { ok: true, errors: [] },
+    steps: [
+      { id: 'backend_impl', role: 'engineering-backend-architect', agent: 'claude', prompt: '实现 Spring Boot API', deps: [] },
+      { id: 'frontend_impl', role: 'engineering-frontend-developer', agent: 'claude', prompt: '实现 Vue 页面', deps: ['backend_impl'] },
+    ],
+  });
+
+  const meta = api.planMeta(s, tid);
+
+  assert.equal(meta.taskId, tid);
+  assert.equal(meta.healthScore, 86);
+  assert.equal(meta.processType, 'risk_review');
+  assert.equal(meta.route, 'complex-fullstack');
+  assert.match(meta.blueprint.summary, /Vue 3/);
+  assert.ok(meta.checklist.some((x) => /orch\.app\.json/.test(x)));
+  assert.ok(meta.issues.some((x) => /发布前浏览器验收/.test(x.message)));
+  assert.ok(meta.suggestions.some((x) => /交付蓝图|验收/.test(x)));
+});

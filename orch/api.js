@@ -299,6 +299,51 @@ function traceSummaryOf(plan) {
   return parts.join(' · ');
 }
 
+function planMeta(store, id) {
+  const t = store.getTask(id);
+  if (!t) return { taskId: id, ok: false, healthScore: 0, healthLabel: '任务不存在', suggestions: ['返回任务列表重新选择任务。'] };
+  let p = null; try { p = JSON.parse(t.plan || 'null'); } catch (e) {}
+  if (!p) return { taskId: id, ok: false, healthScore: 0, healthLabel: '计划尚未生成', suggestions: ['等待规划完成,或重新规划任务。'] };
+  const diag = p.diagnostics || {};
+  const process = p.process || {};
+  const stats = p.planning_stats || {};
+  const meeting = p.meeting || {};
+  const validation = p.validation || {};
+  const blueprint = p.delivery_blueprint || {};
+  const processLabels = { fast: '快速执行', sequential: '顺序编排', hierarchical: '经理调度', debate: '有界辩论', risk_review: '风险复核', ask_user: '等待用户选择' };
+  const issues = (diag.issues || []).map((x) => typeof x === 'string' ? { level: 'warn', message: x } : { level: x.level || 'warn', message: x.message || String(x) });
+  (validation.errors || []).forEach((msg) => issues.push({ level: 'error', message: msg }));
+  const checklist = Array.isArray(blueprint.checklist) ? blueprint.checklist : [];
+  const score = Number(diag.score != null ? diag.score : (stats.quality_score != null ? stats.quality_score : (validation.ok === false ? 60 : 100)));
+  const suggestions = [];
+  if (!Array.isArray(p.steps) || !p.steps.length) suggestions.push('计划还没有可执行步骤,需要先完成路线选择或重新规划。');
+  if (process.type === 'ask_user') suggestions.push('规划置信度不足,请先在任务详情里选择 A/B/C 路线。');
+  if (score < 80) suggestions.push('计划健康分偏低,建议重新规划或编辑未开始步骤后再执行。');
+  if (issues.length) suggestions.push('先处理复核问题中的高风险项,再进入实现或发布。');
+  if (checklist.length) suggestions.push('按交付蓝图和验收清单逐项复核,避免只看步骤完成状态。');
+  if (meeting.attendees && meeting.attendees.length) suggestions.push('复杂任务已纳入会议讨论,必要时可进入会议室复核结论。');
+  if (!suggestions.length) suggestions.push('计划结构完整,可按当前编排执行,并在验收节点复核。');
+  return {
+    taskId: id,
+    ok: issues.every((x) => x.level !== 'error'),
+    healthScore: score,
+    healthLabel: '健康 ' + score,
+    processType: process.type || '',
+    processLabel: processLabels[process.type] || process.type || '未标记',
+    route: stats.route || '',
+    reason: process.reason || '',
+    traceSummary: traceSummaryOf(p),
+    blueprint: {
+      summary: blueprint.summary || '',
+      sections: Array.isArray(blueprint.sections) ? blueprint.sections : [],
+    },
+    checklist,
+    issues,
+    validation,
+    suggestions: suggestions.slice(0, 5),
+  };
+}
+
 function promptTaskText(prompt) {
   const s = String(prompt || '');
   const m = s.match(/【任务】([\s\S]*)/);
@@ -481,4 +526,4 @@ function taskReport(store, id) {
   return md;
 }
 
-module.exports = { buildAll, relay, plan, meeting, agentLog, roleMap, planRoleMap, roleView, taskReport };
+module.exports = { buildAll, relay, plan, planMeta, meeting, agentLog, roleMap, planRoleMap, roleView, taskReport };

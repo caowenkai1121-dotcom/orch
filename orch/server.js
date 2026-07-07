@@ -89,6 +89,7 @@ app.get('/task/:id/logs', (req, res) => { if (!canSeeTask(req.user, store.getTas
 app.get('/api/all', (req, res) => res.json({ ...api.buildAll(store, req.user), activity: activity.slice(0, 18) }));
 app.get('/api/relay/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.relay(store, Number(req.params.id))); });
 app.get('/api/plan/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json([]); res.json(api.plan(store, Number(req.params.id))); });
+app.get('/api/plan-meta/:id', (req, res) => { if (!canSeeTask(req.user, store.getTask(Number(req.params.id)))) return res.status(403).json({ ok: false }); res.json(api.planMeta(store, Number(req.params.id))); });
 app.get('/api/agentlog/:id', adminOnly, (req, res) => res.json(api.agentLog(store, req.params.id))); // 按执行器跨全部任务聚合日志→无法单任务鉴权,收口为 adminOnly(防普通用户越权读他人任务日志)
 // 执行器健康(缓存;?refresh=1 重测)
 app.get('/api/health', (req, res) => { if (req.query.refresh) health = boot.checkHealth(store); res.json(health); });

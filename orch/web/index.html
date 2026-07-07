@@ -465,6 +465,27 @@
         </div>
         </sc-if>
 
+        <sc-if value="{{ planReview }}">
+        <div style="background:#fff;border:1px solid #E9E7E1;border-radius:13px;padding:14px 16px;margin:16px 0 4px;box-shadow:0 1px 2px rgba(20,18,14,.04);">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <div style="width:34px;height:34px;border-radius:10px;background:#1A1814;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;flex:none;">◎</div>
+            <div style="flex:1;min-width:0;">
+              <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap;"><span style="font-size:13.5px;font-weight:700;">智能复核</span><span style="font-size:11.5px;font-weight:650;color:{{ reviewHealthC }};background:#F7F6F3;border:1px solid #E9E7E1;border-radius:999px;padding:2px 8px;">{{ reviewHealth }}</span><span style="font-size:11.5px;color:#8A857C;">{{ reviewProcess }}</span></div>
+              <sc-if value="{{ reviewReason }}"><div style="font-size:12px;color:#6B6760;margin-top:6px;line-height:1.55;">{{ reviewReason }}</div></sc-if>
+            </div>
+            <button onClick="{{ reviewOpenCanvas }}" style="flex:none;height:30px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">看画布</button>
+            <sc-if value="{{ reviewCanMeeting }}"><button onClick="{{ enterMeeting }}" style="flex:none;height:30px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">会议</button></sc-if>
+            <sc-if value="{{ reviewCanReplan }}"><button onClick="{{ reviewReplan }}" style="flex:none;height:30px;padding:0 11px;border-radius:8px;background:#fff;border:1px solid #E6E3DC;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">重新规划</button></sc-if>
+          </div>
+          <sc-if value="{{ reviewHasBlueprint }}"><div style="font-size:12px;color:#3C3933;margin-top:12px;line-height:1.55;"><b>交付蓝图:</b> {{ reviewBlueprint }}</div></sc-if>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:12px;">
+            <sc-if value="{{ reviewHasChecklist }}"><div><div style="font-size:11.5px;font-weight:650;color:#8A857C;margin-bottom:5px;">验收清单</div><sc-for list="{{ reviewChecklist }}" as="x"><div style="font-size:12px;color:#3C3933;line-height:1.6;">✓ {{ x.text }}</div></sc-for></div></sc-if>
+            <div><div style="font-size:11.5px;font-weight:650;color:#8A857C;margin-bottom:5px;">下一步建议</div><sc-for list="{{ reviewSuggestions }}" as="x"><div style="font-size:12px;color:#3C3933;line-height:1.6;">• {{ x.text }}</div></sc-for></div>
+          </div>
+          <sc-if value="{{ reviewHasIssues }}"><div style="border-top:1px solid #F2F0EB;margin-top:12px;padding-top:9px;"><div style="font-size:11.5px;font-weight:650;color:#8A857C;margin-bottom:5px;">复核问题</div><sc-for list="{{ reviewIssues }}" as="x"><div style="font-size:12px;color:{{ x.c }};line-height:1.6;">• {{ x.text }}</div></sc-for></div></sc-if>
+        </div>
+        </sc-if>
+
         <div style="display:flex;gap:10px;margin:18px 0 22px;">
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">接力步骤</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskRounds }}</div></div>
           <div style="flex:1;background:#fff;border:1px solid #E9E7E1;border-radius:12px;padding:13px 15px;"><div style="font-size:11.5px;color:#A39E94;">参与 Agent</div><div style="font-size:20px;font-weight:700;font-family:'JetBrains Mono',monospace;margin-top:3px;">{{ taskAgentN }}</div></div>
@@ -1265,6 +1286,23 @@
         <button onClick="{{ closeModal }}" style="height:34px;padding:0 14px;border-radius:9px;background:#fff;border:1px solid #E6E3DC;cursor:pointer;font-family:inherit;">取消</button>
         <button onClick="{{ continueSubmit }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">继续开发</button>
       </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{ modalPublishDiag }}">
+  <div style="position:fixed;inset:0;background:rgba(20,18,14,.4);display:flex;align-items:center;justify-content:center;z-index:60;">
+    <div style="background:#fff;border-radius:16px;padding:22px;width:560px;max-height:82vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="width:34px;height:34px;border-radius:10px;background:#FBE9E7;color:#B4541E;display:flex;align-items:center;justify-content:center;font-weight:700;">!</div>
+        <div style="flex:1;min-width:0;"><div style="font-size:16px;font-weight:700;">{{ publishDiagTitle }}</div><div style="font-size:12px;color:#8A857C;margin-top:2px;">发布诊断 · 根据任务产物、入口文件、静态资源和后端启动命令生成</div></div>
+      </div>
+      <sc-if value="{{ publishDiagError }}"><div style="background:#FBEDEA;border:1px solid #F1CBA6;border-radius:10px;padding:9px 11px;font-size:12.5px;color:#B4541E;line-height:1.55;margin:12px 0;">{{ publishDiagError }}</div></sc-if>
+      <sc-if value="{{ hasPublishErrors }}"><div style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:#B4541E;margin-bottom:6px;">需要修复</div><sc-for list="{{ publishDiagErrors }}" as="x"><div style="font-size:12.5px;color:#3C3933;line-height:1.65;">• {{ x.text }}</div></sc-for></div></sc-if>
+      <sc-if value="{{ hasPublishChecks }}"><div style="margin-top:13px;"><div style="font-size:12px;font-weight:700;color:#8A857C;margin-bottom:7px;">诊断检查</div><sc-for list="{{ publishDiagChecks }}" as="c"><div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #F2F0EB;"><span style="font-size:11px;font-weight:700;color:{{ c.c }};background:{{ c.bg }};border-radius:999px;padding:2px 7px;">{{ c.label }}</span><span style="font-size:12px;font-family:'JetBrains Mono',monospace;color:#3C3933;">{{ c.name }}</span><span style="font-size:12px;color:#8A857C;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ c.detail }}</span></div></sc-for></div></sc-if>
+      <sc-if value="{{ hasPublishWarnings }}"><div style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:#8a6d00;margin-bottom:6px;">风险提醒</div><sc-for list="{{ publishDiagWarnings }}" as="x"><div style="font-size:12.5px;color:#6B6760;line-height:1.65;">• {{ x.text }}</div></sc-for></div></sc-if>
+      <sc-if value="{{ hasPublishRecs }}"><div style="margin-top:12px;"><div style="font-size:12px;font-weight:700;color:#1F7A46;margin-bottom:6px;">建议</div><sc-for list="{{ publishDiagRecs }}" as="x"><div style="font-size:12.5px;color:#3C3933;line-height:1.65;">• {{ x.text }}</div></sc-for></div></sc-if>
+      <div style="display:flex;justify-content:flex-end;gap:9px;margin-top:18px;"><button onClick="{{ closePublishDiag }}" style="height:34px;padding:0 16px;border-radius:9px;background:{{ acc }};color:{{ accTxt }};border:1px solid {{ accBd }};font-weight:650;cursor:pointer;font-family:inherit;">知道了</button></div>
     </div>
   </div>
   </sc-if>

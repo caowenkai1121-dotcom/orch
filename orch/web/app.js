@@ -376,7 +376,7 @@ function mdDoc(md) {
 class Maestro extends MaestroBase {
   componentDidMount() {
     // 不调 super:跳过 mock 种子与 mock tick。真实数据全部从后端拉。
-    this.live = { relay: {}, plan: {}, activeId: null, counts: {}, loaded: false };
+    this.live = { relay: {}, plan: {}, planMeta: {}, activeId: null, counts: {}, loaded: false };
     this.AGENTS = []; this.DEPTS = []; this.BOARDS = {}; this.PROJECTS = []; this.TASKS = []; this.PEOPLE = [];
     this.state.activity = []; this.state.log = {}; this.state.console = {}; this.state.modal = null;
     this.state.me = null; this.state.needLogin = false; this.state.loginErr = '';
@@ -665,7 +665,8 @@ class Maestro extends MaestroBase {
     }));
     v.planCount = this.PLAN.length;
     v.planAgents = new Set(this.PLAN.map((p) => p.agent)).size;
-    v.planHealth = ((this.PLAN || []).find((p) => p.healthLabel) || {}).healthLabel || '';
+    const activeMeta = activeId != null && this.live.planMeta && this.live.planMeta[activeId];
+    v.planHealth = activeMeta ? [activeMeta.healthLabel, activeMeta.route].filter(Boolean).join(' · ') : (((this.PLAN || []).find((p) => p.healthLabel) || {}).healthLabel || '');
     const r = this.RELAY || [];
     v.taskRounds = r.length; v.taskAgentN = new Set(r.map((x) => x.who)).size;
     // 人员行分配按钮 + 每 agent 实时控制台
@@ -822,6 +823,7 @@ class Maestro extends MaestroBase {
     v.costToday = '$' + ((this.live.usage && this.live.usage.cost) || 0).toFixed(3);
     const curT = typeof this.state.taskId === 'number' && this.TASKS.find((t) => t.id === this.state.taskId);
     const canMod = !!(curT && curT.canModify); // #4 非本人任务只读
+    if (curT && (!this.live.planMeta || !this.live.planMeta[curT.id])) this.fetchPlanMeta(curT.id);
     v.canDelTask = !!(curT && canMod && curT.sk !== 'working');
     v.viewOnly = !!(curT && !curT.canModify);
     v.canCancel = !!(curT && curT.sk === 'working' && canMod);
@@ -842,6 +844,23 @@ class Maestro extends MaestroBase {
       const msg = last ? String(last.desc || '').replace(/\s+/g, ' ').slice(-240) : '';
       v.failBanner = last ? { step: last.title, msg, hint: this.diagnose(last.desc || '') } : { step: '', msg: '任务失败,可点「重试失败步骤」续跑。', hint: '' };
     } else v.failBanner = null;
+    const review = curT && this.live.planMeta && this.live.planMeta[curT.id];
+    v.planReview = !!review;
+    v.reviewHealth = review ? (review.healthLabel || '—') : '';
+    v.reviewHealthC = review && review.healthScore >= 80 ? '#1F7A46' : '#B4541E';
+    v.reviewProcess = review ? [review.processLabel, review.route].filter(Boolean).join(' · ') : '';
+    v.reviewReason = review ? (review.reason || review.traceSummary || '') : '';
+    v.reviewBlueprint = review && review.blueprint ? (review.blueprint.summary || '') : '';
+    v.reviewHasBlueprint = !!v.reviewBlueprint;
+    v.reviewChecklist = ((review && review.checklist) || []).slice(0, 4).map((x) => ({ text: x }));
+    v.reviewHasChecklist = v.reviewChecklist.length > 0;
+    v.reviewIssues = ((review && review.issues) || []).slice(0, 4).map((x) => ({ text: x.message || String(x), c: x.level === 'error' ? '#B23A33' : '#8a6d00' }));
+    v.reviewHasIssues = v.reviewIssues.length > 0;
+    v.reviewSuggestions = ((review && review.suggestions) || []).slice(0, 4).map((x) => ({ text: x }));
+    v.reviewOpenCanvas = () => { if (curT) this.setState({ screen: 'orchestration', canvasTaskId: curT.id }); };
+    v.reviewCanReplan = !!(curT && canMod && curT.sk !== 'working');
+    v.reviewCanMeeting = !!(curT && curT.hasMeeting);
+    v.reviewReplan = () => this.replanTask();
     v.canApprove = !!(curT && curT.sk === 'awaiting' && canMod);
     v.approveTask = () => this.approveTask();
     // #16 可编辑计划:待审批(批准前编辑)或已暂停(保存后恢复生效)。运行中不可编(内存 plan 固定)。
@@ -963,6 +982,19 @@ class Maestro extends MaestroBase {
     const appTypeLabel = (t) => t === 'fullstack' ? '前后端' : (t === 'process' ? '进程' : '静态');
     const appStatusLabel = (s) => ({ ready: '可访问', running: '运行中', starting: '启动中', stopped: '已停止', failed: '失败' }[s || 'ready'] || (s || '可访问'));
     v.apps = (this.live.apps || []).map((a) => ({ ...a, typeLabel: appTypeLabel(a.type), statusLabel: appStatusLabel(a.status), canDel: !!(this.state.me && this.state.me.admin), canOps: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), openTask: () => this.go('task', { taskId: a.taskId }), restart: () => this.restartApp(a.id), stop: () => this.stopApp(a.id), logs: () => this.showAppLogs(a.id), del: () => this.delApp(a.id) }));
+    v.modalPublishDiag = this.state.modal === 'publishDiag';
+    const pd = this.live.publishDiag || {};
+    v.publishDiagTitle = pd.title || '发布诊断';
+    v.publishDiagError = pd.error || '';
+    v.publishDiagErrors = pd.errors || [];
+    v.publishDiagWarnings = pd.warnings || [];
+    v.publishDiagRecs = pd.recommendations || [];
+    v.publishDiagChecks = pd.checks || [];
+    v.hasPublishErrors = v.publishDiagErrors.length > 0;
+    v.hasPublishWarnings = v.publishDiagWarnings.length > 0;
+    v.hasPublishRecs = v.publishDiagRecs.length > 0;
+    v.hasPublishChecks = v.publishDiagChecks.length > 0;
+    v.closePublishDiag = () => this.setState({ modal: null });
     if (v.isApps) { v.crumbRoot = '工作区'; v.crumbLeaf = '应用广场'; }
     return v;
   }
@@ -1043,10 +1075,40 @@ class Maestro extends MaestroBase {
   }
   fetchHealth(refresh) { fetch('/api/health' + (refresh ? '?refresh=1' : '')).then((r) => r.json()).then((h) => { this.live.health = h || {}; this.scheduleRender(); }).catch(() => {}); }
   goApps() { this.setState({ screen: 'apps', openApp: null }); }
+  formatPublishDiag(d, error) {
+    const diag = d || {};
+    const item = (x) => ({ text: String(x || '') });
+    return {
+      title: '发布诊断',
+      error: error || '',
+      errors: (diag.errors || []).map(item),
+      warnings: (diag.warnings || []).map(item),
+      recommendations: (diag.recommendations || []).map(item),
+      checks: (diag.checks || []).map((c) => ({
+        name: c.code || 'check',
+        detail: c.detail || '',
+        label: c.ok ? '通过' : '异常',
+        bg: c.ok ? '#E4F4EA' : '#FBE9E7',
+        c: c.ok ? '#1F7A46' : '#B4541E',
+      })),
+    };
+  }
   publishApp() {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     fetch('/api/apps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ taskId: id }) })
-      .then((r) => r.json()).then((d) => { if (d && d.ok !== false) this.setState({ screen: 'apps', openApp: null }); this.fetchAll(); }).catch(() => {});
+      .then((r) => r.json()).then((d) => {
+        if (d && d.ok === false) {
+          this.live.publishDiag = this.formatPublishDiag(d.diagnostics, d.error || '发布失败');
+          this.setState({ modal: 'publishDiag' });
+        } else {
+          if (d && d.diagnostics && d.diagnostics.warnings && d.diagnostics.warnings.length) this.toast('发布成功,但有 ' + d.diagnostics.warnings.length + ' 条建议');
+          this.setState({ screen: 'apps', openApp: null });
+        }
+        this.fetchAll();
+      }).catch(() => {
+        this.live.publishDiag = this.formatPublishDiag(null, '发布请求失败,请检查服务日志。');
+        this.setState({ modal: 'publishDiag' });
+      });
   }
   delApp(id) { fetch('/api/apps/' + id, { method: 'DELETE' }).then(() => this.fetchAll()).catch(() => {}); }
   restartApp(id) { fetch('/api/apps/' + id + '/restart', { method: 'POST' }).then(() => this.fetchAll()).catch(() => {}); }
@@ -1686,7 +1748,8 @@ class Maestro extends MaestroBase {
     }).catch(() => {});
   }
   fetchRelay(id) { fetch('/api/relay/' + id).then((r) => r.ok ? r.json() : []).then((s) => { this.live.relay[id] = Array.isArray(s) ? s : []; this.scheduleRender(); }).catch(() => {}); }
-  fetchPlan(id) { fetch('/api/plan/' + id).then((r) => r.ok ? r.json() : []).then((s) => { this.live.plan[id] = Array.isArray(s) ? s : []; this.scheduleRender(); }).catch(() => {}); }
+  fetchPlan(id) { fetch('/api/plan/' + id).then((r) => r.ok ? r.json() : []).then((s) => { this.live.plan[id] = Array.isArray(s) ? s : []; this.fetchPlanMeta(id); this.scheduleRender(); }).catch(() => {}); }
+  fetchPlanMeta(id) { fetch('/api/plan-meta/' + id).then((r) => r.ok ? r.json() : null).then((m) => { if (m) { this.live.planMeta[id] = m; this.scheduleRender(); } }).catch(() => {}); }
   fetchAgentLog(id) { fetch('/api/agentlog/' + id).then((r) => r.ok ? r.json() : []).then((lines) => { this.state.log[id] = Array.isArray(lines) ? lines : []; this.scheduleRender(); }).catch(() => {}); }
 
   openWS() {
