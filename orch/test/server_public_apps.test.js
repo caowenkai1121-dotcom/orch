@@ -12,3 +12,13 @@ test('published app routes are registered before login gate', () => {
   assert.ok(loginGate >= 0, 'server should keep a login gate for private APIs');
   assert.ok(appRoute < loginGate, 'published app routes must be public and run before the login gate');
 });
+
+test('rewritten published app text assets are not cached', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const cacheHeader = src.indexOf("res.setHeader('Cache-Control', 'no-store')");
+  const rewrite = src.indexOf('appRuntime.rewritePublishedText');
+
+  assert.ok(cacheHeader >= 0, 'server should disable cache for rewritten app assets');
+  assert.ok(rewrite >= 0, 'server should rewrite published app text assets');
+  assert.ok(cacheHeader < rewrite, 'cache header must be set before sending rewritten text assets');
+});

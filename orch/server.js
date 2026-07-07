@@ -463,6 +463,7 @@ async function servePublishedApp(req, res) {
     const ext = path.extname(target).toLowerCase();
     if (['.html', '.css', '.js', '.mjs'].includes(ext)) {
       res.setHeader('Content-Type', appRuntime.publishedTextContentType(ext));
+      res.setHeader('Cache-Control', 'no-store');
       return res.send(appRuntime.rewritePublishedText(fs.readFileSync(target, 'utf8'), row.id));
     }
     return res.sendFile(target);
