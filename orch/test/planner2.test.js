@@ -90,6 +90,22 @@ test('计划诊断:复杂计划缺质量门会给出健康提示', () => {
   assert.ok(r.issues.some((x) => /质量门|验收/.test(x.message)));
 });
 
+test('计划诊断:复杂应用实现步缺少明确落盘产物会降分', () => {
+  const { diagnosePlan } = require('../planner');
+  const task = '前端使用 Vue 后端使用 Java SpringBoot 开发一个 DMS 供应商管理系统';
+  const r = diagnosePlan({ task, steps: [
+    { id: 'backend_impl', agent: 'claude', prompt: '实现后端业务能力', deps: [], expected_outcome: '后端可用' },
+    { id: 'frontend_impl', agent: 'claude', prompt: '实现前端页面', deps: ['backend_impl'], expected_outcome: '前端可用' },
+    { id: 'publish_manifest', agent: 'claude', prompt: '准备发布', deps: ['frontend_impl'], expected_outcome: '可以发布' },
+    { id: 'acceptance_test', agent: 'codex', prompt: '验收测试', deps: ['publish_manifest'], expected_outcome: 'PASS/FAIL' },
+  ] }, task);
+
+  assert.ok(r.score < 80);
+  assert.ok(r.issues.some((x) => x.code === 'missing_artifact_target'));
+  assert.ok(r.issues.some((x) => /backend_impl/.test(x.message)));
+  assert.ok(r.issues.some((x) => /frontend_impl/.test(x.message)));
+});
+
 test('#9 执行器模式:结构坏(重复id)计划带问题回喂 fromLLM 重拆一次', async () => {
   let call = 0;
   const claude = { async run() {

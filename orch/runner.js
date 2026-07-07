@@ -175,6 +175,7 @@ function writePlanFile(taskId, store, dir) {
       lines.push('', '## 交付蓝图');
       if (plan.delivery_blueprint.summary) lines.push('- 建议架构: ' + plan.delivery_blueprint.summary);
       if (Array.isArray(plan.delivery_blueprint.sections)) lines.push('- 必须覆盖: ' + plan.delivery_blueprint.sections.join('、'));
+      if (Array.isArray(plan.delivery_blueprint.checklist)) plan.delivery_blueprint.checklist.forEach((x) => lines.push('- 验收项: ' + x));
     }
     if (plan.diagnostics && Array.isArray(plan.diagnostics.issues)) {
       lines.push('', '## 编排诊断', '- 健康分: ' + (plan.diagnostics.score == null ? '-' : plan.diagnostics.score));

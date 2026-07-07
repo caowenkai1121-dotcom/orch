@@ -119,6 +119,25 @@ test('app runtime: produces deployment diagnostics for publish readiness', () =>
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('app runtime: deployment diagnostics fails when published asset is missing', () => {
+  const dir = tmp('orch-app-missing-asset');
+  fs.mkdirSync(path.join(dir, 'frontend', 'dist', 'assets'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'backend', 'target'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'frontend', 'dist', 'index.html'), [
+    '<script type="module" src="/assets/index.js"></script>',
+    '<link rel="stylesheet" href="/assets/missing.css">',
+  ].join('\n'), 'utf8');
+  fs.writeFileSync(path.join(dir, 'frontend', 'dist', 'assets', 'index.js'), 'console.log("ok")', 'utf8');
+  fs.writeFileSync(path.join(dir, 'backend', 'target', 'weather-tool-1.0.0.jar'), 'jar', 'utf8');
+
+  const report = runtime.deploymentDiagnostics(dir);
+
+  assert.equal(report.ok, false);
+  assert.ok(report.checks.some((x) => x.code === 'static_asset_refs' && !x.ok));
+  assert.ok(report.errors.some((x) => /missing\.css/.test(x)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('app runtime: starts process app on assigned local port', async () => {
   const dir = tmp('orch-app-process');
   fs.writeFileSync(path.join(dir, 'server.js'), [

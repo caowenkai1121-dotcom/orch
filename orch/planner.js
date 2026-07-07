@@ -304,6 +304,13 @@ function diagnosePlan(plan, taskText) {
     if (!/acceptance|test|验收|测试|验证/i.test(txt)) issues.push({ level: 'warn', code: 'missing_acceptance', message: '前后端应用缺少发布验收要求' });
     const docOnly = leaves.filter(({ step }) => /scope_requirements|system_architecture|ux_interaction/.test(String(step.id || '')));
     if (docOnly.length >= 3) issues.push({ level: 'warn', code: 'too_many_doc_steps', message: '前后端应用存在过多独立文档节点，建议合并到会议结论和实现步骤' });
+    leaves.forEach(({ step }) => {
+      const id = String(step.id || '');
+      if (!/(impl|backend|frontend|publish|manifest|domain|experience)/i.test(id) || /(test|review|acceptance|验收|测试|复核)/i.test(id)) return;
+      const st = [id, step.prompt, step.expected_outcome].join(' ');
+      const hasTarget = /frontend\/|backend\/|orch\.app\.json|\/api|[A-Za-z0-9_\-./\\]+\.(?:js|ts|jsx|tsx|css|html|json|md|py|vue|java|sql|go|rs)/.test(st);
+      if (!hasTarget) issues.push({ level: 'warn', code: 'missing_artifact_target', step: id, message: '复杂应用步骤「' + id + '」缺少明确落盘文件、目录、接口或发布清单目标' });
+    });
   }
   const top = (plan && plan.steps) || [];
   const roots = top.filter((s) => s && s.id && (!s.deps || !s.deps.length) && !s.lock);
@@ -625,9 +632,19 @@ function deliveryBlueprint(text) {
   const database = hasAny(lower, ['mysql']) ? '数据库:MySQL 8.0'
     : (hasAny(lower, ['postgres']) ? '数据库:PostgreSQL' : (hasAny(lower, ['sqlite']) ? '数据库:SQLite' : (hasAny(lower, ['天气', 'weather']) ? '数据库:无需数据库，使用天气接口或模拟数据' : (isFullstackBusinessApp(s) ? '数据库:MySQL 8.0 或按业务说明无需数据库' : '数据库:按任务需要'))));
   const publish = isFullstackBusinessApp(s) ? '发布:frontend/dist/index.html + backend/ + orch.app.json + /api 代理' : '发布:提供可直接打开或运行的入口';
+  const checklist = isFullstackBusinessApp(s)
+    ? [
+      '前端构建产物存在 frontend/dist/index.html',
+      '后端服务位于 backend/ 并监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000',
+      '接口统一使用 /api 前缀并列出 API清单',
+      '根目录提供 orch.app.json，声明 staticDir、entry、apiPrefix、backend.start、backend.healthPath',
+      '验收覆盖发布入口、后端健康检查、主要业务流程和应用广场访问',
+    ]
+    : ['产物有明确入口', '说明运行方式', '列出验收步骤'];
   return {
     sections: ['技术架构', '目录结构', 'API清单', '数据模型', '页面清单', '部署发布', '测试验收', '风险边界'],
     summary: [frontend, backend, database, publish].join('；'),
+    checklist,
     fullstack: isFullstackBusinessApp(s),
   };
 }
@@ -635,7 +652,7 @@ function deliveryBlueprint(text) {
 function blueprintPrompt(text) {
   const b = deliveryBlueprint(text);
   if (!b) return '';
-  return '【交付蓝图】必须覆盖:' + b.sections.join('、') + '。建议:' + b.summary + '。';
+  return '【交付蓝图】必须覆盖:' + b.sections.join('、') + '。建议:' + b.summary + '。验收清单:' + b.checklist.join('；') + '。';
 }
 
 function attachDeliveryBlueprint(plan, text) {

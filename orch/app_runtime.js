@@ -91,6 +91,25 @@ function detect(dir, opts) {
   return { type: 'static', dir: root, entry: any || '', staticDir: '', startCmd: '', apiPrefix: '/api', healthPath: '/', port: 0 };
 }
 
+function localAssetRefs(text) {
+  const refs = [];
+  const add = (s) => {
+    const v = String(s || '').trim();
+    if (!v || /^([a-z]+:|#|\/\/)/i.test(v) || /^\/(?:api|apps)(?:\/|$)/.test(v)) return;
+    if (/\.(?:m?js|css|svg|png|jpe?g|gif|webp|ico|json|webmanifest|txt|woff2?|ttf|eot|wasm|map)(?:[?#].*)?$/i.test(v)) refs.push(v.replace(/[?#].*$/, ''));
+  };
+  String(text || '').replace(/\b(?:src|href)=["']([^"']+)["']/gi, (m, v) => { add(v); return m; });
+  String(text || '').replace(/url\((['"]?)([^'")\s]+)\1\)/gi, (m, q, v) => { add(v); return m; });
+  return [...new Set(refs)];
+}
+
+function assetPathFor(app, ref) {
+  const clean = slash(ref || '').replace(/^\.?\//, '');
+  if (!clean) return '';
+  if (ref.startsWith('/')) return joinRel(app.staticDir || path.posix.dirname(app.entry || ''), clean);
+  return joinRel(path.posix.dirname(app.entry || ''), clean);
+}
+
 function deploymentDiagnostics(dir, opts) {
   const root = path.resolve(dir || '.');
   const app = detect(root, opts);
@@ -107,6 +126,7 @@ function deploymentDiagnostics(dir, opts) {
   add('static_dir', staticOk, app.staticDir || '无静态目录');
   add('backend_start', startOk, app.startCmd || '无后端进程');
   add('api_prefix', !!app.apiPrefix, app.apiPrefix || '');
+  let missingAssets = [];
   if (app.entry && !entryOk) errors.push('发布入口不存在:' + app.entry);
   if (app.staticDir && !staticOk) errors.push('静态目录不存在:' + app.staticDir);
   if ((app.type === 'fullstack' || app.type === 'process') && !app.startCmd) errors.push('后端启动命令缺失');
@@ -115,8 +135,11 @@ function deploymentDiagnostics(dir, opts) {
     try {
       const html = fs.readFileSync(path.join(root, app.entry), 'utf8');
       if (/["'=]\/assets\//.test(html) || /["'=]\/api(?=\/)/.test(html)) warnings.push('入口包含根路径资源或接口，发布时会自动重写为 /apps/:id/ 路径。');
+      missingAssets = localAssetRefs(html).map((ref) => ({ ref, file: assetPathFor(app, ref) })).filter((x) => x.file && !exists(root, x.file));
     } catch (e) {}
   }
+  add('static_asset_refs', missingAssets.length === 0, missingAssets.length ? missingAssets.map((x) => x.ref).join('、') : '入口静态资源引用完整');
+  missingAssets.slice(0, 8).forEach((x) => errors.push('静态资源不存在:' + x.ref + ' -> ' + x.file));
   if (app.type === 'fullstack') recommendations.push('应用广场发布后通过 /apps/:id/ 访问，' + (app.apiPrefix || '/api') + ' 请求会代理到后端服务。');
   if (!manifest && app.type === 'fullstack') recommendations.push('建议生成 orch.app.json，写明 staticDir、entry、apiPrefix、backend.start 和 backend.healthPath，提升跨机器部署一致性。');
   if (app.startCmd && /mvn|gradle|spring-boot/i.test(app.startCmd)) recommendations.push('Java/Spring Boot 应用优先构建 jar 后发布，系统会在 backend/target 或 target 中优先复用 jar。');

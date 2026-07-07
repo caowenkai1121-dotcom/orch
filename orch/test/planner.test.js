@@ -653,6 +653,10 @@ test('复杂应用规划带交付蓝图和计划健康评分', async () => {
   assert.match(plan.delivery_blueprint.summary, /Vue/);
   assert.match(plan.delivery_blueprint.summary, /Java|JDK/);
   assert.match(plan.delivery_blueprint.summary, /Spring Boot|SpringBoot/);
+  assert.ok(Array.isArray(plan.delivery_blueprint.checklist));
+  assert.ok(plan.delivery_blueprint.checklist.some((x) => /frontend\/dist\/index\.html/.test(x)));
+  assert.ok(plan.delivery_blueprint.checklist.some((x) => /PORT|ORCH_APP_PORT/.test(x)));
+  assert.ok(plan.delivery_blueprint.checklist.some((x) => /API清单|\/api/.test(x)));
   assert.match(text, /API清单/);
   assert.match(text, /数据模型/);
   assert.match(text, /测试验收/);
