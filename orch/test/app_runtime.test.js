@@ -134,6 +134,16 @@ test('app runtime: serves module scripts with JavaScript MIME', () => {
   assert.ok(!/octet-stream/.test(runtime.publishedTextContentType('.js')));
 });
 
+test('app runtime: rewrites Vite dynamic preload asset paths', () => {
+  const js = 'const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["assets/WeatherDashboard.js","assets/WeatherDashboard.css","./local.js"])))=>i.map(i=>d[i]);';
+
+  const out = runtime.rewritePublishedText(js, 3);
+
+  assert.match(out, /"\/apps\/3\/assets\/WeatherDashboard\.js"/);
+  assert.match(out, /"\/apps\/3\/assets\/WeatherDashboard\.css"/);
+  assert.match(out, /"\.\/local\.js"/);
+});
+
 test('app runtime: gives Java and Spring apps longer startup timeout', () => {
   assert.ok(runtime.startupTimeoutMs({ start_cmd: 'cd backend && mvn spring-boot:run -DskipTests' }) >= 45000);
   assert.ok(runtime.startupTimeoutMs({ start_cmd: 'java -jar target/app.jar' }) >= 45000);

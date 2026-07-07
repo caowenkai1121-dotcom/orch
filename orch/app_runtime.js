@@ -110,7 +110,9 @@ function rewritePublishedText(text, appId) {
   const apiBase = base.replace(/\/$/, '') + '/api';
   return String(text || '')
     .replace(/(["'=])\/assets\//g, '$1' + base + 'assets/')
+    .replace(/(["'`])assets\//g, '$1' + base + 'assets/')
     .replace(/url\((['"]?)\/assets\//g, 'url($1' + base + 'assets/')
+    .replace(/url\((['"]?)assets\//g, 'url($1' + base + 'assets/')
     .replace(/(["'`])\/api(?=\/)/g, '$1' + apiBase);
 }
 
