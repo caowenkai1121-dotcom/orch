@@ -89,8 +89,9 @@ test('#6b codex --json:turn.completed → 真实用量(output_tokens 已含 reas
   const line = JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 22477, output_tokens: 49, reasoning_output_tokens: 42 } });
   assert.deepEqual(parseCodexStream(line).usage, { input: 22477, output: 49 }); // output_tokens 已含 reasoning,不再 +42
 });
-test('#6b codex --json:非 JSON(MCP错误日志)/无关事件忽略', () => {
+test('#6b codex --json:非 JSON 诊断日志忽略,普通正文兜底保留', () => {
   assert.deepEqual(parseCodexStream('2026-... ERROR rmcp::transport worker quit'), {});
+  assert.equal(parseCodexStream('第三方模型直接输出的正文').text, '第三方模型直接输出的正文');
   assert.deepEqual(parseCodexStream(JSON.stringify({ type: 'turn.started' })), {});
 });
 test('#6a codex:命令/文件事件 → 🔧 实时活动(item.started,剥 powershell 包装)', () => {

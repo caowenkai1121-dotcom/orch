@@ -30,7 +30,11 @@ function parseClaudeStream(line) {
 // {"type":"turn.completed","usage":{"input_tokens","output_tokens","reasoning_output_tokens"}} = 真实用量。
 // 夹杂的 MCP 错误日志等非 JSON 行忽略。
 function parseCodexStream(line) {
-  let j; try { j = JSON.parse(line); } catch (e) { return {}; } // 非 JSON(如 rmcp ERROR 日志)忽略
+  let j; try { j = JSON.parse(line); } catch (e) {
+    const s = String(line || '').trim();
+    if (!s || /\brmcp::|\b(ERROR|WARN|DEBUG|INFO)\b|^\d{4}-\d\d-\d\d/i.test(s)) return {};
+    return { text: s };
+  } // 第三方 codex 包装器可能退化为普通文本;诊断日志仍忽略
   const it = j.item;
   if (j.type === 'item.completed' && it && it.type === 'agent_message') return { text: it.text || '' };
   // #6a codex 工具活动:命令/文件事件 → 🔧 实时行(在 item.started 上给"正在做"感;仅进 onLine 不入语义 output)
