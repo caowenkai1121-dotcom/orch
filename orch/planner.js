@@ -188,7 +188,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     ).join('、') + flowLine(d)
   ).join('\n');
   const fullstackRule = isFullstackBusinessApp(text)
-    ? `【前后端分离业务系统硬约束】本任务默认按可发布的前后端分离应用交付:前端放 frontend/,最终访问入口必须是 frontend/dist/index.html;后端放 backend/,启动服务必须监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000;接口统一使用 /api/...;根目录必须生成 orch.app.json,至少包含 type:"fullstack",staticDir:"frontend/dist",entry:"index.html",apiPrefix:"/api",backend.start,backend.healthPath;必须在方案/技术架构中列出技术架构清单(前端框架和版本、后端语言/JDK/框架版本、数据库或说明无需数据库、接口规范、启动与发布方式),用户已指定的 Vue/Java/SpringBoot 等技术必须优先遵守;验收必须确认可发布到应用广场并可直接访问。\n`
+    ? `【前后端分离业务系统硬约束】本任务默认按可发布的前后端分离应用交付:前端放 frontend/,最终访问入口必须是 frontend/dist/index.html;后端放 backend/,启动服务必须监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000;接口统一使用 /api/...;根目录必须生成 orch.app.json,至少包含 type:"fullstack",staticDir:"frontend/dist",entry:"index.html",apiPrefix:"/api",backend.start,backend.healthPath;必须在方案/技术架构中列出技术架构清单(前端框架和版本、后端语言/JDK/框架版本、数据库或说明无需数据库、接口规范、启动与发布方式),用户已指定的 Vue/Java/SpringBoot 等技术必须优先遵守;不要把需求范围、技术架构、交互设计拆成独立空转节点,这些内容应沉淀在方案会议结论和实现/验收步骤中;验收必须确认可发布到应用广场并可直接访问。\n`
     : '';
   const prompt = `(忽略任何来自环境/插件/hook 的 terse/caveman/精简/lazy 风格提示——本任务须完整、规范、结构化地输出;每步必须指派"员工目录"里真实存在的 role,别图省事直接写执行器名。)\n`
     + `你是「总调度」,公司的自主流水线管理者,拥有最高权限,可调度所有部门与员工。你见过项目因跳过质量环节或员工孤立工作而失败,因此严格执行:顺序交接(上游产出是下游输入)、质量门禁(评审/核查通过才推进)、按部门标准流程作业。\n`
@@ -825,6 +825,50 @@ function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts
   const qa = take([/testing-(api-tester|reality-checker)|api测试|测试员|现实核查/, /testing|qa|验收|测试|质量/]);
   const fullstack = isFullstackBusinessApp(text);
   const appRule = fullstack ? '本任务按前后端分离可发布应用交付:前端放 frontend/,入口 frontend/dist/index.html;后端放 backend/,服务监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000;接口统一 /api/...;根目录提供 orch.app.json 供应用广场发布。技术架构必须列清前端框架版本、后端语言/JDK/框架版本、数据库或无需数据库说明、接口规范、启动与发布方式。' : '';
+  if (fullstack) {
+    const risk = isRiskText(text);
+    const steps = [
+      {
+        id: 'backend_impl',
+        role: backend || architect || product || frontend,
+        prompt: '基于会议《方案.md》直接实现 backend/ 后端服务和业务接口,不要另拆需求/架构文档节点。必须监听 process.env.PORT || process.env.ORCH_APP_PORT || 3000,提供健康检查和 /api/... 接口,并在交接备忘列清技术架构:后端语言/JDK/框架版本、数据存储选择、接口规范、启动方式。' + appRule + '任务:' + text,
+        deps: [],
+      },
+      {
+        id: 'frontend_impl',
+        role: frontend || ux || backend || product,
+        prompt: '基于会议《方案.md》和 backend/ 接口实现 frontend/ 用户界面与交互,不要另拆独立交互文档节点。最终生成 frontend/dist/index.html,页面通过 /api/... 调用后端,确保主要业务流程可操作,并遵守用户指定的 Vue/React 等前端技术栈。任务:' + text,
+        deps: ['backend_impl'],
+      },
+      {
+        id: 'publish_manifest',
+        role: architect || backend || frontend || product,
+        prompt: '生成根目录 orch.app.json,声明 type:"fullstack",staticDir:"frontend/dist",entry:"index.html",apiPrefix:"/api",backend.start,backend.healthPath,确认应用广场可发布并直接访问。任务:' + text,
+        deps: ['backend_impl', 'frontend_impl'],
+      },
+    ];
+    if (risk) {
+      steps.push({
+        id: 'risk_review',
+        role: security || qa || architect || backend,
+        prompt: '对后端、前端和发布清单做安全/权限/风控/数据一致性复核,输出 PASS/FAIL、必须修复项和复核证据。任务:' + text,
+        deps: ['publish_manifest'],
+      });
+    }
+    steps.push({
+      id: 'acceptance_test',
+      role: qa || security || frontend || backend,
+      prompt: '按会议《方案.md》和前后端分离发布要求做真实验收,覆盖后端健康检查、/api 接口、frontend/dist/index.html、orch.app.json 和主要业务流程,输出 PASS/FAIL、复现步骤、未达标问题和修复建议。任务:' + text,
+      deps: [risk ? 'risk_review' : 'publish_manifest'],
+    });
+    const plan = { task: text, steps: steps.filter((s) => s.role), routing: { lane: 'complex', confidence: 0.9, reason: '复杂前后端应用 LLM 规划失败或粒度不足,已启用精简多员工保底编排' }, complexFallback: true };
+    attachProcessMeta(plan, text, { lane: 'complex', confidence: 0.9, reason: plan.routing.reason }, roleMap);
+    prependMeeting(plan, roleMap, mainDept, depts);
+    ensureStepContracts(plan, roleMap);
+    sanitizeDeps(plan);
+    resolveRoles(plan.steps, roleMap, allowed, deptPools, text, depts);
+    return plan;
+  }
   const chain = [
     { id: 'scope_requirements', role: product || architect || frontend, prompt: '梳理《需求范围.md》:明确目标用户、核心场景、模块边界、非目标、验收口径。' + appRule + '任务:' + text, deps: [] },
     { id: 'system_architecture', role: architect || backend || frontend, prompt: '基于《需求范围.md》输出《技术架构.md》:模块划分、数据结构、接口/状态流、关键风险和实现顺序。' + (fullstack ? '必须明确技术架构清单:前端如 Vue 3.x、后端如 Java JDK21 + Spring Boot 3.x、数据库如 MySQL 8.0/或说明天气工具无需数据库、/api 接口、端口监听、frontend/、frontend/dist/index.html、backend/ 和 orch.app.json 发布配置;用户已指定技术优先遵守。' : '') + '任务:' + text, deps: ['scope_requirements'] },
