@@ -51,11 +51,31 @@ function packageStart(dir) {
   return '';
 }
 
+function backendStart(root) {
+  const jar = findBuiltJar(root);
+  if (jar) return 'java -jar ' + cmdQuote(jar);
+  const backend = path.join(root, 'backend');
+  if (exists(root, 'backend/package.json')) {
+    const start = packageStart(backend);
+    if (start) return 'cd backend && ' + start;
+  }
+  if (exists(root, 'backend/pom.xml')) return 'cd backend && mvn spring-boot:run -DskipTests';
+  if (exists(root, 'backend/build.gradle') || exists(root, 'backend/build.gradle.kts')) return 'cd backend && gradle bootRun';
+  if (exists(root, 'backend/app.py')) return 'cd backend && python app.py';
+  if (exists(root, 'backend/main.py')) return 'cd backend && python main.py';
+  if (exists(root, 'backend/go.mod')) return 'cd backend && go run .';
+  if (exists(root, 'backend/Cargo.toml')) return 'cd backend && cargo run';
+  return '';
+}
+
 function detect(dir, opts) {
   const root = path.resolve(dir || '.');
   const manifest = readJson(path.join(root, 'orch.app.json'));
   if (manifest) return manifestApp(root, manifest);
   const preferred = opts && opts.entry ? safeRel(opts.entry) : '';
+  const frontendHtml = firstExisting(root, ['frontend/dist/index.html', 'frontend/build/index.html']);
+  const backend = backendStart(root);
+  if (frontendHtml && backend) return { type: 'fullstack', dir: root, entry: frontendHtml, staticDir: path.posix.dirname(frontendHtml), startCmd: backend, apiPrefix: '/api', healthPath: '/', port: 0 };
   if (preferred && exists(root, preferred)) return { type: 'static', dir: root, entry: preferred, staticDir: path.posix.dirname(preferred), startCmd: '', apiPrefix: '/api', healthPath: '/', port: 0 };
   const html = firstExisting(root, ['dist/index.html', 'frontend/dist/index.html', 'build/index.html', 'public/index.html', 'index.html']);
   if (html) return { type: 'static', dir: root, entry: html, staticDir: path.posix.dirname(html), startCmd: '', apiPrefix: '/api', healthPath: '/', port: 0 };
@@ -69,6 +89,38 @@ function detect(dir, opts) {
   if (exists(root, 'Cargo.toml')) return { type: 'process', dir: root, entry: '', staticDir: '', startCmd: 'cargo run', apiPrefix: '/api', healthPath: '/', port: 0 };
   const any = firstExisting(root, fs.existsSync(root) ? fs.readdirSync(root).filter((f) => fs.statSync(path.join(root, f)).isFile()) : []);
   return { type: 'static', dir: root, entry: any || '', staticDir: '', startCmd: '', apiPrefix: '/api', healthPath: '/', port: 0 };
+}
+
+function deploymentDiagnostics(dir, opts) {
+  const root = path.resolve(dir || '.');
+  const app = detect(root, opts);
+  const checks = [];
+  const errors = [];
+  const warnings = [];
+  const recommendations = [];
+  const add = (code, ok, detail) => checks.push({ code, ok: !!ok, detail: detail || '' });
+  const manifest = fs.existsSync(path.join(root, 'orch.app.json'));
+  const entryOk = !app.entry || exists(root, app.entry);
+  const staticOk = !app.staticDir || fs.existsSync(path.join(root, app.staticDir));
+  const startOk = !app.startCmd || String(app.startCmd).trim().length > 0;
+  add('entry_exists', entryOk, app.entry || '无静态入口');
+  add('static_dir', staticOk, app.staticDir || '无静态目录');
+  add('backend_start', startOk, app.startCmd || '无后端进程');
+  add('api_prefix', !!app.apiPrefix, app.apiPrefix || '');
+  if (app.entry && !entryOk) errors.push('发布入口不存在:' + app.entry);
+  if (app.staticDir && !staticOk) errors.push('静态目录不存在:' + app.staticDir);
+  if ((app.type === 'fullstack' || app.type === 'process') && !app.startCmd) errors.push('后端启动命令缺失');
+  if (app.type === 'fullstack' && !manifest) warnings.push('未提供 orch.app.json，已按目录结构推断发布配置，建议补充清单以固定部署行为。');
+  if (app.entry) {
+    try {
+      const html = fs.readFileSync(path.join(root, app.entry), 'utf8');
+      if (/["'=]\/assets\//.test(html) || /["'=]\/api(?=\/)/.test(html)) warnings.push('入口包含根路径资源或接口，发布时会自动重写为 /apps/:id/ 路径。');
+    } catch (e) {}
+  }
+  if (app.type === 'fullstack') recommendations.push('应用广场发布后通过 /apps/:id/ 访问，' + (app.apiPrefix || '/api') + ' 请求会代理到后端服务。');
+  if (!manifest && app.type === 'fullstack') recommendations.push('建议生成 orch.app.json，写明 staticDir、entry、apiPrefix、backend.start 和 backend.healthPath，提升跨机器部署一致性。');
+  if (app.startCmd && /mvn|gradle|spring-boot/i.test(app.startCmd)) recommendations.push('Java/Spring Boot 应用优先构建 jar 后发布，系统会在 backend/target 或 target 中优先复用 jar。');
+  return { ok: errors.length === 0, app, checks, errors, warnings, recommendations };
 }
 
 function freePort() {
@@ -241,4 +293,4 @@ async function proxyRequest(app, req, res, rel) {
   res.send(buf);
 }
 
-module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs, optimizedStartCmd };
+module.exports = { detect, deploymentDiagnostics, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs, optimizedStartCmd };

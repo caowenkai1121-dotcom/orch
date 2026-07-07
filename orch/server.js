@@ -386,10 +386,12 @@ app.get('/api/files/:id', (req, res) => {
 app.post('/api/apps', adminOnly, async (req, res) => {
   const taskId = Number(req.body && req.body.taskId); const t = store.getTask(taskId);
   if (!t || !t.dir) return res.json({ ok: false });
-  const detected = appRuntime.detect(t.dir, { entry: req.body && req.body.entry });
+  const diagnostics = appRuntime.deploymentDiagnostics(t.dir, { entry: req.body && req.body.entry });
+  const detected = diagnostics.app;
   let entry = detected.entry;
   if (!entry && !detected.startCmd) { const fl = listFilesIn(t.dir); entry = fl.find((f) => /(^|\/)index\.html$/i.test(f)) || fl.find((f) => /\.html$/i.test(f)) || fl[0]; }
-  if (!entry && !detected.startCmd) return res.json({ ok: false, error: '无可发布入口' });
+  if (!diagnostics.ok) return res.json({ ok: false, error: diagnostics.errors.join('；') || '部署体检未通过', diagnostics });
+  if (!entry && !detected.startCmd) return res.json({ ok: false, error: '无可发布入口', diagnostics });
   const appId = store.addApp({ name: (req.body && req.body.name) || t.text, taskId, dir: t.dir, entry, type: detected.type, staticDir: detected.staticDir, startCmd: detected.startCmd, apiPrefix: detected.apiPrefix, healthPath: detected.healthPath, port: detected.port });
   if (detected.startCmd) {
     const row = store.getApp(appId);
@@ -401,7 +403,7 @@ app.post('/api/apps', adminOnly, async (req, res) => {
   }
   broadcastRaw({ type: 'apps' });
   const appRow = store.getApp(appId);
-  res.json({ id: appId, entry: appRow.entry, type: appRow.type, status: appRow.status, error: appRow.last_error || '' });
+  res.json({ id: appId, entry: appRow.entry, type: appRow.type, status: appRow.status, error: appRow.last_error || '', diagnostics });
 });
 app.delete('/api/apps/:id', adminOnly, (req, res) => {
   appRuntime.stopApp(Number(req.params.id));

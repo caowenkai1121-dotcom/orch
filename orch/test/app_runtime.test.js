@@ -66,6 +66,59 @@ test('app runtime: reads UTF-8 BOM orch.app.json manifest', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('app runtime: infers fullstack app from frontend dist and built backend jar', () => {
+  const dir = tmp('orch-app-infer-fullstack');
+  fs.mkdirSync(path.join(dir, 'frontend', 'dist'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'backend', 'target'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'frontend', 'dist', 'index.html'), '<h1>Weather</h1>', 'utf8');
+  fs.writeFileSync(path.join(dir, 'backend', 'target', 'weather-tool-1.0.0.jar'), 'jar', 'utf8');
+
+  const app = runtime.detect(dir);
+
+  assert.equal(app.type, 'fullstack');
+  assert.equal(app.entry, 'frontend/dist/index.html');
+  assert.equal(app.staticDir, 'frontend/dist');
+  assert.match(app.startCmd, /java -jar/);
+  assert.match(app.startCmd, /backend\/target\/weather-tool-1\.0\.0\.jar/);
+  assert.equal(app.apiPrefix, '/api');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('app runtime: keeps fullstack detection when publish entry is selected manually', () => {
+  const dir = tmp('orch-app-selected-entry-fullstack');
+  fs.mkdirSync(path.join(dir, 'frontend', 'dist'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'backend', 'target'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'frontend', 'dist', 'index.html'), '<h1>Weather</h1>', 'utf8');
+  fs.writeFileSync(path.join(dir, 'backend', 'target', 'weather-tool-1.0.0.jar'), 'jar', 'utf8');
+
+  const app = runtime.detect(dir, { entry: 'frontend/dist/index.html' });
+
+  assert.equal(app.type, 'fullstack');
+  assert.equal(app.entry, 'frontend/dist/index.html');
+  assert.match(app.startCmd, /java -jar/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('app runtime: produces deployment diagnostics for publish readiness', () => {
+  const dir = tmp('orch-app-diagnostics');
+  fs.mkdirSync(path.join(dir, 'frontend', 'dist', 'assets'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'backend', 'target'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'frontend', 'dist', 'index.html'), '<script type="module" src="/assets/index.js"></script>', 'utf8');
+  fs.writeFileSync(path.join(dir, 'frontend', 'dist', 'assets', 'index.js'), 'fetch("/api/health")', 'utf8');
+  fs.writeFileSync(path.join(dir, 'backend', 'target', 'weather-tool-1.0.0.jar'), 'jar', 'utf8');
+
+  const report = runtime.deploymentDiagnostics(dir);
+
+  assert.equal(report.ok, true);
+  assert.equal(report.app.type, 'fullstack');
+  assert.equal(report.app.entry, 'frontend/dist/index.html');
+  assert.ok(report.checks.some((x) => x.code === 'entry_exists' && x.ok));
+  assert.ok(report.checks.some((x) => x.code === 'backend_start' && x.ok));
+  assert.ok(report.warnings.some((x) => /orch\.app\.json/.test(x)));
+  assert.ok(report.recommendations.some((x) => /应用广场|发布|部署/.test(x)));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('app runtime: starts process app on assigned local port', async () => {
   const dir = tmp('orch-app-process');
   fs.writeFileSync(path.join(dir, 'server.js'), [

@@ -171,6 +171,11 @@ function writePlanFile(taskId, store, dir) {
       decision.validation_errors.slice(0, 6).forEach((x) => lines.push('- 复核错误: ' + x));
       decision.validation_warnings.slice(0, 6).forEach((x) => lines.push('- 复核提醒: ' + x));
     }
+    if (plan.delivery_blueprint) {
+      lines.push('', '## 交付蓝图');
+      if (plan.delivery_blueprint.summary) lines.push('- 建议架构: ' + plan.delivery_blueprint.summary);
+      if (Array.isArray(plan.delivery_blueprint.sections)) lines.push('- 必须覆盖: ' + plan.delivery_blueprint.sections.join('、'));
+    }
     if (plan.diagnostics && Array.isArray(plan.diagnostics.issues)) {
       lines.push('', '## 编排诊断', '- 健康分: ' + (plan.diagnostics.score == null ? '-' : plan.diagnostics.score));
       plan.diagnostics.issues.slice(0, 6).forEach((it) => lines.push('- ' + (it.level || 'info') + ': ' + (it.message || '')));
