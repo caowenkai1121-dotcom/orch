@@ -105,6 +105,15 @@ async function waitHttp(port, healthPath, timeoutMs) {
 
 function patch(update, data) { if (typeof update === 'function') update(data); }
 
+function rewritePublishedText(text, appId) {
+  const base = '/apps/' + encodeURIComponent(String(appId)) + '/';
+  const apiBase = base.replace(/\/$/, '') + '/api';
+  return String(text || '')
+    .replace(/(["'=])\/assets\//g, '$1' + base + 'assets/')
+    .replace(/url\((['"]?)\/assets\//g, 'url($1' + base + 'assets/')
+    .replace(/(["'`])\/api(?=\/)/g, '$1' + apiBase);
+}
+
 async function ensureStarted(app, opts) {
   const id = Number(app.id);
   const cur = running.get(id);
@@ -179,4 +188,4 @@ async function proxyRequest(app, req, res, rel) {
   res.send(buf);
 }
 
-module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort };
+module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText };

@@ -109,3 +109,21 @@ test('app runtime: falls back to free port when manifest port is occupied', asyn
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('app runtime: rewrites published Vue asset and API absolute paths', () => {
+  const html = [
+    '<script type="module" crossorigin src="/assets/index-CD2_olrR.js"></script>',
+    '<link rel="modulepreload" crossorigin href="/assets/vue-vendor-Cj2UIMw7.js">',
+    '<link rel="stylesheet" crossorigin href="/assets/index-BkOuRwwm.css">',
+    '<script>fetch("/api/health")</script>',
+  ].join('\n');
+  const css = '.hero{background:url(/assets/bg.png)}';
+  const js = 'const api="/api/weather/current";import("/assets/chunk.js");';
+
+  assert.match(runtime.rewritePublishedText(html, 3), /src="\/apps\/3\/assets\/index-CD2_olrR\.js"/);
+  assert.match(runtime.rewritePublishedText(html, 3), /href="\/apps\/3\/assets\/index-BkOuRwwm\.css"/);
+  assert.match(runtime.rewritePublishedText(html, 3), /fetch\("\/apps\/3\/api\/health"\)/);
+  assert.match(runtime.rewritePublishedText(css, 3), /url\(\/apps\/3\/assets\/bg\.png\)/);
+  assert.match(runtime.rewritePublishedText(js, 3), /"\/apps\/3\/api\/weather\/current"/);
+  assert.match(runtime.rewritePublishedText(js, 3), /"\/apps\/3\/assets\/chunk\.js"/);
+});
