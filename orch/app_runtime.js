@@ -82,6 +82,14 @@ function freePort() {
   });
 }
 
+function portAvailable(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.listen(Number(port), '127.0.0.1', () => srv.close(() => resolve(true)));
+  });
+}
+
 async function waitHttp(port, healthPath, timeoutMs) {
   const until = Date.now() + (timeoutMs || 8000);
   const hp = healthPath && healthPath.startsWith('/') ? healthPath : '/' + (healthPath || '');
@@ -104,7 +112,8 @@ async function ensureStarted(app, opts) {
   const cmd = app.start_cmd || app.startCmd || '';
   if (!cmd) return app;
   const update = opts && opts.update;
-  const port = Number(app.port) || await freePort();
+  const preferred = Number(app.port) || 0;
+  const port = preferred && await portAvailable(preferred) ? preferred : await freePort();
   patch(update, { port, status: 'starting', lastError: '' });
   const logs = [];
   const child = spawn(cmd, {

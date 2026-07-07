@@ -66,6 +66,11 @@ app.post('/hook/:token', (req, res) => {
   res.json({ id });
 });
 
+// 已发布应用要能直接访问:路由放在登录闸前;管理/发布接口仍在登录闸后
+app.get('/apps/:id', servePublishedApp);
+app.all('/apps/:id/', servePublishedApp);
+app.all('/apps/:id/*splat', servePublishedApp);
+
 // 鉴权闸:此后所有接口都要求登录
 app.use((req, res, next) => { if (req.user) return next(); res.status(401).json({ error: 'unauthorized' }); });
 
@@ -460,10 +465,6 @@ async function servePublishedApp(req, res) {
     return res.sendStatus(404);
   }
 }
-app.get('/apps/:id', servePublishedApp);
-app.all('/apps/:id/', servePublishedApp);
-app.all('/apps/:id/*splat', servePublishedApp);
-
 app.post('/task/:id/continue', (req, res) => {
   const id = Number(req.params.id); const t = store.getTask(id);
   const text = ((req.body && req.body.text) || '').trim();

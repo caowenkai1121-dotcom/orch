@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const runtime = require('../app_runtime');
@@ -82,4 +83,29 @@ test('app runtime: starts process app on assigned local port', async () => {
   assert.ok(updates.some((u) => u.status === 'running'));
   runtime.stopApp(app.id);
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('app runtime: falls back to free port when manifest port is occupied', async () => {
+  const blocker = http.createServer((req, res) => res.end('busy'));
+  await new Promise((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+  const occupied = blocker.address().port;
+  const dir = tmp('orch-app-occupied-port');
+  fs.writeFileSync(path.join(dir, 'server.js'), [
+    "const http = require('http');",
+    "const port = Number(process.env.PORT);",
+    "http.createServer((req, res) => res.end('ok:' + port)).listen(port, '127.0.0.1');",
+  ].join('\n'), 'utf8');
+  const app = { id: 100, dir, type: 'process', start_cmd: 'node server.js', port: occupied, health_path: '/' };
+
+  try {
+    await runtime.ensureStarted(app, { update: (patch) => Object.assign(app, patch), timeoutMs: 3000 });
+    const text = await fetch('http://127.0.0.1:' + app.port + '/').then((r) => r.text());
+
+    assert.notEqual(app.port, occupied);
+    assert.match(text, /ok:/);
+  } finally {
+    runtime.stopApp(app.id);
+    await new Promise((resolve) => blocker.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
