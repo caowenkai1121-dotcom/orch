@@ -139,3 +139,16 @@ test('app runtime: gives Java and Spring apps longer startup timeout', () => {
   assert.ok(runtime.startupTimeoutMs({ start_cmd: 'java -jar target/app.jar' }) >= 45000);
   assert.equal(runtime.startupTimeoutMs({ start_cmd: 'node server.js' }), 8000);
 });
+
+test('app runtime: prefers built Spring Boot jar over maven run command', () => {
+  const dir = tmp('orch-app-spring-jar');
+  fs.mkdirSync(path.join(dir, 'backend', 'target'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'backend', 'target', 'weather-app-1.0.0-SNAPSHOT.jar'), 'jar', 'utf8');
+
+  const cmd = runtime.optimizedStartCmd({ dir, start_cmd: 'cd backend && mvn spring-boot:run -DskipTests' });
+
+  assert.match(cmd, /java -jar/);
+  assert.match(cmd, /backend\/target\/weather-app-1\.0\.0-SNAPSHOT\.jar/);
+  assert.ok(!/spring-boot:run/.test(cmd));
+  fs.rmSync(dir, { recursive: true, force: true });
+});

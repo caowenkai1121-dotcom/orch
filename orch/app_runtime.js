@@ -128,11 +128,37 @@ function startupTimeoutMs(app) {
   return 8000;
 }
 
+function cmdQuote(s) {
+  const v = String(s || '');
+  return process.platform === 'win32' ? JSON.stringify(v) : "'" + v.replace(/'/g, "'\\''") + "'";
+}
+
+function findBuiltJar(root) {
+  const dirs = ['backend/target', 'target'];
+  for (const relDir of dirs) {
+    const abs = path.join(root, relDir);
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) continue;
+    const jar = fs.readdirSync(abs)
+      .filter((f) => /\.jar$/i.test(f) && !/\.(original|sources|javadoc)\.jar$/i.test(f))
+      .sort((a, b) => b.length - a.length)[0];
+    if (jar) return slash(path.posix.join(relDir, jar));
+  }
+  return '';
+}
+
+function optimizedStartCmd(app) {
+  const cmd = String((app && (app.start_cmd || app.startCmd)) || '').trim();
+  if (!cmd) return '';
+  if (!/mvn|gradle|spring-boot/i.test(cmd)) return cmd;
+  const jar = findBuiltJar(path.resolve((app && app.dir) || '.'));
+  return jar ? 'java -jar ' + cmdQuote(jar) : cmd;
+}
+
 async function ensureStarted(app, opts) {
   const id = Number(app.id);
   const cur = running.get(id);
   if (cur && cur.child && !cur.child.killed) return app;
-  const cmd = app.start_cmd || app.startCmd || '';
+  const cmd = optimizedStartCmd(app);
   if (!cmd) return app;
   const update = opts && opts.update;
   const preferred = Number(app.port) || 0;
@@ -203,4 +229,4 @@ async function proxyRequest(app, req, res, rel) {
   res.send(buf);
 }
 
-module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs };
+module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs, optimizedStartCmd };
