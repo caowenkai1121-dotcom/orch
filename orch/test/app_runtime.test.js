@@ -133,3 +133,9 @@ test('app runtime: serves module scripts with JavaScript MIME', () => {
   assert.match(runtime.publishedTextContentType('.mjs'), /javascript/);
   assert.ok(!/octet-stream/.test(runtime.publishedTextContentType('.js')));
 });
+
+test('app runtime: gives Java and Spring apps longer startup timeout', () => {
+  assert.ok(runtime.startupTimeoutMs({ start_cmd: 'cd backend && mvn spring-boot:run -DskipTests' }) >= 45000);
+  assert.ok(runtime.startupTimeoutMs({ start_cmd: 'java -jar target/app.jar' }) >= 45000);
+  assert.equal(runtime.startupTimeoutMs({ start_cmd: 'node server.js' }), 8000);
+});

@@ -122,6 +122,12 @@ function publishedTextContentType(ext) {
   return 'text/plain; charset=utf-8';
 }
 
+function startupTimeoutMs(app) {
+  const cmd = String((app && (app.start_cmd || app.startCmd)) || '').toLowerCase();
+  if (/mvn|gradle|spring-boot|java\s+-jar/.test(cmd)) return 60000;
+  return 8000;
+}
+
 async function ensureStarted(app, opts) {
   const id = Number(app.id);
   const cur = running.get(id);
@@ -153,7 +159,8 @@ async function ensureStarted(app, opts) {
     running.delete(id);
   });
   running.set(id, { child, logs });
-  const ok = await waitHttp(port, app.health_path || app.healthPath || '/', opts && opts.timeoutMs);
+  const timeoutMs = Math.max(Number((opts && opts.timeoutMs) || 0), startupTimeoutMs(app));
+  const ok = await waitHttp(port, app.health_path || app.healthPath || '/', timeoutMs);
   if (!ok) {
     stopApp(id);
     patch(update, { status: 'failed', lastError: 'health check timeout' });
@@ -196,4 +203,4 @@ async function proxyRequest(app, req, res, rel) {
   res.send(buf);
 }
 
-module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType };
+module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs };
