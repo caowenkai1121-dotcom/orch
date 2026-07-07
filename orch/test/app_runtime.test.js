@@ -127,3 +127,9 @@ test('app runtime: rewrites published Vue asset and API absolute paths', () => {
   assert.match(runtime.rewritePublishedText(js, 3), /"\/apps\/3\/api\/weather\/current"/);
   assert.match(runtime.rewritePublishedText(js, 3), /"\/apps\/3\/assets\/chunk\.js"/);
 });
+
+test('app runtime: serves module scripts with JavaScript MIME', () => {
+  assert.match(runtime.publishedTextContentType('.js'), /javascript/);
+  assert.match(runtime.publishedTextContentType('.mjs'), /javascript/);
+  assert.ok(!/octet-stream/.test(runtime.publishedTextContentType('.js')));
+});

@@ -462,8 +462,7 @@ async function servePublishedApp(req, res) {
     if (target !== base && !target.startsWith(base + path.sep) && target !== entry) return res.sendStatus(403);
     const ext = path.extname(target).toLowerCase();
     if (['.html', '.css', '.js', '.mjs'].includes(ext)) {
-      const type = ext === '.html' ? 'html' : (ext === '.css' ? 'css' : 'javascript');
-      res.type(type);
+      res.setHeader('Content-Type', appRuntime.publishedTextContentType(ext));
       return res.send(appRuntime.rewritePublishedText(fs.readFileSync(target, 'utf8'), row.id));
     }
     return res.sendFile(target);

@@ -114,6 +114,14 @@ function rewritePublishedText(text, appId) {
     .replace(/(["'`])\/api(?=\/)/g, '$1' + apiBase);
 }
 
+function publishedTextContentType(ext) {
+  const e = String(ext || '').toLowerCase();
+  if (e === '.html') return 'text/html; charset=utf-8';
+  if (e === '.css') return 'text/css; charset=utf-8';
+  if (e === '.js' || e === '.mjs') return 'application/javascript; charset=utf-8';
+  return 'text/plain; charset=utf-8';
+}
+
 async function ensureStarted(app, opts) {
   const id = Number(app.id);
   const cur = running.get(id);
@@ -188,4 +196,4 @@ async function proxyRequest(app, req, res, rel) {
   res.send(buf);
 }
 
-module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText };
+module.exports = { detect, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType };
