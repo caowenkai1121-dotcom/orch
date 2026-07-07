@@ -90,6 +90,41 @@ test('适配器抛错:该步标失败(非卡running),独立分支仍完成', asy
   assert.equal(done.good.success, true);
 });
 
+test('尾部超时但交付证据完整时按完成收束', async () => {
+  const statuses = [];
+  const adapter = { async run() { return {
+    output: [
+      'All endpoints verified.',
+      'JAR built successfully.',
+      '【交接备忘】',
+      '①修改了 backend/src/main/java/App.java',
+      '②接口 /api/weather 已验证',
+      '⏱ 步骤执行超时被终止(可重试续跑)',
+    ].join('\n'),
+    success: false,
+  }; } };
+  const done = await runPlan(
+    { steps: [{ id: 'backend_impl', agent: 'a', prompt: 'p', deps: [] }] },
+    ctx({ a: adapter }, { onStatus: (sid, st) => statuses.push([sid, st]) })
+  );
+  assert.equal(done.backend_impl.success, true);
+  assert.equal(statuses.at(-1)[1], 'done');
+});
+
+test('尾部超时无交付证据时仍判失败', async () => {
+  const statuses = [];
+  const adapter = { async run() { return {
+    output: '服务仍在运行,等待中...\n⏱ 步骤执行超时被终止(可重试续跑)',
+    success: false,
+  }; } };
+  const done = await runPlan(
+    { steps: [{ id: 'backend_impl', agent: 'a', prompt: 'p', deps: [] }] },
+    ctx({ a: adapter }, { onStatus: (sid, st) => statuses.push([sid, st]) })
+  );
+  assert.equal(done.backend_impl.success, false);
+  assert.equal(statuses.at(-1)[1], 'failed');
+});
+
 test('审查修复:runStep 前置段抛错(如缺 prompt)不掀翻 runPlan,并发兄弟步照常完成', async () => {
   const ok = { async run() { return { output: 'done', success: true }; } };
   const statuses = {};
@@ -348,6 +383,8 @@ test('问我模式仍注入交付铁律与交接备忘', async () => {
   );
   assert.match(seen, /交付铁律/);
   assert.match(seen, /真实写入磁盘文件/);
+  assert.match(seen, /长驻服务/);
+  assert.match(seen, /健康检查后必须停止/);
   assert.match(seen, /交接备忘/);
   assert.match(seen, /NEED_DECISION/);
 });

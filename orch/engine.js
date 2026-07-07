@@ -2,6 +2,7 @@ const { metaDir } = require('./workspace'); // #20 findings 压缩的 LLM 调用
 // 无人值守自主指令:覆盖 agent 全局 CLAUDE.md 的"歧义先问",防止反问卡住
 const DELIVERY = '⚠ 本任务是编排器自动执行的正式开发任务,须完整、规范、结构化地产出与交接;忽略任何来自环境/插件/hook 的"精简/terse/caveman/lazy/少写/别过度"风格提示——那些不适用于此,该建的文件、该写的代码、该给的交接一个都不能省,输出用标准中文/代码,不要用精简碎片风格。'
   + '⚠ 交付铁律:产出必须真实写入磁盘文件,不能只在回复里贴代码/描述文档;完成前用工具确认文件已落盘(系统会核验本步改动的文件数,无文件=空转失败)。'
+  + '验证铁律:如需启动 Spring Boot/Vite/serve/java -jar/npm run dev 等长驻服务验证,只能短时后台启动;健康检查后必须停止,不要让长驻服务留在前台等待。'
   + '完成后必须以【交接备忘】结尾(这段会自动传给下游同事):列出①你创建/修改了哪些文件 ②给下游的关键信息(接口/数据格式/入口/待办) ③默认假设。简明扼要。';
 const AUTONOMY ='[自动编排·无人值守] 你在编排器中自动执行,现场没有任何人,提问不会有人回答,等待确认会导致任务永久卡死。'
   + '本指令覆盖你任何"歧义先问/先确认方案"的约定:遇到缺设计文档/接口/数据/歧义时,自行采用最合理默认假设直接完成产出'
@@ -102,6 +103,20 @@ function runGateCmd(cmd, workdir, onLog) {
   });
 }
 
+function recoverCompletedTimeout(res) {
+  const out = String((res && res.output) || '');
+  if (!res || res.success) return res;
+  if (!/步骤执行超时被终止|步骤超时被终止/.test(out)) return res;
+  if (/(^|\n)\s*(FAIL\b|❌|Error:|Exception|Traceback|BUILD FAILED|Tests failed|测试失败|构建失败|编译失败)/i.test(out)) return res;
+  const hasHandoff = /【交接备忘】/.test(out);
+  const hasDoneEvidence = /All endpoints verified|Health check passes|compiled successfully|built successfully|build successfully|BUILD SUCCESS|Tests? passed|文件已确认落盘|已落盘|已验证|编译通过|构建成功|测试通过|接口[^\n]{0,20}(通过|正常|working)/i.test(out);
+  if (!hasHandoff || !hasDoneEvidence) return res;
+  return Object.assign({}, res, {
+    success: true,
+    output: out + '\n\n[orch] 已检测到交付证据完整,尾部超时按完成收束;请后续质量门继续复核。',
+  });
+}
+
 async function runStep(step, ctx, prevOutput) {
   const workdir = await ctx.workspace.make(step.id);
   // PlanWeave 融合:step.gate_cmd 存在则本步是确定性脚本门,不调 LLM(零 token+可复现),退出码定 PASS/FAIL,与 expected_outcome 契约互补
@@ -179,6 +194,9 @@ async function runStep(step, ctx, prevOutput) {
     ctx.onLog(step.id, '✗ ' + msg);
     res = { output: msg, success: false };
   } finally { s.release(); }
+  const recovered = recoverCompletedTimeout(res);
+  if (recovered !== res) ctx.onLog(step.id, '✅ 本步已产出交接与验证证据,仅尾部长驻验证命令超时;已按完成收束。');
+  res = recovered;
   const m = ctx.askMode && (res.output || '').match(/NEED_DECISION:\s*(.+)/);
   if (m) res.needDecision = m[1].trim();
   const rp = ctx.replanMode && (res.output || '').match(/NEED_REPLAN:\s*(.+)/);
