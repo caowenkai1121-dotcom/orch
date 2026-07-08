@@ -128,6 +128,13 @@ function open(file) {
         .run(d.port == null ? cur.port : Number(d.port), d.status == null ? cur.status : d.status, d.lastError == null ? (d.last_error == null ? cur.last_error : d.last_error) : d.lastError, id);
       return true;
     },
+    // 自动构建完成后回填检测结果(entry/类型/静态目录/后端命令等)
+    setAppDetect(id, d) {
+      const cur = this.getApp(id); if (!cur) return false;
+      db.prepare('UPDATE apps SET entry=?, type=?, static_dir=?, start_cmd=?, api_prefix=?, health_path=? WHERE id=?')
+        .run(d.entry == null ? cur.entry : d.entry, d.type == null ? cur.type : d.type, d.staticDir == null ? cur.static_dir : d.staticDir, d.startCmd == null ? cur.start_cmd : d.startCmd, d.apiPrefix == null ? cur.api_prefix : d.apiPrefix, d.healthPath == null ? cur.health_path : d.healthPath, id);
+      return true;
+    },
     isPublishedTask(taskId) { return !!db.prepare('SELECT 1 FROM apps WHERE task_id=? LIMIT 1').get(taskId); }, // 已发布到应用广场→产出视为公开(仅登录用户)
     // 项目级知识/约定:按项目名(任务用名引用)持久化,注入每个任务简报,免每任务从零猜技术栈
     projectKnowledge(name) { const r = db.prepare('SELECT knowledge FROM project_knowledge WHERE project=?').get(name); return (r && r.knowledge) || ''; },

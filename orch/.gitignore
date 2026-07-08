@@ -9,3 +9,5 @@ err.log
 out.log
 plan.json
 orch.db.bak
+server.err.log
+server.out.log

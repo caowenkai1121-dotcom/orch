@@ -387,6 +387,35 @@ app.get('/api/files/:id', (req, res) => {
 app.post('/api/apps', adminOnly, async (req, res) => {
   const taskId = Number(req.body && req.body.taskId); const t = store.getTask(taskId);
   if (!t || !t.dir) return res.json({ ok: false });
+  // 智能构建:有 build 脚本但无打包产物(直接发布必白屏)→ 先答复"构建中",后台 npm install+build,完成后重新检测并拉起
+  if (appRuntime.buildNeeded(t.dir)) {
+    const appId = store.addApp({ name: (req.body && req.body.name) || t.text, taskId, dir: t.dir, entry: '', type: 'building', status: 'building' });
+    res.json({ id: appId, status: 'building', building: true });
+    store.addTaskMsg(taskId, 'system', '🚀 发布:检测到需要构建的前端项目,正在自动 npm install + npm run build(可能需数分钟),完成后自动上架并拉起后端。');
+    broadcastRaw({ type: 'apps' }); broadcastRaw({ type: 'msg', taskId });
+    (async () => {
+      const r = await appRuntime.runBuild(t.dir, () => {});
+      if (!r.ok) {
+        store.setAppRuntime(appId, { status: 'failed', lastError: '自动构建失败(' + r.stage + '):' + String(r.detail || '').slice(-300) });
+        store.addTaskMsg(taskId, 'system', '🚀 发布失败:自动构建未通过(' + r.stage + ')。可「继续开发」让团队修复构建错误后重新发布。\n' + String(r.detail || '').slice(-400));
+        broadcastRaw({ type: 'apps' }); broadcastRaw({ type: 'msg', taskId });
+        return;
+      }
+      const d2 = appRuntime.deploymentDiagnostics(t.dir, { entry: req.body && req.body.entry });
+      const a2 = d2.app;
+      store.setAppDetect(appId, { entry: a2.entry, type: a2.type, staticDir: a2.staticDir, startCmd: a2.startCmd, apiPrefix: a2.apiPrefix, healthPath: a2.healthPath });
+      store.setAppRuntime(appId, { status: a2.startCmd ? 'stopped' : 'ready', lastError: '' });
+      const row = store.getApp(appId);
+      if (a2.startCmd) {
+        try { await appRuntime.ensureStarted(row, { update: (patch) => { Object.assign(row, patch); store.setAppRuntime(appId, patch); broadcastRaw({ type: 'apps' }); }, timeoutMs: 8000 }); }
+        catch (e) { store.setAppRuntime(appId, { status: 'failed', lastError: (e && e.message) || String(e) }); }
+      }
+      const done = store.getApp(appId);
+      store.addTaskMsg(taskId, 'system', done.status === 'failed' ? ('🚀 构建成功但启动失败:' + (done.last_error || '')) : '🚀 构建完成,应用已上架应用广场' + (a2.startCmd ? '(后端已拉起,接口自动代理)' : '') + '。');
+      broadcastRaw({ type: 'apps' }); broadcastRaw({ type: 'msg', taskId });
+    })().catch(() => {});
+    return;
+  }
   const diagnostics = appRuntime.deploymentDiagnostics(t.dir, { entry: req.body && req.body.entry });
   const detected = diagnostics.app;
   let entry = detected.entry;
@@ -444,6 +473,7 @@ function appApiHit(row, rel) {
 async function servePublishedApp(req, res) {
   const row = store.getApp(Number(req.params.id));
   if (!row) return res.sendStatus(404);
+  if (row.status === 'building') return res.status(503).send('应用正在自动构建,请稍候刷新(构建完成会自动上架)');
   const rel = appRouteRel(req);
   if (appApiHit(row, rel)) {
     try {

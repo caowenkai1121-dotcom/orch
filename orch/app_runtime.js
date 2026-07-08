@@ -51,9 +51,23 @@ function packageStart(dir) {
   return '';
 }
 
+// 根级后端识别:Vite/React 全栈常见布局是根 package.json 带 api/server 脚本 + server/ 目录(而非 backend/ 子项目)。
+// 漏识别会把全栈判成 static → 后端不拉起 → 前端 API 全 404(发布"没反应"的真实案例:DMS 供应商系统)。
+function rootBackendStart(root) {
+  const pkg = readJson(path.join(root, 'package.json'));
+  const s = (pkg && pkg.scripts) || {};
+  for (const k of ['api', 'server', 'start:api', 'serve:api', 'backend', 'start:server']) if (s[k]) return 'npm run ' + k;
+  const entry = firstExisting(root, ['server/index.mjs', 'server/index.js', 'server.mjs', 'server.js', 'api/index.mjs', 'api/index.js']);
+  // server.js 可能是前端同名文件,须真被 scripts 引用或位于 server/ 目录才算
+  if (entry && (entry.startsWith('server/') || entry.startsWith('api/') || Object.values(s).some((v) => String(v).includes(entry)))) return 'node ' + cmdQuote(entry);
+  return '';
+}
+
 function backendStart(root) {
   const jar = findBuiltJar(root);
   if (jar) return 'java -jar ' + cmdQuote(jar);
+  const rootBackend = rootBackendStart(root);
+  if (rootBackend) return rootBackend;
   const backend = path.join(root, 'backend');
   if (exists(root, 'backend/package.json')) {
     const start = packageStart(backend);
@@ -73,7 +87,8 @@ function detect(dir, opts) {
   const manifest = readJson(path.join(root, 'orch.app.json'));
   if (manifest) return manifestApp(root, manifest);
   const preferred = opts && opts.entry ? safeRel(opts.entry) : '';
-  const frontendHtml = firstExisting(root, ['frontend/dist/index.html', 'frontend/build/index.html']);
+  // 全栈判定的前端产物也看根级 dist/build(Vite 单仓全栈布局),不只 frontend/ 子目录
+  const frontendHtml = firstExisting(root, ['frontend/dist/index.html', 'frontend/build/index.html', 'dist/index.html', 'build/index.html']);
   const backend = backendStart(root);
   if (frontendHtml && backend) return { type: 'fullstack', dir: root, entry: frontendHtml, staticDir: path.posix.dirname(frontendHtml), startCmd: backend, apiPrefix: '/api', healthPath: '/', port: 0 };
   if (preferred && exists(root, preferred)) return { type: 'static', dir: root, entry: preferred, staticDir: path.posix.dirname(preferred), startCmd: '', apiPrefix: '/api', healthPath: '/', port: 0 };
@@ -139,11 +154,38 @@ function deploymentDiagnostics(dir, opts) {
     } catch (e) {}
   }
   add('static_asset_refs', missingAssets.length === 0, missingAssets.length ? missingAssets.map((x) => x.ref).join('、') : '入口静态资源引用完整');
+  if (buildNeeded(root)) { add('build_artifact', false, '有 build 脚本但无打包产物'); warnings.push('检测到需构建的前端项目且无打包产物:发布时会自动 npm install + npm run build(可能需数分钟)。'); }
   missingAssets.slice(0, 8).forEach((x) => errors.push('静态资源不存在:' + x.ref + ' -> ' + x.file));
   if (app.type === 'fullstack') recommendations.push('应用广场发布后通过 /apps/:id/ 访问，' + (app.apiPrefix || '/api') + ' 请求会代理到后端服务。');
   if (!manifest && app.type === 'fullstack') recommendations.push('建议生成 orch.app.json，写明 staticDir、entry、apiPrefix、backend.start 和 backend.healthPath，提升跨机器部署一致性。');
   if (app.startCmd && /mvn|gradle|spring-boot/i.test(app.startCmd)) recommendations.push('Java/Spring Boot 应用优先构建 jar 后发布，系统会在 backend/target 或 target 中优先复用 jar。');
   return { ok: errors.length === 0, app, checks, errors, warnings, recommendations };
+}
+
+// 需构建未构建:有 build 脚本但没有任何打包产物 → 发布前须先构建(否则入口落到引用 /src/*.tsx 的源码 index.html,必白屏)
+function buildNeeded(root) {
+  const pkg = readJson(path.join(root, 'package.json'));
+  if (!pkg || !pkg.scripts || !pkg.scripts.build) return false;
+  return !firstExisting(root, ['dist/index.html', 'build/index.html', 'frontend/dist/index.html', 'frontend/build/index.html']);
+}
+// 自动构建:npm install(缺 node_modules 时)+ npm run build。spawn 异步不卡事件循环,复用步骤超时守卫。
+async function runBuild(root, onLine) {
+  const run = (cmd) => new Promise((resolve) => {
+    const p = spawn(cmd, { cwd: root, shell: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const T = require('./adapters/steptimeout').arm(p);
+    let out = '';
+    const cap = (b) => { const s = b.toString(); out += s; if (onLine) s.split(/\r?\n/).filter(Boolean).forEach((l) => onLine(l.slice(0, 300))); };
+    p.stdout.on('data', cap); p.stderr.on('data', cap);
+    p.on('close', (code) => { T.clear(); resolve({ code: T.timedOut() ? -2 : code, out }); });
+    p.on('error', (e) => { T.clear(); resolve({ code: -1, out: String(e) }); });
+  });
+  if (!fs.existsSync(path.join(root, 'node_modules'))) {
+    const i = await run('npm install --no-audit --no-fund');
+    if (i.code !== 0) return { ok: false, stage: 'install', detail: i.out.slice(-1200) };
+  }
+  const b = await run('npm run build');
+  if (b.code !== 0) return { ok: false, stage: 'build', detail: b.out.slice(-1200) };
+  return { ok: true };
 }
 
 function freePort() {
@@ -316,4 +358,4 @@ async function proxyRequest(app, req, res, rel) {
   res.send(buf);
 }
 
-module.exports = { detect, deploymentDiagnostics, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs, optimizedStartCmd };
+module.exports = { detect, deploymentDiagnostics, ensureStarted, stopApp, logs, proxyRequest, freePort, rewritePublishedText, publishedTextContentType, startupTimeoutMs, optimizedStartCmd, buildNeeded, runBuild };

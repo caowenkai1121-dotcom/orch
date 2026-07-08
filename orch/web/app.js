@@ -980,7 +980,7 @@ class Maestro extends MaestroBase {
     v.appOpen = !!openApp; v.appList = !openApp; v.curApp = openApp || {};
     v.closeApp = () => this.setState({ openApp: null });
     const appTypeLabel = (t) => t === 'fullstack' ? '前后端' : (t === 'process' ? '进程' : '静态');
-    const appStatusLabel = (s) => ({ ready: '可访问', running: '运行中', starting: '启动中', stopped: '已停止', failed: '失败' }[s || 'ready'] || (s || '可访问'));
+    const appStatusLabel = (s) => ({ ready: '可访问', running: '运行中', starting: '启动中', stopped: '已停止', failed: '失败', building: '构建中…' }[s || 'ready'] || (s || '可访问'));
     v.apps = (this.live.apps || []).map((a) => ({ ...a, typeLabel: appTypeLabel(a.type), statusLabel: appStatusLabel(a.status), canDel: !!(this.state.me && this.state.me.admin), canOps: !!(this.state.me && this.state.me.admin), open: () => this.setState({ openApp: a }), openTask: () => this.go('task', { taskId: a.taskId }), restart: () => this.restartApp(a.id), stop: () => this.stopApp(a.id), logs: () => this.showAppLogs(a.id), del: () => this.delApp(a.id) }));
     v.modalPublishDiag = this.state.modal === 'publishDiag';
     const pd = this.live.publishDiag || {};
