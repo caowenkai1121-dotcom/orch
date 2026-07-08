@@ -43,7 +43,7 @@ test('#9 lintPlan 捕获结构错:重复id/缺指派/loop缺body/空', () => {
 
 test('提速:员工模式首版可接受(role合法)直接用,不花昂贵回喂;重复id交 sanitizeDeps 去重', async () => {
   let call = 0;
-  const claude = { async run() { call++; return { output: '{"steps":[{"id":"a","role":"r1","prompt":"p","deps":[]},{"id":"a","role":"r1","prompt":"q","deps":[]}]}', success: true }; } };
+  const claude = { async run() { call++; return { output: '{"steps":[{"id":"a","role":"r1","prompt":"实现功能模块:创建 index.html 并自测通过","deps":[]},{"id":"a","role":"r1","prompt":"实现另一模块:创建 app.js 并自测通过","deps":[]}]}', success: true }; } };
   const roles = [{ id: 'r1', dept: 'dev', name: 'Dev', description: '', prompt: '角色', executor: 'claude' }];
   const plan = await makePlan('做个东西', { mode: 'llm', agents: ['claude'], roles, depts: [], refine: false, templatesDir: TPL, claude });
   assert.equal(call, 1);                                        // 首版 role 合法(rmOk 通过)→ 跳过一次昂贵 LLM 回喂

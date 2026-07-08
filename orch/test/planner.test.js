@@ -344,7 +344,7 @@ test('短但明确的任务不做需求细化,只保留一次规划调用', asyn
   let calls = 0;
   const claude = { async run() {
     calls++;
-    return { output: '{"steps":[{"id":"fix_copy","agent":"claude","prompt":"修复按钮文案","deps":[]}]}', success: true };
+    return { output: '{"steps":[{"id":"fix_copy","agent":"claude","prompt":"修复登录按钮的文案错误:改正错别字并保持原有样式不变","deps":[]}]}', success: true };
   } };
   const plan = await makePlan('修复登录按钮文案', { agents: ['claude', 'codex'], roles: [], depts: [], refine: true, templatesDir: __dirname, claude });
   assert.equal(calls, 1);
@@ -359,7 +359,7 @@ test('复杂员工规划用本地主部门判断,不额外调用任务分派LLM'
   ];
   const claude = { async run() {
     calls++;
-    return { output: '{"steps":[{"id":"impl_frontend","role":"engineering-frontend-developer","prompt":"实现客户列表、编辑和权限校验页面","deps":[]},{"id":"verify","role":"testing-reality-checker","prompt":"验收客户管理后台","deps":["impl_frontend"]}]}', success: true };
+    return { output: '{"steps":[{"id":"impl_frontend","role":"engineering-frontend-developer","prompt":"实现客户列表、编辑和权限校验页面","deps":[]},{"id":"verify","role":"testing-reality-checker","prompt":"验收客户管理后台:逐项核对列表、编辑与权限校验功能","deps":["impl_frontend"]}]}', success: true };
   } };
   const plan = await makePlan('开发一个客户管理后台,包含列表、编辑、权限校验和验收', { agents: ['claude', 'codex'], roles, depts: [{ id: 'engineering', name: '工程部' }, { id: 'testing', name: '测试部' }], refine: false, templatesDir: __dirname, claude });
   assert.equal(calls, 1);

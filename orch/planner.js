@@ -200,11 +200,11 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (mainDept && !deptId ? `(目录说明:主负责部门员工带完整能力档案;其他部门员工仅一句话简介,借调后其完整角色卡会在执行时自动注入。)\n` : '')
     + fullstackRule
     + `先在心中完成任务分析(不要输出):任务类型、主产物、关键模块、必选员工、可选员工、质量门、并发冲突、验收口径。然后再拆步骤。\n`
-    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出(质量门据此判定)"、"why":"一句话:为什么这位员工的能力最适合这一步(依据其能力档案,选人要能说出理由)"。role 必须取员工目录中的员工 id。`
+    + `把下面的任务拆成 JSON,字段 steps,每步 {id,role,prompt,deps},可选 "expected_outcome":"一句话本步验收标准/预期产出(质量门据此判定)"、"why":"一句话:依据该员工能力档案里的具体能力点(如'擅长OWASP逐项安全审查'/'精于REST接口契约设计'/'专长增删改查数据层')说明为何是本步最对口人选;必须写出专精匹配点,不能只写部门名或'他能做'"。role 必须取员工目录中的员工 id。`
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。steps 数组顺序即最终执行顺序:系统会严格按数组顺序依次执行(前一步完成才开始下一步),请按正确的先后次序排列步骤,并用 deps 写清逻辑依赖(上游产出会自动交接给下游)。纯审查/分析且确定不改文件的步可加 "permission":"read" 在只读沙箱运行(会改文件的步不要加)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
-    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作,或虽是单文件但含多个可独立交付的功能点(如"待办应用"的 增删/标记完成/本地存储/筛选),都要按功能点/模块细分成多步(复杂任务会自动在前面插入"方案会议"阶段,你只需专注把实现步拆细拆清,别自己加会议步)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 scaffold_ui/impl_add_del/impl_storage/impl_filter/self_test),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让画布能看出每个角色在哪个关键节点做什么,别把多个功能点塞进一步(真正单一产出的简单任务才保持1-2步,别为拆而拆);2)只挑真正需要的员工,部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入)、写明内容丰满度要求(示例数据条数、字段完整性、空态/错误态);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名;6)凡产出需要安装依赖/构建/启动服务的项目,计划中必须有一步交付根目录 README.md(技术栈/安装/启动命令与端口/默认账号/常见问题),并在最后安排一步"按 README 从零跑通"的真实自测——不能只靠代码审查;7)前端若用构建工具(Vite/Webpack),要求执行 npm run build 产出 dist 并确认构建通过(发布上架依赖构建产物)。只输出 JSON,不要解释。`
+    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作,或虽是单文件但含多个可独立交付的功能点(如"待办应用"的 增删/标记完成/本地存储/筛选),都要按功能点/模块细分成多步(复杂任务会自动在前面插入"方案会议"阶段,你只需专注把实现步拆细拆清,别自己加会议步)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 scaffold_ui/impl_add_del/impl_storage/impl_filter/self_test),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让画布能看出每个角色在哪个关键节点做什么,别把多个功能点塞进一步(真正单一产出的简单任务才保持1-2步,别为拆而拆);2)选人只看能力对口,绝不为用而用:选人的唯一依据是"员工能力档案与本步任务的匹配度"——把每个环节交给能力最专精的员工(安全审查给安全专家、接口契约给后端架构、页面交互给前端、文案给内容运营、验收给测试员),读能力档案的身份/规则/交付/判定选出真正对口的人;一个员工能胜任连续几步就让他连做,不要为了"多角色协作/用满部门"而换人或硬塞员工;宁可3个真正对口的员工,也不要6个勉强沾边的;只有本步确需现有员工不具备的专精时才跨部门借调。员工数由任务真实需要决定,不由"看起来专业/热闹"决定。部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入)、写明内容丰满度要求(示例数据条数、字段完整性、空态/错误态);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名;6)凡产出需要安装依赖/构建/启动服务的项目,计划中必须有一步交付根目录 README.md(技术栈/安装/启动命令与端口/默认账号/常见问题),并在最后安排一步"按 README 从零跑通"的真实自测——不能只靠代码审查;7)前端若用构建工具(Vite/Webpack),要求执行 npm run build 产出 dist 并确认构建通过(发布上架依赖构建产物)。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
@@ -273,6 +273,20 @@ function lintPlan(plan, hasRole) {
 }
 function actionableLint(problems) {
   return (problems || []).filter((p) => !/步骤 id 重复/.test(p)); // 重复 id 保持旧策略:交给 sanitizeDeps 去重,避免多花一次 LLM
+}
+
+// 拆解质量硬校验:叶子步 prompt 过短 = 执行员工缺信息(没写负责什么/产出哪些文件),产出必差。
+// 仅用于 LLM 拆解的回喂重拆(不进 lintPlan——edit-plan 用它拦保存,用户手编短指令是合理的)。
+function thinPrompts(plan) {
+  const out = [];
+  const walk = (arr) => (arr || []).forEach((s) => {
+    if (!s) return;
+    if (s.body) { walk(s.body); return; }
+    const p = String(s.prompt || '').trim();
+    if (s.id && p && p.length < 15) out.push('步骤「' + s.id + '」prompt 过于简略(' + p.length + '字):写清你(角色)负责什么、产出哪些文件、验收口径');
+  });
+  walk(plan && plan.steps);
+  return out;
 }
 
 // 编排健康诊断:只给操作者/复盘看,不改变执行语义。目标是让"为什么这算好计划"可检查。
@@ -873,6 +887,20 @@ function complexPlanSufficient(plan, text, roleMap) {
   return true;
 }
 
+// 员工目录贫乏(专职角色全匹配不上)时的退化保底:绝不产出空计划落库(空计划会被执行层判 noWork 失败,
+// 规划层就该兜住)——把整任务交给本地最匹配员工单步直做,员工也没有则裸执行器
+function degradeSingleStepPlan(text, roles, roleMap, allowed, deptPools, depts) {
+  const rid = pickRoleLocal(text, roles);
+  const step = rid
+    ? { id: 'build_all', role: rid, prompt: '完整完成本任务:自行拆分内部工序,产出全部所需文件并自测通过。任务:' + text, deps: [] }
+    : { id: 'build_all', agent: allowed[0], prompt: '完整完成本任务:自行拆分内部工序,产出全部所需文件并自测通过。任务:' + text, deps: [] };
+  const plan = { task: text, steps: [step], routing: { lane: 'complex', confidence: 0.5, reason: '员工目录过少,保底编排退化为单员工直做' }, complexFallback: true };
+  ensureStepContracts(plan, roleMap);
+  sanitizeDeps(plan);
+  resolveRoles(plan.steps, roleMap, allowed, deptPools, text, depts);
+  return plan;
+}
+
 function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts, mainDept) {
   const used = new Set();
   const take = (patterns) => { const id = findRoleBy(roles, patterns, used); if (id) used.add(id); return id; };
@@ -921,7 +949,9 @@ function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts
       prompt: '按会议《方案.md》和前后端分离发布要求做真实验收,覆盖后端健康检查、/api 接口、frontend/dist/index.html、orch.app.json 和主要业务流程,输出 PASS/FAIL、复现步骤、未达标问题和修复建议。任务:' + text,
       deps: [risk ? 'risk_review' : 'publish_manifest'],
     });
-    const plan = { task: text, steps: steps.filter((s) => s.role), routing: { lane: 'complex', confidence: 0.9, reason: '复杂前后端应用 LLM 规划失败或粒度不足,已启用精简多员工保底编排' }, complexFallback: true };
+    const kept = steps.filter((s) => s.role);
+    if (!kept.length) return degradeSingleStepPlan(text, roles, roleMap, allowed, deptPools, depts); // 全滤空 → 退化单步,绝不空计划
+    const plan = { task: text, steps: kept, routing: { lane: 'complex', confidence: 0.9, reason: '复杂前后端应用 LLM 规划失败或粒度不足,已启用精简多员工保底编排' }, complexFallback: true };
     attachProcessMeta(plan, text, { lane: 'complex', confidence: 0.9, reason: plan.routing.reason }, roleMap);
     prependMeeting(plan, roleMap, mainDept, depts);
     ensureStepContracts(plan, roleMap);
@@ -946,6 +976,7 @@ function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts
     if (acceptance) acceptance.deps = ['publish_manifest', 'risk_review'];
   }
   const steps = chain.filter((s) => s.role);
+  if (!steps.length) return degradeSingleStepPlan(text, roles, roleMap, allowed, deptPools, depts); // 全滤空 → 退化单步,绝不空计划
   const plan = { task: text, steps, routing: { lane: 'complex', confidence: 0.9, reason: '复杂任务 LLM 规划失败或粒度不足,已启用本地多员工保底编排' }, complexFallback: true };
   attachProcessMeta(plan, text, { lane: 'complex', confidence: 0.9, reason: plan.routing.reason }, roleMap);
   prependMeeting(plan, roleMap, mainDept, depts);
@@ -1018,12 +1049,13 @@ async function makePlan(text, opts) {
       // 接受条件:每步是合法 role,或 LLM 夹带的裸合法 agent(容忍夹带,resolveRoles 会把裸 agent coerce 到部门执行器池);非法 role 仍视为失败
       const rmOk = (s) => s.type === 'loop' ? (Array.isArray(s.body) && s.body.length && s.body.every(rmOk)) : (roleIds.includes(s.role) || (!s.role && allowed.includes(s.agent)));
       // 提速:首版计划已可接受(结构合法)就直接用,不再花一次昂贵 LLM 回喂重拆;仅当首版不可接受(非法员工/缺指派/loop缺body)才带问题回喂一次
-      if (!p.steps.every(rmOk) || actionableLint(lintPlan(p, true)).length) {
+      if (!p.steps.every(rmOk) || actionableLint(lintPlan(p, true)).length || thinPrompts(p).length) {
         if (!validateRoles(p, roleIds)) coerceRoles(p.steps, roleIds);
         const bad = validateRoles(p, roleIds) ? [] : badRoles(p, roleIds);
         const lint = actionableLint(lintPlan(p, true));
-        if (bad.length || lint.length) {
-          const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint].join('；');
+        const thin = thinPrompts(p); // 拆解质量:prompt 过短的步回喂要求补全职责/产出物/验收
+        if (bad.length || lint.length || thin.length) {
+          const fb = [...bad.map((r) => '员工id「' + r + '」不在员工目录'), ...lint, ...thin].join('；');
           try { const p2 = await fromLLMRoles(brief, claude, deptRoles, depts, orch, dept, chiefMemo, fb, mainDept); coerceRoles(p2.steps, roleIds); if (p2.steps.every(rmOk) && !actionableLint(lintPlan(p2, true)).length) p = p2; } catch (e) {}
         }
       }
@@ -1045,7 +1077,7 @@ async function makePlan(text, opts) {
   if (orch && claude) {
     try {
       let p = await fromLLM(brief, claude, allowed, orch);
-      const lint = lintPlan(p, false); // #9 执行器模式同样体检:坏计划带问题回喂重拆一次
+      const lint = [...lintPlan(p, false), ...thinPrompts(p)]; // #9 执行器模式同样体检(结构+prompt过短):坏计划带问题回喂重拆一次
       if (lint.length) { try { const p2 = await fromLLM(brief, claude, allowed, orch, lint.join('；')); if (validate(p2, allowed) && !lintPlan(p2, false).length) p = p2; } catch (e) {} }
       if (validate(p, allowed)) { prependMeeting(p, roleMap); ensureStepContracts(p, roleMap); return finish(mark(diag(sanitizeDeps(p))), 'orchestration-llm'); } // 执行器模式也前置方案会议(复杂计划)
     } catch (e) {}
@@ -1058,7 +1090,7 @@ async function makePlan(text, opts) {
   if (claude && allowed.length > 1) {
     try {
       let p = await fromLLM(brief, claude, allowed);
-      const lint = lintPlan(p, false); // #9 执行器模式体检 + 回喂
+      const lint = [...lintPlan(p, false), ...thinPrompts(p)]; // #9 执行器模式体检(结构+prompt过短)+ 回喂
       if (lint.length) { try { const p2 = await fromLLM(brief, claude, allowed, undefined, lint.join('；')); if (validate(p2, allowed) && !lintPlan(p2, false).length) p = p2; } catch (e) {} }
       if (validate(p, allowed)) { prependMeeting(p, roleMap); ensureStepContracts(p, roleMap); return finish(mark(diag(sanitizeDeps(p))), 'executor-llm'); } // 执行器模式也前置方案会议(复杂计划)
     } catch (e) {}
@@ -1073,4 +1105,4 @@ async function makePlan(text, opts) {
   return finish(mark(diag(ensureStepContracts({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] }, roleMap))), 'fallback');
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, sequentializeSteps, lintPlan, diagnosePlan, attachPlanDiagnostics, mergeEditedPlan, extractJson, fill, prependMeeting, ensureStepContracts, isRiskText, makeProcessMeta, validateCrewPlan };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, sequentializeSteps, lintPlan, thinPrompts, diagnosePlan, attachPlanDiagnostics, mergeEditedPlan, extractJson, fill, prependMeeting, ensureStepContracts, isRiskText, makeProcessMeta, validateCrewPlan };

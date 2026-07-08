@@ -1011,6 +1011,8 @@ async function execute(taskId, plan, deps, opts) {
     return '总任务: ' + (task.text || '') + '\n你负责流水线第 ' + (i + 1) + '/' + flat.length + ' 步「' + sid + '」'
       + ((s.deps && s.deps.length) ? ',上游: ' + s.deps.join(', ') : '')
       + (down.length ? ',你的产出将交接给: ' + down.join(', ') : ',你是最后一步,交付即收尾') + '。'
+      // 会议结论贯穿:顺序执行下只有首个实现步直接收到方案交接,后续步经交接链会稀释——每步 brief 点名方案铁律
+      + (plan.meeting ? '\n【方案铁律】本任务已开过方案会议,工作目录《方案.md》是全部实现步的唯一依据:开工先读,技术选型/接口约定/分工/验收一律以它为准;与本步指令冲突时以《方案.md》为准并在交接备忘注明。' : '')
       + (projKnow ? '\n【本项目约定】(同项目所有任务遵守)\n' + projKnow : '');
   };
 

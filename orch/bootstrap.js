@@ -85,6 +85,14 @@ function recoverZombies(store) {
     (store.getTask(t.id).steps || []).forEach((s) => { if (s.status === 'running') { store.setStep(t.id, s.step_id, s.agent, 'failed', s.output); store.addEvent(t.id, 'status', { step: s.step_id, v: 'failed' }); } });
   });
   if (zombies.length) console.log('恢复中断任务:', zombies.length, '个(已标记失败,可重试续跑)');
+  // meeting 态任务:会议数据全在库里,重启只丢了自动收敛协程(开场发言/共识判定)。
+  // 链路仍通——用户发言会触发员工回应+重新判定,手动结束也可;但没人提示的话用户会干等。不标失败(数据没坏)。
+  store.listTasks().filter((t) => t.status === 'meeting').forEach((t) => {
+    const mt = store.getMeeting && store.getMeeting(t.id);
+    if (!mt || mt.status !== 'open') return;
+    store.addTaskMsg(t.id, 'system', '⚠ 服务重启过:会议仍开着,自动讨论已中断。进入会议室发言(员工会回应并重新判定收束),或点「结束会议 · 生成方案」直接继续。');
+    if (store.addMeetingMsg) store.addMeetingMsg(t.id, { role: 'system', name: '会议室', avatar: '🏛', text: '服务重启过,自动讨论中断。你发言即可唤醒讨论,或直接点「结束会议 · 生成方案」。' });
+  });
 }
 
 // 执行器健康:每个 CLI agent 是否可调用 + 版本(启动跑一次,缓存)
