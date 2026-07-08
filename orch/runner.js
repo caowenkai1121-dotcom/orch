@@ -214,9 +214,31 @@ async function runTask(taskId, deps) {
   const rec = runs && (runs.get(taskId) || (runs.set(taskId, { cancelled: false, paused: false, children: new Set(), skip: new Set(), notes: [] }), runs.get(taskId)));
   if (rec) { rec.cancelled = false; rec.paused = false; } // 复用旧 rec 时清残留取消标志:否则被取消过的任务重跑会立刻中止(卡在 planning 显排队)
   const planStart = Date.now();
-  const plan = await makePlan(task.text, rec ? (c) => rec.children.add(c) : undefined);
+  let plan;
+  try {
+    plan = await makePlan(task.text, rec ? (c) => rec.children.add(c) : undefined);
+  } catch (e) {
+    // 规划抛异常(JSON 坏/文件缺/adapter 错)必须转 failed——否则任务永久卡 planning(runTask 是 fire-and-forget,
+    // 无人 catch 这个 reject),用户干等无反馈。端到端实测挖出的僵死 bug。
+    if (rec && rec.cancelled) return;
+    store.setTaskStatus(taskId, 'failed');
+    if (store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⚠ 规划失败:' + ((e && e.message) || e) + '。请「重新规划」或「重试」。');
+    if (store.addEvent) store.addEvent(taskId, 'task', 'failed');
+    emit(onEvent, taskId, null, 'task', 'failed');
+    return;
+  }
   const planMs = Date.now() - planStart;
   if (rec && rec.cancelled) return; // 规划期间被取消:不继续
+  // 空计划也不能卡 planning(needs_choice 分支的空 steps 是合法的待选择态,放它过,由下方 routing 处理)
+  const noSteps = !plan || !Array.isArray(plan.steps) || !plan.steps.length;
+  const isRouteChoice = plan && plan.routing && plan.routing.lane === 'needs_choice';
+  if (noSteps && !isRouteChoice) {
+    store.setTaskStatus(taskId, 'failed');
+    if (store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⚠ 规划未产出可执行步骤,请「重新规划」或换个说法重述任务。');
+    if (store.addEvent) store.addEvent(taskId, 'task', 'failed');
+    emit(onEvent, taskId, null, 'task', 'failed');
+    return;
+  }
   if (plan && plan.degraded && store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⚠ 员工/部门模式规划未成,已回退到单执行器直做(产出可能不如团队协作;方向没问题可等结果,否则「重新规划」再试)。');
   if (plan && plan.simpleNote && store.addTaskMsg) store.addTaskMsg(taskId, 'system', '📋 ' + plan.simpleNote);
   if (store.addEvent) store.addEvent(taskId, 'plan', { steps: (plan.steps || []).length, ms: planMs, route: plan.planning_stats && plan.planning_stats.route, llmCalls: plan.planning_stats && plan.planning_stats.llm_calls });
