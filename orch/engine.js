@@ -237,7 +237,7 @@ async function runLoop(step, ctx, prevOutput) {
     let gateOk = true;
     for (const body of step.body) {
       last = await runStep(body, ctx, last.output);
-      if (last.needDecision || last.needReplan) return last; // 需人决策/重规划:向上冒泡,停
+      if (last.needDecision || last.needReplan) { ctx.onStatus(step.id, 'blocked'); return last; } // 需人决策/重规划:同步 loop 包装步状态(否则画布/进度里 loop 节点停在旧态),向上冒泡停
       if (!last.success) { gateOk = false; break; } // 本轮某步失败,跳出去重来
       if (body.id === gateId && gateFailed(last.output)) { // 质量门判 FAIL:本轮不通过,重做
         gateOk = false;
