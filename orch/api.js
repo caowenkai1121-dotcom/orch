@@ -231,7 +231,8 @@ function buildAll(store, user) {
       doneToday: tasks.filter((t) => t.status === 'done' && isToday(t.updated_at)).length,
       failed: tasks.filter((t) => t.status === 'failed').length,
       // 待自动重试:限额类失败且已排定自动重试、次数未用完(≤2)——与永久失败区分,让操作者知系统会自愈
-      pendingRetry: tasks.filter((t) => { if (t.status !== 'failed') return false; const ar = store.getEvents(t.id).filter((e) => e.type === 'auto_retry').length; return ar > 0 && ar < 2; }).length,
+      // 批量取 auto_retry 计数,不再逐 failed 任务 getEvents(N+1)
+      pendingRetry: (function () { const arm = store.autoRetryCounts ? store.autoRetryCounts() : new Map(); return tasks.filter((t) => { if (t.status !== 'failed') return false; const ar = arm.get(t.id) || 0; return ar > 0 && ar < 2; }).length; })(),
       totalTasks: tasks.length, totalAgents: agents.length,
       costToday: today.cost,
       dailyBudget: Number(process.env.ORCH_DAILY_BUDGET) || 0, // 全局日成本上限(0=不限),供仪表盘显示护栏状态

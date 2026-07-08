@@ -962,10 +962,11 @@ setInterval(() => {
   const now = new Date();
   store.listSchedules().filter((s) => s.enabled).forEach((s) => {
     if (!scheduleDue(s, now)) return;
-    store.setScheduleRun(s.id);
     try {
-      const body = { text: s.text, project: s.project, dept: s.dept || null, agents: JSON.parse(s.agents || '[]'), models: s.models ? JSON.parse(s.models) : null, playbook: s.playbook || null, refine: false };
+      const sp = (v, d) => { try { return JSON.parse(v); } catch (e) { return d; } }; // 坏 spec 降级不抛,否则每 tick 重试刷屏
+      const body = { text: s.text, project: s.project, dept: s.dept || null, agents: sp(s.agents, []), models: s.models ? sp(s.models, null) : null, playbook: s.playbook || null, refine: false };
       const id = createAndRunTask(s.owner, body);
+      store.setScheduleRun(s.id); // 移到成功建任务后:建任务同步抛(DB 异常等)时不标记本槽,下 tick 重试,不丢一次定时执行
       store.addEvent(id, 'scheduled', { schedule: s.id });
       console.log('定时任务触发: schedule', s.id, '→ task', id);
     } catch (e) { console.log('定时任务失败:', e.message); }

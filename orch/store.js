@@ -214,6 +214,8 @@ function open(file) {
     },
     addEvent(taskId, type, data) { db.prepare('INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)').run(taskId, new Date().toISOString(), type, JSON.stringify(data == null ? null : data)); },
     getEvents(taskId) { return db.prepare('SELECT * FROM events WHERE task_id=? ORDER BY id').all(taskId); },
+    // 一趟聚合各任务的 auto_retry 事件数:消除 buildAll 里 pendingRetry 对每个 failed 任务一次 getEvents 的 N+1
+    autoRetryCounts() { const m = new Map(); db.prepare("SELECT task_id, COUNT(*) c FROM events WHERE type='auto_retry' GROUP BY task_id").all().forEach((r) => m.set(r.task_id, r.c)); return m; },
     // 删除任务时记的目录墓碑(task_id=0 全局):reap 若因锁文件失败残留,importDataDir 据此跳过,不把已删任务当历史产出复活
     deletedDirs() { return db.prepare("SELECT data FROM events WHERE task_id=0 AND type='deleted_dir'").all().map((r) => { try { return JSON.parse(r.data); } catch (e) { return null; } }).filter(Boolean); },
     addUsage(taskId, stepId, agent, u) { db.prepare('INSERT INTO usage(task_id,step_id,agent,input_tokens,output_tokens,cost,ts) VALUES(?,?,?,?,?,?,?)').run(taskId, stepId, agent, (u && u.input) || 0, (u && u.output) || 0, (u && u.cost) || 0, new Date().toISOString()); },

@@ -625,6 +625,22 @@ test('数据完整性:deleteTask 级联清所有含 task_id 表(含 apps)+ usage
   assert.ok(idx, 'usage(ts) 索引应存在');
 });
 
+test('autoRetryCounts 批量:pendingRetry 不再逐 failed 任务 getEvents(N+1),计数一致', () => {
+  const api = require('../api');
+  const s = open(':memory:');
+  s.seed();
+  const a = s.createTask('t1'); s.setTaskStatus(a, 'failed'); s.addEvent(a, 'auto_retry', { inMin: 5 }); // 1 次待重试
+  const b = s.createTask('t2'); s.setTaskStatus(b, 'failed'); s.addEvent(b, 'auto_retry', {}); s.addEvent(b, 'auto_retry', {}); // 2 次=用完,不算待重试
+  const c = s.createTask('t3'); s.setTaskStatus(c, 'failed'); // 无 auto_retry,不算
+  const m = s.autoRetryCounts();
+  assert.equal(m.get(a), 1); assert.equal(m.get(b), 2); assert.equal(m.get(c) || 0, 0);
+  // buildAll 主体不再逐 failed 任务 getEvents
+  let getEventsCalls = 0; const orig = s.getEvents.bind(s); s.getEvents = (x) => { getEventsCalls++; return orig(x); };
+  const built = api.buildAll(s, null);
+  assert.equal(built.counts.pendingRetry, 1, '只有 t1(1次<2)算待重试, 实际=' + built.counts.pendingRetry);
+  assert.ok(getEventsCalls < 3, 'pendingRetry 不应逐 failed 任务 getEvents, 实际=' + getEventsCalls);
+});
+
 test('stripMeeting:剥离会议步 + 清对会议结论的依赖 + 删 meeting 元数据', () => {
   const { stripMeeting } = require('../runner');
   const p = stripMeeting({
