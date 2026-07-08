@@ -526,6 +526,55 @@ test('终验修复:FAIL 但 issues 空时用 summary 兜底,修复步 prompt 不
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('stripMeeting:剥离会议步 + 清对会议结论的依赖 + 删 meeting 元数据', () => {
+  const { stripMeeting } = require('../runner');
+  const p = stripMeeting({
+    steps: [
+      { id: 'meet_a', deps: [] }, { id: 'meet_b', deps: [] },
+      { id: 'decide_plan', deps: ['meet_a', 'meet_b'] },
+      { id: 'impl1', deps: ['decide_plan'] },
+      { id: 'impl2', deps: ['impl1'] },
+    ],
+    meeting: { meetIds: ['meet_a', 'meet_b'], decideId: 'decide_plan' },
+  });
+  assert.deepEqual(p.steps.map((s) => s.id), ['impl1', 'impl2'], '只留实现步');
+  assert.deepEqual(p.steps[0].deps, [], 'impl1 对 decide_plan 的依赖应被清');
+  assert.deepEqual(p.steps[1].deps, ['impl1'], '实现步之间链式依赖保留');
+  assert.ok(!p.meeting, 'meeting 元数据应删除');
+});
+
+test('continueTask:复杂续跑不把会议步当实现步执行(画布不混入 meet_/decide_plan)', async () => {
+  const store = open(':memory:');
+  const dir = path.join(os.tmpdir(), 'orch-r215-cont-' + process.pid);
+  fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+  const id = store.createTask('原任务');
+  store.setTaskDir(id, dir);
+  store.setPlan(id, { task: '原任务', steps: [{ id: 'orig', agent: 'claude', prompt: 'x', deps: [] }] });
+  store.setStep(id, 'orig', 'claude', 'done', 'ok');
+  store.setTaskStatus(id, 'done');
+  const ran = [];
+  const echo = { async run({ prompt }) { ran.push(prompt); return { output: 'ok', success: true }; } };
+  // makePlan 模拟 prependMeeting 后的复杂计划(带会议步 + meeting 元数据)
+  const makePlan = async () => ({
+    task: '新需求',
+    steps: [
+      { id: 'meet_a', role: 'r', agent: 'claude', prompt: '方案会议·你的视角 写要点', deps: [] },
+      { id: 'decide_plan', role: 'r', agent: 'claude', prompt: '方案综合', deps: ['meet_a'] },
+      { id: 'build', role: 'r', agent: 'claude', prompt: '真正实现功能', deps: ['decide_plan'] },
+    ],
+    meeting: { meetIds: ['meet_a'], decideId: 'decide_plan', attendees: ['r'] },
+  });
+  const { continueTask } = require('../runner');
+  await continueTask(id, { store, adapters: { claude: echo }, workspace: { make: () => dir }, runs: new Map(), onEvent: () => {}, makePlan }, '加个复杂功能');
+  const plan = JSON.parse(store.getTask(id).plan);
+  const newIds = plan.steps.map((s) => s.id);
+  assert.ok(!newIds.some((x) => /meet_a|decide_plan/.test(x)), '续跑计划不应含会议步, 实际=' + newIds.join(','));
+  assert.ok(newIds.some((x) => /build/.test(x)), '实现步应保留');
+  assert.ok(!ran.some((p) => /方案会议·你的视角|方案综合/.test(p)), '会议步不应被当实现步执行');
+  assert.ok(ran.some((p) => /真正实现功能/.test(p)), '实现步应执行');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('trimLogs:终态裁剪只留最近 N 行', () => {
   const s = open(':memory:');
   const id = s.createTask('t');

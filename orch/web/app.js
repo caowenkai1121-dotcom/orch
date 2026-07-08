@@ -1097,7 +1097,10 @@ class Maestro extends MaestroBase {
     const id = this.state.taskId; if (typeof id !== 'number') return;
     fetch('/api/apps', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ taskId: id }) })
       .then((r) => r.json()).then((d) => {
-        if (d && d.ok === false) {
+        if (d && d.building) {
+          this.toast('🔧 需要构建的项目,正在自动 npm install + build,完成后自动上架并拉起后端(见任务对话)');
+          this.setState({ screen: 'apps', openApp: null });
+        } else if (d && d.ok === false) {
           this.live.publishDiag = this.formatPublishDiag(d.diagnostics, d.error || '发布失败');
           this.setState({ modal: 'publishDiag' });
         } else {

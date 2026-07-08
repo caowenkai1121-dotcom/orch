@@ -881,6 +881,18 @@ function scheduleAutoRetry(taskId, deps) {
   if (tm.unref) tm.unref(); // 不阻止进程退出(重启后由僵尸恢复兜底)
 }
 
+// 续跑(继续开发/重规划)剥离会议编排:makePlan 对复杂需求会 prependMeeting 塞入 meet_*/decide_plan 步,
+// 但续跑不走会议室、也不 seed 这些步 → 它们会被当普通实现步执行(跑"写方案要点/综合方案"),画布凭空多会议步。
+// 剥掉会议步 + 把依赖会议结论(decideId)的实现步的相应依赖去掉(回到根),删 meeting 元数据。
+function stripMeeting(plan) {
+  if (!plan || !plan.meeting) return plan;
+  const meetIds = new Set([...((plan.meeting.meetIds) || []), plan.meeting.decideId].filter(Boolean));
+  plan.steps = (plan.steps || []).filter((s) => !meetIds.has(s.id));
+  plan.steps.forEach((s) => { if (Array.isArray(s.deps)) s.deps = s.deps.filter((d) => !meetIds.has(d)); });
+  delete plan.meeting;
+  return plan;
+}
+
 // 继续开发:在原任务上追加新一轮步骤(不新建任务),复用产出目录
 async function continueTask(taskId, deps, text) {
   const { store, runs } = deps;
@@ -891,7 +903,7 @@ async function continueTask(taskId, deps, text) {
   let cur = {}; try { cur = JSON.parse(t.plan) || {}; } catch (e) { cur = { steps: [] }; } // 同上,防 null
   cur.steps = cur.steps || [];
   const context = '【继续开发】当前工作目录已有之前产出的文件,先查看现有文件,在其基础上扩展/修改实现新需求(不要从零重写)。新需求: ' + text;
-  const fresh = await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined);
+  const fresh = stripMeeting(await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined)); // 续跑不开会议,剥离会议步防被当实现步执行
   if (rec && rec.cancelled) return; // 规划期间被取消
   if (fresh && fresh.degraded && store.addTaskMsg) store.addTaskMsg(taskId, 'system', '⚠ 本轮继续开发的员工/部门规划未成,已回退单执行器直做(产出可能不如团队协作)。'); // 与 runTask 一致
   const pfx = 'c' + ((t.steps || []).length + 1) + '_'; // 新一轮步骤 id 前缀,防与旧步骤冲突
@@ -935,7 +947,7 @@ async function replanRemaining(taskId, deps, plan, done, divergedStepId, reason)
     + '偏离原因: ' + reason + '\n'
     + '请只对【达成原目标所需的剩余工作】重新拆解成新步骤:先查看现有产出文件,在其基础上扩展/修正(不从零重写),不要重复已完成的步骤。';
   let fresh;
-  try { fresh = await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined); }
+  try { fresh = stripMeeting(await deps.makePlan(context, rec ? (c) => rec.children.add(c) : undefined)); } // 重规划不开会议,剥离会议步
   catch (e) { return finishFail('⚠ 重规划失败:' + ((e && e.message) || e) + '。请人工介入。'); }
   if (rec && rec.cancelled) return;
   const pfx = 'r' + (n + 1) + '_'; // 重规划轮次前缀,防与已完成步 id 冲突
@@ -1126,4 +1138,4 @@ function emit(onEvent, taskId, stepId, type, data, agent) {
   if (onEvent) onEvent({ taskId, stepId, type, data, agent });
 }
 
-module.exports = { runTask, runApproved, runPlanned, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, finalAcceptance, writePlanFile, writeHandoffFile, handoffFilePath, ensureOutputGit, commitStep, countRecentFiles, searchTaskKnowledge, searchTaskKnowledgeHits, pauseTask, skipStep, noteToTask, rerunStep, replanRemaining, openMeeting, summonEmployee, meetingUserMsg, endMeeting };
+module.exports = { runTask, runApproved, runPlanned, resumeTask, continueTask, retryFailed, scheduleAutoRetry, harvestExperience, finalAcceptance, stripMeeting, writePlanFile, writeHandoffFile, handoffFilePath, ensureOutputGit, commitStep, countRecentFiles, searchTaskKnowledge, searchTaskKnowledgeHits, pauseTask, skipStep, noteToTask, rerunStep, replanRemaining, openMeeting, summonEmployee, meetingUserMsg, endMeeting };
