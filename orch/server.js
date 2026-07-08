@@ -760,7 +760,7 @@ app.post('/api/tasks/cleanup', (req, res) => {
   const statuses = Array.isArray(req.body && req.body.statuses) && req.body.statuses.length ? req.body.statuses : ['failed', 'cancelled'];
   const safe = statuses.filter((s) => ['failed', 'cancelled', 'done'].includes(s)); // 只允许清终态,不清运行中
   const delTasks = store.listTasks().filter((t) => safe.includes(t.status) && owns(req.user, t));
-  delTasks.forEach((t) => { store.deleteTask(t.id); reapTaskDir(t); }); // 同时回收 worktree/data 产出目录,防孤儿 + 防重启复活
+  delTasks.forEach((t) => { stopTaskApps(t.id); store.deleteTask(t.id); reapTaskDir(t); }); // 停 app 进程 + 回收 worktree/data 产出目录,防孤儿 + 防重启复活
   broadcastRaw({ type: 'task' });
   res.json({ ok: true, n: delTasks.length });
 });
@@ -778,12 +778,18 @@ app.delete('/task/:id', (req, res) => {
   if (!t) return res.json({ ok: false });
   if (!owns(req.user, t)) return res.status(403).json({ ok: false, error: '无权限:非本人任务' });
   if (t.status === 'running' || t.status === 'planning') return res.json({ ok: false, error: '运行中不能删除,请先停止' });
+  stopTaskApps(id); // 先停发布 app 进程(防孤儿 + 免 rmSync EPERM)
   store.deleteTask(id);
   reapTaskDir(t); // 回收 worktree 或非worktree产出目录:防孤儿累积 + 防重启被 importDataDir 复活删除的任务
   broadcastRaw({ type: 'task' });
   res.json({ ok: true });
 });
 // 删任务后回收其磁盘目录:worktree→reapWorktree;非worktree→删 data/ 下的产出目录(限 ROOT/data 内,防误删)
+// 删任务前先停其已发布 app 的后端进程:否则 apps 行被级联清掉、进程却成孤儿(占端口、烧 token),
+// 且 reapTaskDir 的 rmSync 会因进程仍锁着文件抛 EPERM 删不掉目录。
+function stopTaskApps(taskId) {
+  try { store.listApps().filter((a) => a.task_id === taskId).forEach((a) => appRuntime.stopApp(a.id)); } catch (e) {}
+}
 function reapTaskDir(t) {
   try {
     if (t.isolate === 'worktree') reapWorktree(ROOT, t.id);

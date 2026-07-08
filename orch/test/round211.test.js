@@ -597,6 +597,34 @@ test('runLoop 冒泡 needReplan:同步 loop 包装步状态为 blocked(画布/�
   assert.ok(statuses.includes('qloop:blocked'), 'loop 包装步应被标 blocked, 实际=' + statuses.join(','));
 });
 
+test('数据完整性:deleteTask 级联清所有含 task_id 表(含 apps)+ usage(ts) 索引存在', () => {
+  const s = open(':memory:');
+  const id = s.createTask('t');
+  s.setStep(id, 's1', 'claude', 'done', 'x');
+  s.addLog(id, 's1', 'line');
+  s.addEvent(id, 'status', { step: 's1', v: 'done' });
+  s.addUsage(id, 's1', 'claude', { input: 1, output: 1, cost: 0.01 });
+  s.addTaskMsg(id, 'user', 'hi');
+  s.createMeeting(id, ['a']); s.addMeetingMsg(id, { role: 'a', name: 'A', text: 'm' });
+  s.savePlanVersion(id, { steps: [] }, 'r');
+  s.addApp({ name: 'app', taskId: id, dir: '/x', entry: 'index.html' });
+  s.deleteTask(id);
+  // 所有含 task_id 的表都应清空该任务
+  assert.equal(s.getTask(id), null);
+  assert.equal(s.allSteps().filter((x) => x.task_id === id).length, 0, 'steps 未清');
+  assert.equal(s.getLogs(id).length, 0, 'logs 未清');
+  assert.equal(s.getEvents(id).length, 0, 'events 未清');
+  assert.equal(s.taskUsage(id).cost, 0, 'usage 未清');
+  assert.equal(s.getTaskMsgs(id).length, 0, 'task_messages 未清');
+  assert.equal(s.getMeeting(id), undefined, 'meetings 未清');
+  assert.equal(s.listMeetingMsgs(id).length, 0, 'meeting_msgs 未清');
+  assert.equal(s.listPlanVersions(id).length, 0, 'plan_versions 未清');
+  assert.equal(s.listApps().filter((a) => a.task_id === id).length, 0, 'apps 未清');
+  // usage(ts) 索引应已建(usageToday 全表扫的性能护栏)
+  const idx = s.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_usage_ts'").get();
+  assert.ok(idx, 'usage(ts) 索引应存在');
+});
+
 test('stripMeeting:剥离会议步 + 清对会议结论的依赖 + 删 meeting 元数据', () => {
   const { stripMeeting } = require('../runner');
   const p = stripMeeting({

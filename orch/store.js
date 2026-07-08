@@ -68,6 +68,8 @@ function open(file) {
     CREATE INDEX IF NOT EXISTS idx_steps_task ON steps(task_id);
     CREATE INDEX IF NOT EXISTS idx_logs_task ON logs(task_id, step_id);
     CREATE INDEX IF NOT EXISTS idx_meeting_msgs_task ON meeting_msgs(task_id);
+    -- usage 是增长最快的表(每次 LLM 调用一行);usageToday/usageTodayByAgent 按 ts 范围查,每次 /api/all 都跑,补 ts 索引避免全表扫随历史线性变慢
+    CREATE INDEX IF NOT EXISTS idx_usage_ts ON usage(ts);
   `);
   // 迁移:给旧库补列
   const ensureCol = (t, c, type) => { const cols = db.prepare(`PRAGMA table_info(${t})`).all().map((r) => r.name); if (!cols.includes(c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} ${type}`); };
