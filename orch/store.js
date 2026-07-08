@@ -438,17 +438,19 @@ function open(file) {
         this.addAgent({ id: 'claude', name: 'Claude', command: 'claude', args: ['-p', '--dangerously-skip-permissions'], model: 'claude CLI', caps: ['代码生成', '重构', '单元测试'], color: '#7C6FD9', avatar: 'C', dept: 'dev', pricing: { in: 3, out: 15 } });
         this.addAgent({ id: 'codex', name: 'Codex', command: 'codex', args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check'], model: 'codex CLI', caps: ['功能验证', '回归测试', '沙箱执行'], color: '#4F8BE8', avatar: 'X', dept: 'qa', pricing: { in: 1.25, out: 10 } });
       }
+      // 初始管理员密码:公网部署时设 ORCH_ADMIN_PASSWORD 避免默认弱口令 admin/admin(仅首次建库生效,已有库不改)
+      const initPw = process.env.ORCH_ADMIN_PASSWORD || 'admin';
       if (db.prepare('SELECT COUNT(*) n FROM people').get().n === 0) {
         const op = process.env.USERNAME || process.env.USER || 'operator';
-        this.addPerson({ id: 'op', name: op, role: '操作者', email: op + '@local', password: 'admin', admin: 1 });
+        this.addPerson({ id: 'op', name: op, role: '操作者', email: op + '@local', password: initPw, admin: 1 });
       }
       // 总调度经验行(存调度复盘,__system 部门不显示在员工墙)
       if (!db.prepare("SELECT 1 FROM roles WHERE id='chief-orchestrator'").get()) {
         this.addRole({ id: 'chief-orchestrator', dept: '__system', name: '总调度', emoji: '🎭', description: '任务拆解调度分配,最高权限', prompt: '' });
       }
-      // 保证有 admin/admin 账号(登录提示一致)
+      // 保证有 admin 账号(登录提示一致);密码同样支持 ORCH_ADMIN_PASSWORD(仅首次建此账号时)
       if (!db.prepare("SELECT 1 FROM people WHERE name='admin'").get()) {
-        this.addPerson({ id: 'admin', name: 'admin', role: '管理员', email: 'admin@local', password: 'admin', admin: 1 });
+        this.addPerson({ id: 'admin', name: 'admin', role: '管理员', email: 'admin@local', password: initPw, admin: 1 });
       }
       // 迁移:dev/qa 旧部门并入 工程部/测试部(执行器归属跟随)
       db.prepare("UPDATE agents SET dept='engineering' WHERE dept='dev'").run();

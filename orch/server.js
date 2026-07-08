@@ -19,7 +19,12 @@ const { killTree } = require('./adapters/steptimeout'); // 按 PID 杀子进程�
 process.on('uncaughtException', (e) => { try { console.error('[uncaughtException]', (e && e.stack) || e); } catch (x) {} });
 process.on('unhandledRejection', (e) => { try { console.error('[unhandledRejection]', (e && e.stack) || e); } catch (x) {} });
 
-const ROOT = process.cwd();
+// ROOT 决定产出目录(data/worktrees)与 worktree git 仓根。用 __dirname 而非 cwd:服务器 systemd 若未设
+// WorkingDirectory,cwd 可能是 /,导致产出建到 / 下、worktree(需 git 仓内)失败、且与 __dirname 的 orch.db 分家。
+// __dirname 恒为代码目录(本身是 git 仓),本地从项目根启动时 cwd 本就=__dirname,行为不变。ORCH_ROOT 可显式覆盖。
+const ROOT = process.env.ORCH_ROOT || __dirname;
+const PORT = Number(process.env.PORT) || 3000;
+const PUBLIC_URL = String(process.env.ORCH_PUBLIC_URL || ('http://localhost:' + PORT)).replace(/\/+$/, ''); // 通知/分享链接的对外基址(服务器填公网地址)
 const store = open(path.join(__dirname, 'orch.db'));
 store.seed();
 boot.importDataDir(store, ROOT);
@@ -38,6 +43,13 @@ const app = express();
 const auth = require('./auth');
 app.use(express.json({ limit: '8mb' })); // 配置导入/编辑计划等可能较大,放宽默认 100kb
 app.use(express.static(path.join(__dirname, 'web')));
+
+// 探活端点(无需登录,鉴权闸前):systemd/nginx/负载均衡/监控判断服务是否存活——其余端点都要登录、监控只会拿到 401
+app.get('/healthz', (req, res) => {
+  let running = 0, total = 0;
+  try { const ts = store.listTasks(); total = ts.length; running = ts.filter((t) => t.status === 'running' || t.status === 'planning' || t.status === 'meeting').length; } catch (e) {}
+  res.json({ ok: true, uptime: Math.round(process.uptime()), tasks: { running, total }, ts: new Date().toISOString() });
+});
 
 // 会话:每请求解析当前用户
 app.use((req, res, next) => { req.user = auth.userFromReq(store, req); next(); });
@@ -940,7 +952,9 @@ setInterval(() => {
   });
 }, 60 * 1000).unref();
 
-const server = app.listen(3000, () => console.log('orch http://localhost:3000'));
+const server = app.listen(PORT, () => console.log('orch listening on :' + PORT + ' (public ' + PUBLIC_URL + ')'));
+// 端口被占不静默崩:给明确日志(服务器上多因旧进程没退/端口冲突),方便 systemd 排查
+server.on('error', (e) => { if (e && e.code === 'EADDRINUSE') console.error('[fatal] 端口 ' + PORT + ' 已被占用——旧进程未退出或端口冲突。杀掉占用进程或设 PORT 环境变量换端口。'); else console.error('[server error]', (e && e.stack) || e); process.exit(1); });
 const wss = new WebSocketServer({ server });
 
 // 重启恢复:上次因执行器限额失败、已排定自动重试的任务,重启后 setTimeout 定时器已丢失 → 重新排定。
@@ -998,7 +1012,7 @@ function notifyOutbound(ev) {
     const u = store.taskUsage ? store.taskUsage(ev.taskId) : { cost: 0 };
     let failReason = '';
     if (status === 'failed') { const fs = (t.steps || []).filter((s) => s.status === 'failed' && s.output); const last = fs[fs.length - 1]; if (last) failReason = String(last.output).replace(/\s+/g, ' ').slice(-200); }
-    const body = JSON.stringify({ id: t.id, status, text: t.text, cost: (u && u.cost) || 0, failReason, url: 'http://localhost:3000/#task-' + t.id });
+    const body = JSON.stringify({ id: t.id, status, text: t.text, cost: (u && u.cost) || 0, failReason, url: PUBLIC_URL + '/#task-' + t.id }); // 对外链接用公网基址,手机/远程点得开
     fetch(process.env.ORCH_NOTIFY_URL, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: AbortSignal.timeout(5000) }).catch(() => {});
   } catch (e) { /* 推送失败绝不影响任务 */ }
 }
