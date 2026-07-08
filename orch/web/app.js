@@ -1758,7 +1758,18 @@ class Maestro extends MaestroBase {
   openWS() {
     try {
       const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-      ws.onopen = () => { this.live.wsConnected = true; this.scheduleRender(); };
+      ws.onopen = () => {
+        const wasReconnect = this.live.wsConnected === false; // 之前断开过(onclose 置 false)=重连;首次连接 wsConnected 是 undefined
+        this.live.wsConnected = true;
+        this.scheduleRender();
+        // 重连:断线期间错过的所有事件都丢了,主动补齐全量 + 当前详情,否则界面停在断线前的陈旧状态直到下次轮询
+        if (wasReconnect) {
+          this.fetchAll();
+          if (typeof this.state.taskId === 'number') { this.fetchRelay(this.state.taskId); this.fetchMsgs(this.state.taskId); }
+          const aid = this._activeId != null ? this._activeId : this.live.activeId;
+          if (aid != null) this.fetchPlan(aid);
+        }
+      };
       ws.onmessage = (ev) => {
         let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
         if (m.type === 'activity') {

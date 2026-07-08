@@ -977,6 +977,16 @@ const server = app.listen(PORT, () => console.log('orch listening on :' + PORT +
 // 端口被占不静默崩:给明确日志(服务器上多因旧进程没退/端口冲突),方便 systemd 排查
 server.on('error', (e) => { if (e && e.code === 'EADDRINUSE') console.error('[fatal] 端口 ' + PORT + ' 已被占用——旧进程未退出或端口冲突。杀掉占用进程或设 PORT 环境变量换端口。'); else console.error('[server error]', (e && e.stack) || e); process.exit(1); });
 const wss = new WebSocketServer({ server });
+// WS 心跳:清理半开的僵尸连接(客户端网络断开/浏览器崩溃但 TCP 假活,readyState 仍 1,broadcastRaw 会一直向它 send)。
+// 每 30s ping 所有客户端,上一轮没回 pong 的判死 terminate。浏览器 WebSocket 自动回 pong,前端无需改。
+wss.on('connection', (ws) => { ws.isAlive = true; ws.on('pong', () => { ws.isAlive = true; }); });
+setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) { try { ws.terminate(); } catch (e) {} return; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch (e) {}
+  });
+}, 30000).unref();
 
 // 重启恢复:上次因执行器限额失败、已排定自动重试的任务,重启后 setTimeout 定时器已丢失 → 重新排定。
 // scheduleAutoRetry 自带命中判断(仅限额类失败)与 ≤2 次上限,对无关失败任务自动跳过。
