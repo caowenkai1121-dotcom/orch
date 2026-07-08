@@ -35,8 +35,20 @@ function gracefulExit(sig) {
 const ROOT = process.env.ORCH_ROOT || __dirname;
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC_URL = String(process.env.ORCH_PUBLIC_URL || ('http://localhost:' + PORT)).replace(/\/+$/, ''); // 通知/分享链接的对外基址(服务器填公网地址)
-const store = open(path.join(__dirname, 'orch.db'));
+const DB_PATH = path.join(__dirname, 'orch.db');
+const store = open(DB_PATH);
 store.seed();
+// 数据安全:orch.db 是唯一真相(历史任务/产出记录/员工经验/全部配置),误删或损坏就全没了。
+// 启动后 + 每天在线备份,轮转保留 2 份(.bak 与 .bak.1),备份中途崩溃不会两份同时坏。
+function backupDb() {
+  try {
+    if (!fs.existsSync(DB_PATH)) return;
+    try { if (fs.existsSync(DB_PATH + '.bak')) fs.copyFileSync(DB_PATH + '.bak', DB_PATH + '.bak.1'); } catch (e) {} // 轮转:上一份挪为 .bak.1
+    store.backup(DB_PATH + '.bak').then(() => {}, (e) => console.error('[backup] 失败:', (e && e.message) || e));
+  } catch (e) {}
+}
+setTimeout(backupDb, 15000).unref(); // 启动 15s 后首次备份(错开启动繁忙)
+setInterval(backupDb, 24 * 3600 * 1000).unref(); // 每天一次
 boot.importDataDir(store, ROOT);
 boot.recoverZombies(store); // 上次进程中断的任务 → 标失败可重试
 let adapters = boot.buildAdapters(store);

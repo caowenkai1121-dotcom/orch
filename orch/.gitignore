@@ -3,6 +3,10 @@ node_modules/
 worktrees/
 data/
 *.db-journal
+*.db-wal
+*.db-shm
+*.bak
+*.bak.1
 orch-run.log
 orch-err.log
 err.log

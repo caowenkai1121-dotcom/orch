@@ -5,6 +5,9 @@ const hashPw = (pw) => crypto.createHash('sha256').update('orch:' + (pw || '')).
 
 function open(file) {
   const db = new Database(file);
+  // WAL 崩溃安全:默认 rollback-journal 模式在写入中途断电/进程被杀可能损坏整库;WAL 崩溃时最多丢未提交事务,
+  // 库不坏,且读写不再互相阻塞(WS 广播期间的读不卡执行的写)。synchronous=NORMAL 是 WAL 下的标准平衡点。
+  try { db.pragma('journal_mode = WAL'); db.pragma('synchronous = NORMAL'); } catch (e) {} // :memory: 不支持 WAL,忽略
   db.exec(`
     CREATE TABLE IF NOT EXISTS tasks(
       id INTEGER PRIMARY KEY, text TEXT, status TEXT, plan TEXT,
@@ -499,6 +502,8 @@ function open(file) {
         if (first) db.prepare('UPDATE people SET admin=1 WHERE id=?').run(first.id);
       }
     },
+    // 在线备份(整合 WAL,不阻塞写):db.backup 是原子的,备份中途崩溃不影响主库
+    backup(dest) { return db.backup(dest); },
     db,
   };
 }
