@@ -1007,7 +1007,7 @@ class Maestro extends MaestroBase {
     return super.statusMeta(s);
   }
   // —— 任务会话化 ——
-  fetchMsgs(id) { fetch('/api/msgs/' + id).then((r) => r.ok ? r.json() : []).then((m) => { this.live.msgs = Array.isArray(m) ? m : []; this.live.msgsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchMsgs(id) { fetch('/api/msgs/' + id).then((r) => r.ok ? r.json() : []).then((m) => { if (id !== this.state.taskId) return; this.live.msgs = Array.isArray(m) ? m : []; this.live.msgsFor = id; this.scheduleRender(); }).catch(() => {}); }
   fetchModelDiscovery(refresh) {
     this.live.modelDiscoveryAsked = true;
     fetch('/api/agents/model-discovery' + (refresh ? '?refresh=1' : ''))
@@ -1024,7 +1024,7 @@ class Maestro extends MaestroBase {
       .then(() => { this.fetchMsgs(id); this.fetchAll(); }).catch(() => {});
   }
   // —— 会议室 ——
-  fetchMeeting(id) { fetch('/api/meeting/' + id).then((r) => r.ok ? r.json() : null).then((m) => { this.live.meeting = m || null; this.live.meetingFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchMeeting(id) { fetch('/api/meeting/' + id).then((r) => r.ok ? r.json() : null).then((m) => { if (id !== this.state.meetingId) return; this.live.meeting = m || null; this.live.meetingFor = id; this.scheduleRender(); }).catch(() => {}); }
   openMeetingRoom(id) { this.setState({ modal: 'meeting', meetingId: id, meetRoster: false }); this.fetchMeeting(id); }
   sendMeetingMsg() {
     const id = this.state.meetingId; if (typeof id !== 'number') return;
@@ -1129,7 +1129,7 @@ class Maestro extends MaestroBase {
     fetch('/task/' + id + '/continue', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: text.trim() }) })
       .then((r) => r.json()).then((d) => { this.setState({ modal: null }); if (d && d.id) this.go('task', { taskId: d.id }); setTimeout(() => this.fetchAll(), 300); }).catch(() => {});
   }
-  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.ok ? r.json() : []).then((fs) => { fs = Array.isArray(fs) ? fs : []; this.live.files = fs; this.live.filesFor = id; this.autoPickPreview(id, fs); this.scheduleRender(); if (fs.some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
+  fetchFiles(id) { fetch('/api/files/' + id).then((r) => r.ok ? r.json() : []).then((fs) => { if (id !== this.state.taskId) return; fs = Array.isArray(fs) ? fs : []; this.live.files = fs; this.live.filesFor = id; this.autoPickPreview(id, fs); this.scheduleRender(); if (fs.some((f) => f.path === 'findings.md')) this.fetchFindings(id); else { this.live.findings = ''; } }).catch(() => {}); }
   // 打开任务详情自动预览主产物(免手动点):优先 index.html,再 html/md,再图片
   autoPickPreview(id, fs) {
     if (this.state.previewFile || this.state.taskId !== id) return;
@@ -1142,7 +1142,7 @@ class Maestro extends MaestroBase {
       || paths.find((p) => isExt(p, code)); // 纯代码任务:兜底选首个代码文件
     if (pick) this.state.previewFile = pick;
   }
-  fetchFindings(id) { fetch('/output/' + id + '/findings.md').then((r) => r.ok ? r.text() : '').then((txt) => { this.live.findings = txt || ''; this.live.findingsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchFindings(id) { fetch('/output/' + id + '/findings.md').then((r) => r.ok ? r.text() : '').then((txt) => { if (id !== this.state.taskId) return; this.live.findings = txt || ''; this.live.findingsFor = id; this.scheduleRender(); }).catch(() => {}); }
   previewOf(id) {
     const p = this.state.previewFile;
     if (!p) return { none: true, hint: '选择左侧文件预览' };
@@ -1206,7 +1206,7 @@ class Maestro extends MaestroBase {
   toggleSchedule(id) { fetch('/api/schedules/' + id + '/toggle', { method: 'POST' }).then(() => this.fetchSchedules()).catch(() => {}); }
   delSchedule(id) { if (!window.confirm('删除该定时任务?')) return; fetch('/api/schedules/' + id, { method: 'DELETE' }).then(() => this.fetchSchedules()).catch(() => {}); }
   // —— 产出改动(diff) ——
-  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { d = Array.isArray(d) ? d : []; this.live.diffs = d; this.live.diffsFor = id; if (!this.state.diffSha && d.length && this.state.taskId === id) this.openDiff(d[0].sha); else this.scheduleRender(); }).catch(() => {}); }
+  fetchDiffs(id) { fetch('/api/diff/' + id).then((r) => r.ok ? r.json() : []).then((d) => { if (id !== this.state.taskId) return; d = Array.isArray(d) ? d : []; this.live.diffs = d; this.live.diffsFor = id; if (!this.state.diffSha && d.length && this.state.taskId === id) this.openDiff(d[0].sha); else this.scheduleRender(); }).catch(() => {}); }
   // —— #15 健康自检(doctor)——
   runDoctor() {
     fetch('/api/doctor').then((r) => r.ok ? r.json() : { issues: [] }).then((d) => {
@@ -1217,7 +1217,7 @@ class Maestro extends MaestroBase {
     }).catch(() => this.toast('✗ 自检失败'));
   }
   // —— #12 计划版本 ——
-  fetchVersions(id) { fetch('/api/plan-versions/' + id).then((r) => r.ok ? r.json() : []).then((d) => { this.live.versions = Array.isArray(d) ? d : []; this.live.versionsFor = id; this.scheduleRender(); }).catch(() => {}); }
+  fetchVersions(id) { fetch('/api/plan-versions/' + id).then((r) => r.ok ? r.json() : []).then((d) => { if (id !== this.state.taskId) return; this.live.versions = Array.isArray(d) ? d : []; this.live.versionsFor = id; this.scheduleRender(); }).catch(() => {}); }
   restoreVersion(version) {
     const id = this.state.taskId;
     if (!window.confirm('恢复到计划 v' + version + '?当前计划会先存为新版本(可再回滚),之后用「重试失败步骤/继续开发」推进。')) return;
@@ -1226,7 +1226,7 @@ class Maestro extends MaestroBase {
   }
   openDiff(sha) {
     const id = this.state.taskId;
-    fetch('/api/diff/' + id + '/' + sha).then((r) => r.json()).then((d) => { this.live.patch = d.patch || ''; this.setState({ diffSha: sha }); }).catch(() => {});
+    fetch('/api/diff/' + id + '/' + sha).then((r) => r.json()).then((d) => { if (id !== this.state.taskId) return; this.live.patch = d.patch || ''; this.setState({ diffSha: sha }); }).catch(() => {});
   }
   continueFromDiff() { // N1:针对改动直接派活
     this.setState({ modal: 'continue' });
@@ -1275,6 +1275,7 @@ class Maestro extends MaestroBase {
   }
   fetchRawPlan(id) { // 审批编辑用:拉任务原始 plan JSON
     fetch('/task/' + id).then((r) => r.json()).then((t) => {
+      if (id !== this.state.taskId) return; // 晚到丢弃:切走后不用旧任务 plan 覆盖当前编辑态
       let p = null; try { p = JSON.parse(t.plan); } catch (e) {}
       this.live.rawPlan = p; this.live.rawPlanFor = id; this.state.epCut = {};
       this.scheduleRender();
