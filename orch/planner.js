@@ -290,7 +290,7 @@ function thinPrompts(plan) {
 }
 
 // 编排健康诊断:只给操作者/复盘看,不改变执行语义。目标是让"为什么这算好计划"可检查。
-function diagnosePlan(plan, taskText) {
+function diagnosePlan(plan, taskText, deptFlow) {
   const leaves = []; const loops = [];
   const walk = (arr, loop) => (arr || []).forEach((s) => {
     if (!s) return;
@@ -338,11 +338,24 @@ function diagnosePlan(plan, taskText) {
     const ids = [...new Set(seenFile[f])];
     if (ids.length > 1) issues.push({ level: 'warn', code: 'parallel_file_conflict', message: '并行根步骤可能同时修改 ' + f + ',建议加 lock 或串行依赖:' + ids.join('、') });
   });
+  issues.push(...flowGaps(plan, deptFlow)); // 部门任务:标准流程必选环节漏拆诊断
   const penalty = issues.reduce((n, x) => n + (x.level === 'error' ? 35 : 12), 0);
   return { score: Math.max(0, 100 - penalty), issues };
 }
-function attachPlanDiagnostics(plan, taskText) {
-  if (plan && typeof plan === 'object') plan.diagnostics = diagnosePlan(plan, taskText);
+// 部门流程对齐:dept 任务的 flow 定义了必选环节(optional:false)与质量门(gate:true)。prompt 已把流程给了
+// LLM(flowLine),这里做拆完后的本地收口校验——必选环节没进计划就 warn(不硬拦:LLM 有权跳过不适用环节,
+// 但要让用户在审批时看见"漏了谁",而不是执行完才发现没走质量门)。会议步是讨论非实现,不算覆盖。
+function flowGaps(plan, flow) {
+  if (!Array.isArray(flow) || !flow.length) return [];
+  const meetIds = new Set([...((plan.meeting && plan.meeting.meetIds) || []), plan.meeting && plan.meeting.decideId].filter(Boolean));
+  const used = new Set();
+  const walk = (arr) => (arr || []).forEach((s) => { if (!s) return; if (s.body) walk(s.body); else if (s.role && !meetIds.has(s.id)) used.add(s.role); });
+  walk(plan && plan.steps);
+  return flow.filter((f) => f && f.role && !f.optional && !used.has(f.role))
+    .map((f) => ({ level: 'warn', code: f.gate ? 'missing_flow_gate' : 'missing_flow_role', message: '部门标准流程必选环节「' + f.role + '」' + (f.gate ? '(质量门)' : '') + '未进入计划,请确认是否有意跳过' }));
+}
+function attachPlanDiagnostics(plan, taskText, deptFlow) {
+  if (plan && typeof plan === 'object') plan.diagnostics = diagnosePlan(plan, taskText, deptFlow);
   return plan;
 }
 
@@ -1014,13 +1027,15 @@ async function makePlan(text, opts) {
 
   let empModeFell = false; // 员工模式该走却没成功 → 后续回退标记为"降级"(丢了团队协作)
   const mark = (p) => (empModeFell && p ? Object.assign(p, { degraded: true }) : p);
+  // 部门任务的标准流程(供 flowGaps 诊断必选环节覆盖)
+  const deptFlow = dept ? (() => { const d = (depts || []).find((x) => x && x.id === dept); try { const f = d && d.flow ? (Array.isArray(d.flow) ? d.flow : JSON.parse(d.flow)) : []; return Array.isArray(f) ? f : []; } catch (e) { return []; } })() : [];
   const diag = (p) => attachPlanDiagnostics(p);
   const finish = (p, route, extra) => {
     if (p && typeof p === 'object') {
       sequentializeSteps(p); // 执行顺序=确认顺序:所有计划出口统一拓扑重排+链式化(用户编辑计划的 edit-plan 路径不走这里,保留自定义)
       attachProcessMeta(p, text, intent, roleMap);
       attachDeliveryBlueprint(p, text);
-      if (Array.isArray(p.steps) && p.steps.length) attachPlanDiagnostics(p, text);
+      if (Array.isArray(p.steps) && p.steps.length) attachPlanDiagnostics(p, text, deptFlow);
       p.validation = validateCrewPlan(p, Object.values(roleMap), text);
       p.planning_stats = Object.assign({ route, llm_calls: llmCalls, refined: brief !== text, process_type: p.process && p.process.type, quality_score: p.diagnostics && p.diagnostics.score }, extra || {});
     }
@@ -1105,4 +1120,4 @@ async function makePlan(text, opts) {
   return finish(mark(diag(ensureStepContracts({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] }, roleMap))), 'fallback');
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, sequentializeSteps, lintPlan, thinPrompts, diagnosePlan, attachPlanDiagnostics, mergeEditedPlan, extractJson, fill, prependMeeting, ensureStepContracts, isRiskText, makeProcessMeta, validateCrewPlan };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, sequentializeSteps, lintPlan, thinPrompts, flowGaps, diagnosePlan, attachPlanDiagnostics, mergeEditedPlan, extractJson, fill, prependMeeting, ensureStepContracts, isRiskText, makeProcessMeta, validateCrewPlan };
