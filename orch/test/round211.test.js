@@ -641,6 +641,22 @@ test('autoRetryCounts 批量:pendingRetry 不再逐 failed 任务 getEvents(N+1)
   assert.ok(getEventsCalls < 3, 'pendingRetry 不应逐 failed 任务 getEvents, 实际=' + getEventsCalls);
 });
 
+test('blocked 步状态准确:relay sk=blocked 且耗时算出终值(不再显 ⏱ 运行中)', () => {
+  const api = require('../api');
+  const s = open(':memory:');
+  s.seed();
+  const id = s.createTask('t');
+  s.setPlan(id, { task: 't', steps: [{ id: 's1', agent: 'claude', prompt: 'x', deps: [] }] });
+  s.setStep(id, 's1', 'claude', 'blocked', '待你决策');
+  const base = 1700000000000;
+  s.db.prepare('INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)').run(id, new Date(base).toISOString(), 'status', JSON.stringify({ step: 's1', v: 'running' }));
+  s.db.prepare('INSERT INTO events(task_id,ts,type,data) VALUES(?,?,?,?)').run(id, new Date(base + 30000).toISOString(), 'status', JSON.stringify({ step: 's1', v: 'blocked' }));
+  const row = api.relay(s, id)[0];
+  assert.equal(row.sk, 'blocked', 'blocked 步 sk 应为 blocked(不误映射成 queued), 实际=' + row.sk);
+  assert.ok(row.dur && row.dur.includes('30s'), 'blocked 应算出耗时终值 30s, 实际=' + row.dur);
+  assert.ok(!String(row.dur).startsWith('⏱'), 'blocked 是终点,不该再显"⏱ 运行中", 实际=' + row.dur);
+});
+
 test('stripMeeting:剥离会议步 + 清对会议结论的依赖 + 删 meeting 元数据', () => {
   const { stripMeeting } = require('../runner');
   const p = stripMeeting({

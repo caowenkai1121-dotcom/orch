@@ -6,7 +6,7 @@ const DEPT_META = {
   qa: { name: '测试 / QA 部', glyph: '✓', color: '#4F8BE8', soft: 'rgba(79,139,232,.2)', desc: '功能验证、回归与质量把关' },
 };
 const taskSk = (s) => ({ pending: 'queued', planning: 'planning', running: 'working', done: 'done', failed: 'failed', cancelled: 'cancelled', awaiting: 'awaiting', awaiting_input: 'awaiting_input', paused: 'paused', meeting: 'meeting' })[s] || 'queued';
-const stepSk = (s) => ({ running: 'working', waiting: 'queued', done: 'done', failed: 'failed' })[s] || 'queued';
+const stepSk = (s) => ({ running: 'working', waiting: 'queued', done: 'done', failed: 'failed', blocked: 'blocked' })[s] || 'queued'; // blocked=待人决策/重规划(loop 冒泡等),前端有对应"阻塞"态,别误显"排队"
 
 // 从 DB 构建 agentId → {dept,label,model,color,av,caps} 查找表
 function roleMap(store) {
@@ -249,7 +249,7 @@ function stepDurations(store, taskId) {
     let d = null; try { d = JSON.parse(e.data); } catch (x) { return; }
     if (!d || !d.step) return;
     if (d.v === 'running') start[d.step] = new Date(e.ts).getTime();
-    if ((d.v === 'done' || d.v === 'failed') && start[d.step]) {
+    if ((d.v === 'done' || d.v === 'failed' || d.v === 'blocked') && start[d.step]) { // blocked(待决策/重规划)也是终点,否则该步永远显"⏱ 运行中"
       const s = Math.round((new Date(e.ts).getTime() - start[d.step]) / 1000);
       dur[d.step] = s >= 60 ? Math.floor(s / 60) + 'm' + (s % 60) + 's' : s + 's';
       delete start[d.step]; // 已结束:不再算作运行中
