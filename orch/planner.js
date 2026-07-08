@@ -204,7 +204,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。steps 数组顺序即最终执行顺序:系统会严格按数组顺序依次执行(前一步完成才开始下一步),请按正确的先后次序排列步骤,并用 deps 写清逻辑依赖(上游产出会自动交接给下游)。纯审查/分析且确定不改文件的步可加 "permission":"read" 在只读沙箱运行(会改文件的步不要加)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
-    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作,或虽是单文件但含多个可独立交付的功能点(如"待办应用"的 增删/标记完成/本地存储/筛选),都要按功能点/模块细分成多步(复杂任务会自动在前面插入"方案会议"阶段,你只需专注把实现步拆细拆清,别自己加会议步)。1)拆解要细且可追溯:每步只做一件明确的事,step id 用能看出在做什么的名字(如 scaffold_ui/impl_add_del/impl_storage/impl_filter/self_test),prompt 写清"你(角色)负责什么、产出哪些文件";实现按功能点/模块拆成多步,让画布能看出每个角色在哪个关键节点做什么,别把多个功能点塞进一步(真正单一产出的简单任务才保持1-2步,别为拆而拆);2)选人只看能力对口,绝不为用而用:选人的唯一依据是"员工能力档案与本步任务的匹配度"——把每个环节交给能力最专精的员工(安全审查给安全专家、接口契约给后端架构、页面交互给前端、文案给内容运营、验收给测试员),读能力档案的身份/规则/交付/判定选出真正对口的人;一个员工能胜任连续几步就让他连做,不要为了"多角色协作/用满部门"而换人或硬塞员工;宁可3个真正对口的员工,也不要6个勉强沾边的;只有本步确需现有员工不具备的专精时才跨部门借调。员工数由任务真实需要决定,不由"看起来专业/热闹"决定。部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入)、写明内容丰满度要求(示例数据条数、字段完整性、空态/错误态);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名;6)凡产出需要安装依赖/构建/启动服务的项目,计划中必须有一步交付根目录 README.md(技术栈/安装/启动命令与端口/默认账号/常见问题),并在最后安排一步"按 README 从零跑通"的真实自测——不能只靠代码审查;7)前端若用构建工具(Vite/Webpack),要求执行 npm run build 产出 dist 并确认构建通过(发布上架依赖构建产物)。只输出 JSON,不要解释。`
+    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作(复杂任务会自动在前面插入"方案会议"阶段,你只需专注实现步,别自己加会议步)。1)按人聚合拆步,不按功能点碎拆:每一步就是一次全新的 CLI 会话(冷启动慢、上一步的思路上下文全部丢失、只剩交接备忘),所以同一员工负责的全部实现工作必须聚合成一步,在同一个会话里连续完成——prompt 内列出功能点清单(如"待办应用:①增删 ②标记完成 ③本地存储 ④筛选"),要求员工按清单逐项实现、每项完成即自测;只有确需不同专业员工的工作(如后端/前端/文档各归其人)才分成多步;step id 用能看出在做什么的名字,prompt 写清"你(角色)负责什么、按清单产出哪些文件"。但测试/验收/质量门必须独立成步且换人把关:实现者测自己有盲区,独立会话+不同员工的验收才可信;2)选人只看能力对口,绝不为用而用:选人的唯一依据是"员工能力档案与本步任务的匹配度"——把每个环节交给能力最专精的员工(安全审查给安全专家、接口契约给后端架构、页面交互给前端、文案给内容运营、验收给测试员),读能力档案的身份/规则/交付/判定选出真正对口的人;一个员工能胜任连续几步就让他连做,不要为了"多角色协作/用满部门"而换人或硬塞员工;宁可3个真正对口的员工,也不要6个勉强沾边的;只有本步确需现有员工不具备的专精时才跨部门借调。员工数由任务真实需要决定,不由"看起来专业/热闹"决定。部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入)、写明内容丰满度要求(示例数据条数、字段完整性、空态/错误态);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名;6)凡产出需要安装依赖/构建/启动服务的项目,计划中必须有一步交付根目录 README.md(技术栈/安装/启动命令与端口/默认账号/常见问题),并在最后安排一步"按 README 从零跑通"的真实自测——不能只靠代码审查;7)前端若用构建工具(Vite/Webpack),要求执行 npm run build 产出 dist 并确认构建通过(发布上架依赖构建产物)。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
@@ -486,10 +486,12 @@ function pickMeetingHost(roleMap, mainDept) {
 // 用户需求:复杂任务先开"方案会议"(代码强制,不靠 LLM 自觉)。计划够复杂(≥4步且≥2不同角色)则前置:
 // 每个参会角色并行写本视角方案要点 md → 一个"方案综合"步产出《方案.md》→ 原实现步的根全部改为依赖综合步、按方案做。
 // 让编排画布清楚看到"先开会定方案、再各角色分头实现"。简单任务(<4步或角色单一)不开会,直接做。
-function prependMeeting(plan, roleMap, mainDept, depts) {
+function prependMeeting(plan, roleMap, mainDept, depts, forceComplex) {
   const hostRole = pickMeetingHost(roleMap, mainDept);
   const ids = Object.keys(roleMap || {}).filter((id) => id !== hostRole && ((roleMap[id] || {}).dept !== '__system'));
-  if (!plan || !Array.isArray(plan.steps) || plan.steps.length < 4) {
+  // 开会判定:任务判为复杂(forceComplex)则开,不看步数——聚合拆解下复杂任务常只有 2-3 步
+  // (实现聚合到一个 CLI 会话 + 独立验收),步数已不代表复杂度;无 lane 信息时保留步数启发。
+  if (!plan || !Array.isArray(plan.steps) || (!forceComplex && plan.steps.length < 4)) {
     // 简单任务不开会:员工模式下(有员工目录)记一笔,让操作者在任务记录里看到"判为简单、跳过会议"
     if (plan && ids.length >= 2 && (plan.steps || []).some((s) => s.role)) plan.simpleNote = '任务判为简单(单一/少量产出),无需方案会议,已直接编排执行。';
     return plan;
@@ -884,7 +886,9 @@ function validateCrewPlan(plan, roles, text) {
 function complexPlanSufficient(plan, text, roleMap) {
   const steps = (plan && plan.steps) || [];
   const roles = new Set(collectRoles(steps, []));
-  if (steps.length < 4 || roles.size < 2) return false;
+  // 聚合拆解口径:实现聚合到一个 CLI 会话 + 独立验收 = 2步2人即是合格的复杂计划(步数多≠质量高,
+  // 每多一步就多一次冷启动和上下文丢失);少于 2 人才是真降级(丢了独立验收视角)
+  if (steps.length < 2 || roles.size < 2) return false;
   const t = routingText(text);
   const roleTexts = [...roles].map((id) => {
     const r = (roleMap && roleMap[id]) || {};
@@ -966,7 +970,7 @@ function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts
     if (!kept.length) return degradeSingleStepPlan(text, roles, roleMap, allowed, deptPools, depts); // 全滤空 → 退化单步,绝不空计划
     const plan = { task: text, steps: kept, routing: { lane: 'complex', confidence: 0.9, reason: '复杂前后端应用 LLM 规划失败或粒度不足,已启用精简多员工保底编排' }, complexFallback: true };
     attachProcessMeta(plan, text, { lane: 'complex', confidence: 0.9, reason: plan.routing.reason }, roleMap);
-    prependMeeting(plan, roleMap, mainDept, depts);
+    prependMeeting(plan, roleMap, mainDept, depts, true); // 保底计划恒为复杂任务,必开方案会议
     ensureStepContracts(plan, roleMap);
     sanitizeDeps(plan);
     resolveRoles(plan.steps, roleMap, allowed, deptPools, text, depts);
@@ -992,7 +996,7 @@ function fallbackComplexRolePlan(text, roles, roleMap, allowed, deptPools, depts
   if (!steps.length) return degradeSingleStepPlan(text, roles, roleMap, allowed, deptPools, depts); // 全滤空 → 退化单步,绝不空计划
   const plan = { task: text, steps, routing: { lane: 'complex', confidence: 0.9, reason: '复杂任务 LLM 规划失败或粒度不足,已启用本地多员工保底编排' }, complexFallback: true };
   attachProcessMeta(plan, text, { lane: 'complex', confidence: 0.9, reason: plan.routing.reason }, roleMap);
-  prependMeeting(plan, roleMap, mainDept, depts);
+  prependMeeting(plan, roleMap, mainDept, depts, true); // 保底计划恒为复杂任务,必开方案会议
   ensureStepContracts(plan, roleMap);
   sanitizeDeps(plan);
   resolveRoles(plan.steps, roleMap, allowed, deptPools, text, depts);
@@ -1078,7 +1082,7 @@ async function makePlan(text, opts) {
         const fp = fallbackComplexRolePlan(text, deptRoles, roleMap, allowed, deptPools, depts, mainDept);
         return finish(diag(fp), 'complex-fallback', { main_dept: mainDept || '' });
       }
-      prependMeeting(p, roleMap, mainDept, depts); // 复杂计划前置"方案会议":讨论步→方案综合→实现步依赖它;传主部门→会上确认主负责部门、参会偏向该部门
+      prependMeeting(p, roleMap, mainDept, depts, intent.lane === 'complex'); // 复杂计划前置"方案会议"(复杂判定即开,不看步数):讨论步→方案综合→实现步依赖它;传主部门→会上确认主负责部门、参会偏向该部门
       ensureStepContracts(p, roleMap); // LLM 漏写 expected_outcome 时兜底补契约,让执行/质量门都有验收口径
       if (p.steps.every(rmOk) && !actionableLint(lintPlan(p, true)).length) { sanitizeDeps(p); resolveRoles(p.steps, roleMap, allowed, deptPools, text, depts); if (intent.lane === 'complex') p.routing = { lane: 'complex', confidence: intent.confidence, reason: intent.reason }; return finish(diag(p), intent.lane === 'complex' ? 'employee-complex-llm' : 'employee-llm', { main_dept: mainDept || '' }); } // 解析:role→executor、裸 agent→coerce 到池(防 broken 自动发现 agent 混入)
     } catch (e) { /* 落到执行器模式 */ }
