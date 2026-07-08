@@ -607,7 +607,7 @@ async function summonEmployee(taskId, deps, roleId) {
 }
 // 用户在会议室发言:记录 + @到的员工回应;没@任何人则由主持(首位参会)回应,保持讨论活着
 function meetingUserMsg(taskId, deps, text, userName) {
-  const { store, onEvent } = deps;
+  const { store, onEvent, runs } = deps;
   const mt = store.getMeeting(taskId);
   if (!mt || mt.status !== 'open') return false;
   store.addMeetingMsg(taskId, { role: 'user', name: userName || '你', avatar: '🙋', text });
@@ -623,7 +623,14 @@ function meetingUserMsg(taskId, deps, text, userName) {
   const hostRole = meetingHostRole(plan, mt);
   const responders = hit.length ? hit.map((r) => r.id) : (hostRole ? [hostRole] : ((mt.attendees || []).length ? [mt.attendees[0]] : []));
   (async () => {
-    const results = await Promise.all(responders.map((rid) => summonEmployee(taskId, deps, rid)));
+    // 串行发言(与开场/定向质询一致):@多员工时后者能看到前者的发言,真正形成讨论;
+    // 原并发 Promise.all 让各员工在信号量前都读到"发言前"的旧 transcript,互相看不见、还乱序写入。
+    const results = [];
+    for (const rid of responders) {
+      const rec = runs && runs.get(taskId); if (rec && rec.cancelled) return;
+      const m2 = store.getMeeting(taskId); if (!m2 || m2.status !== 'open') break;
+      results.push(await summonEmployee(taskId, deps, rid));
+    }
     const cur = store.getMeeting(taskId);
     const curTask = store.getTask(taskId);
     if (!cur || cur.status !== 'open' || !curTask || curTask.status !== 'meeting') return;
