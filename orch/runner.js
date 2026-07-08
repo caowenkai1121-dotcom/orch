@@ -372,8 +372,14 @@ async function finalAcceptance(taskId, deps) {
   const meetIds = new Set([...((plan.meeting && plan.meeting.meetIds) || []), plan.meeting && plan.meeting.decideId].filter(Boolean));
   const implSteps = leaves.filter((s) => s && s.id && !meetIds.has(s.id));
   if (implSteps.length < 2) return;
-  const n = store.getEvents(taskId).filter((e) => e.type === 'final_review').length;
+  // 终验预算按「执行周期」而非全局累积:continue/replan/retry/rerun 标志新一轮执行 → 之后终验预算重置,
+  // 否则 continue 一轮新功能后 done 因全局 n>=2 永不再终验,新产出失去质量保障。窗口内仍最多 2 次(1判定+1复验)。
+  const evs = store.getEvents(taskId);
+  let cycleStart = -1;
+  evs.forEach((e, i) => { if (e.type === 'continue' || e.type === 'replan' || e.type === 'retry' || e.type === 'rerun' || e.type === 'route_choice') cycleStart = i; });
+  const n = evs.filter((e, i) => e.type === 'final_review' && i > cycleStart).length; // 本执行周期内已做的终验数
   if (n >= 2) return;
+  const fixSeq = evs.filter((e) => e.type === 'final_review').length + 1; // 全局递增 → final_fix 步 id 跨周期唯一,防 continue 后 id 撞车
   const outcomes = implSteps.map((s) => '- ' + s.id + ': ' + (s.expected_outcome || '(未写)')).join('\n');
   const prompt = '【任务终验·只读审查】你是最终验收员,当前工作目录就是本任务的产出目录,请用读文件/列目录工具实际检查产出(不要凭空猜)。\n'
     + '任务目标:' + (t.text || '') + '\n各步验收标准:\n' + outcomes
@@ -409,7 +415,7 @@ async function finalAcceptance(taskId, deps) {
   // 手工构造单个修复步接进原计划(不走 LLM 重拆,快且稳);其余步 seedDone,只跑修复
   const lastImpl = implSteps[implSteps.length - 1];
   const fixStep = {
-    id: 'final_fix_1', agent: (lastImpl && lastImpl.agent) || 'claude', role: (lastImpl && lastImpl.role) || undefined, deps: [], // 带 role:修复计入该员工绩效、画布有署名、复盘能归因
+    id: 'final_fix_' + fixSeq, agent: (lastImpl && lastImpl.agent) || 'claude', role: (lastImpl && lastImpl.role) || undefined, deps: [], // 唯一 id 防跨周期撞车;带 role:修复计入该员工绩效、画布署名、复盘归因
     prompt: '【终验修复】最终验收在产出目录发现以下问题,逐一修复并确保任务目标真正达成(先读相关文件再改,针对问题修,不要从零重写):\n' + issueTxt + '\n\n任务目标:' + (t.text || ''),
     expected_outcome: '终验问题全部修复,产出满足任务目标',
   };

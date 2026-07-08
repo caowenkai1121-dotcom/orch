@@ -526,6 +526,38 @@ test('终验修复:FAIL 但 issues 空时用 summary 兜底,修复步 prompt 不
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('finalAcceptance 终验预算按执行周期:continue 后重新终验(全局累积不再永久拦)+ fix id 跨周期唯一', async () => {
+  const { finalAcceptance } = require('../runner');
+  const store = open(':memory:');
+  const dir = path.join(os.tmpdir(), 'orch-r215-fa-cycle-' + process.pid);
+  fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
+  const id = store.createTask('做一个页面');
+  store.setTaskDir(id, dir);
+  store.setPlan(id, { task: '做一个页面', steps: [
+    { id: 'impl1', agent: 'claude', prompt: '实现', deps: [] },
+    { id: 'impl2', agent: 'claude', prompt: '样式', deps: ['impl1'] },
+  ] });
+  store.setStep(id, 'impl1', 'claude', 'done', 'ok');
+  store.setStep(id, 'impl2', 'claude', 'done', 'ok');
+  store.setTaskStatus(id, 'done');
+  // 模拟上一轮已终验 2 次(全局累积=2:旧逻辑会永久 n>=2 return,新产出不再终验)
+  store.addEvent(id, 'final_review', { verdict: 'PASS' });
+  store.addEvent(id, 'final_review', { verdict: 'FAIL', issues: [{ problem: 'x' }] });
+  store.addEvent(id, 'continue', { text: '加新功能' }); // 新一轮执行周期开始
+  const echo = { async run({ prompt }) {
+    if (prompt.includes('任务终验')) return { output: '{"verdict":"FAIL","summary":"缺功能CYCLE_MARK","issues":[{"problem":"缺按钮"}]}', success: true };
+    return { output: 'ok', success: true };
+  } };
+  await finalAcceptance(id, { store, adapters: { claude: echo }, workspace: { make: () => dir }, runs: new Map(), onEvent: () => {} });
+  for (let i = 0; i < 40 && store.getEvents(id).filter((e) => e.type === 'final_review').length < 3; i++) await wait(50);
+  const reviews = store.getEvents(id).filter((e) => e.type === 'final_review');
+  assert.ok(reviews.length >= 3, 'continue 后应重新终验(全局累积不再永久拦), 实际 review 数=' + reviews.length);
+  const st = {}; (store.getTask(id).steps || []).forEach((s) => { st[s.step_id] = s.status; });
+  assert.ok(st['final_fix_3'], 'fix 步 id 应全局唯一递增(final_fix_3),不与历史撞车, 实际步=' + Object.keys(st).join(','));
+  assert.ok(!st['final_fix_1'], '不应复用会撞车的 final_fix_1');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('stripMeeting:剥离会议步 + 清对会议结论的依赖 + 删 meeting 元数据', () => {
   const { stripMeeting } = require('../runner');
   const p = stripMeeting({
