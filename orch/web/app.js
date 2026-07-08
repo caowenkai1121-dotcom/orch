@@ -735,6 +735,7 @@ class Maestro extends MaestroBase {
     v.modalHelp = this.state.modal === 'help';
     v.changePw = () => this.changePw();
     v.exportConfig = () => this.exportConfig();
+    v.backupDb = () => this.backupDb();
     v.importConfig = () => this.importConfig();
     v.onConfigFile = (e) => this.onConfigFile(e);
     // —— 部门管理(#3) ——
@@ -1244,6 +1245,7 @@ class Maestro extends MaestroBase {
   // —— Webhook ——
   fetchHook() { fetch('/api/me/hook').then((r) => r.json()).then((d) => { this.live.hookUrl = d.url; this.scheduleRender(); }).catch(() => {}); }
   exportConfig() { window.open('/api/export/config', '_blank'); }
+  backupDb() { window.open('/api/backup/db', '_blank'); } // 下载完整数据库快照(异地灾备/迁移)
   importConfig() { const el = document.getElementById('cfg-file'); if (el) el.click(); }
   onConfigFile(e) {
     const f = e.currentTarget.files && e.currentTarget.files[0]; if (!f) return;

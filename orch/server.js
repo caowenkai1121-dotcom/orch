@@ -579,6 +579,23 @@ app.get('/api/export/config', adminOnly, (req, res) => {
   res.send(JSON.stringify(cfg, null, 2));
 });
 
+// 下载完整数据库快照(admin):自动本地备份只在同磁盘,防不了磁盘损坏/迁移。这里在线原子备份成一个文件流式下载,
+// 用户可异地存档整库(所有任务/产出记录/员工经验/配置),换机/灾备直接替换 orch.db 即可恢复。
+app.get('/api/backup/db', adminOnly, async (req, res) => {
+  const tmp = path.join(require('os').tmpdir(), 'orch-dbdump-' + process.pid + '-' + Date.now() + '.db');
+  try {
+    await store.backup(tmp); // 原子快照,整合 WAL,不阻塞在跑的写
+    const day = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', 'attachment; filename="orch-' + day + '.db"');
+    const stream = fs.createReadStream(tmp);
+    stream.pipe(res);
+    const cleanup = () => { try { fs.unlinkSync(tmp); } catch (e) {} };
+    stream.on('close', cleanup);
+    stream.on('error', () => { if (!res.headersSent) res.sendStatus(500); cleanup(); });
+  } catch (e) { try { fs.unlinkSync(tmp); } catch (x) {} res.status(500).json({ error: (e && e.message) || String(e) }); }
+});
+
 // 配置导入/恢复(admin):从备份 JSON 恢复角色/部门/剧本/自定义Agent(upsert 合并,不删现有)
 app.post('/api/import/config', adminOnly, (req, res) => {
   const c = req.body || {};
