@@ -49,6 +49,7 @@ function backupDb() {
 }
 setTimeout(backupDb, 15000).unref(); // 启动 15s 后首次备份(错开启动繁忙)
 setInterval(backupDb, 24 * 3600 * 1000).unref(); // 每天一次
+boot.augmentPath(); // 补全 PATH(服务进程 PATH 常比登录 shell 精简,否则 npm-global/nvm 装的 claude/codex 检测+执行都找不到)
 boot.importDataDir(store, ROOT);
 boot.recoverZombies(store); // 上次进程中断的任务 → 标失败可重试
 let adapters = boot.buildAdapters(store);

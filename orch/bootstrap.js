@@ -56,6 +56,24 @@ function buildAdapters(store) {
   return m;
 }
 
+// 服务进程(systemd/nohup/pm2)的 PATH 常比登录 shell 精简(通常只有 /usr/bin:/bin),导致明明装了的 CLI
+// (claude/codex,多经 npm-global/nvm/homebrew 安装)检测和执行都找不到,前端显示"未检测到"。
+// 启动时智能补全 process.env.PATH:①取 login shell 的完整 PATH ②扫常见安装目录 ③用 login shell 定位各 CLI 真实目录。
+// 补进 process.env.PATH 后,后续 cmdExists/checkHealth 检测 + spawn 执行都能找到。Windows 本地不适用,跳过。
+function augmentPath() {
+  if (process.platform === 'win32') return;
+  const { execSync } = require('child_process');
+  const path = require('path');
+  const dirs = new Set((process.env.PATH || '').split(':').filter(Boolean));
+  const sh = (c) => { try { return execSync(c, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch (e) { return ''; } };
+  const loginPath = sh("bash -lc 'echo -n \"$PATH\"'"); // login shell 完整 PATH(含 nvm/npm-global/rc 里配的)
+  loginPath.split(':').filter(Boolean).forEach((d) => dirs.add(d));
+  const home = process.env.HOME || '';
+  [home + '/.npm-global/bin', home + '/.local/bin', '/usr/local/bin', home + '/.bun/bin', '/opt/homebrew/bin', '/usr/local/lib/node_modules/.bin'].forEach((d) => { if (d && d[0] === '/') dirs.add(d); });
+  ['claude', 'codex'].forEach((c) => { const loc = sh("bash -lc 'command -v " + c + " 2>/dev/null'"); if (loc && loc[0] === '/') dirs.add(path.dirname(loc)); }); // login shell 定位真实路径,取其目录
+  process.env.PATH = [...dirs].join(':');
+}
+
 // 自动发现已安装的 CLI 智能体(claude/codex 已 seed;这里补 hermes/gemini/aider 等)。用户无需手动添加 CLI agent。
 function cmdExists(cmd) { try { require('child_process').execSync((process.platform === 'win32' ? 'where ' : 'command -v ') + cmd, { stdio: 'ignore' }); return true; } catch (e) { return false; } }
 const KNOWN_CLI = [
@@ -111,4 +129,4 @@ function checkHealth(store) {
   return map;
 }
 
-module.exports = { listFilesIn, importDataDir, buildAdapters, scanAgents, recoverZombies, checkHealth };
+module.exports = { listFilesIn, importDataDir, buildAdapters, scanAgents, recoverZombies, checkHealth, augmentPath };
