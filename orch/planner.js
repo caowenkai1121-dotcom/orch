@@ -204,7 +204,7 @@ async function fromLLMRoles(text, claude, roles, depts, orchestration, deptId, c
     + (orchestration ? `严格按用户给出的编排来分步与指派:「${orchestration}」。` : '')
     + `可用 {id,type:"loop",until:"pass",max:3,deps,body:[实现步,验证步]} 表示"实现→质量门,FAIL 重做,最多3次"。steps 数组顺序即最终执行顺序:系统会严格按数组顺序依次执行(前一步完成才开始下一步),请按正确的先后次序排列步骤,并用 deps 写清逻辑依赖(上游产出会自动交接给下游)。纯审查/分析且确定不改文件的步可加 "permission":"read" 在只读沙箱运行(会改文件的步不要加)。`
     + `(员工后的[记录:X落盘/Y空转]是历史表现,空转=声称做了却没产出文件;同类岗位优先选落盘多空转少的。)`
-    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作(复杂任务会自动在前面插入"方案会议"阶段,你只需专注实现步,别自己加会议步)。1)开发步按阶段/角色视角拆清楚:每个开发环节一步(如 后端数据层→前端界面→整合联调),step id 用能看出在做什么的名字,prompt 写清该阶段角色负责什么、产出哪些文件、内容丰满度。系统会自动把全部连续开发步合并到同一个 CLI 会话里连续执行(开发思路/技术选型/代码风格全程一致、免每步冷启动与上下文丢失),所以放心按阶段拆细,不用担心上下文断裂、也不要硬塞进一步。但测试/验收/质量门必须独立成步且换人把关:实现者测自己有盲区,独立会话+不同员工的验收才可信;2)选人只看能力对口,绝不为用而用:选人的唯一依据是"员工能力档案与本步任务的匹配度"——把每个环节交给能力最专精的员工(安全审查给安全专家、接口契约给后端架构、页面交互给前端、文案给内容运营、验收给测试员),读能力档案的身份/规则/交付/判定选出真正对口的人;一个员工能胜任连续几步就让他连做,不要为了"多角色协作/用满部门"而换人或硬塞员工;宁可3个真正对口的员工,也不要6个勉强沾边的;只有本步确需现有员工不具备的专精时才跨部门借调。员工数由任务真实需要决定,不由"看起来专业/热闹"决定。部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入)、写明内容丰满度要求(示例数据条数、字段完整性、空态/错误态);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名;6)凡产出需要安装依赖/构建/启动服务的项目,计划中必须有一步交付根目录 README.md(技术栈/安装/启动命令与端口/默认账号/常见问题),并在最后安排一步"按 README 从零跑通"的真实自测——不能只靠代码审查;7)前端若用构建工具(Vite/Webpack),要求执行 npm run build 产出 dist 并确认构建通过(发布上架依赖构建产物)。只输出 JSON,不要解释。`
+    + `调度要求:0)先判复杂度:【简单任务】=单一明确产出(如一个脚本/一个函数/一张静态页/一处小改动)1-2步直接做,不强加质量门;【复杂任务】=多模块/前后端/多角色协作(复杂任务会自动在前面插入"方案会议"阶段,你只需专注实现步,别自己加会议步)。1)按人聚合拆步,不按功能点碎拆:每一步就是一次全新的 CLI 会话(冷启动慢、上一步的思路上下文全部丢失、只剩交接备忘),所以同一员工负责的全部实现工作必须聚合成一步,在同一个会话里连续完成——prompt 内列出功能点清单(如"待办应用:①增删 ②标记完成 ③本地存储 ④筛选"),要求员工按清单逐项实现、每项完成即自测;只有确需不同专业员工的工作(如后端/前端/文档各归其人)才分成多步;step id 用能看出在做什么的名字,prompt 写清"你(角色)负责什么、按清单产出哪些文件"。但测试/验收/质量门必须独立成步且换人把关:实现者测自己有盲区,独立会话+不同员工的验收才可信;2)选人只看能力对口,绝不为用而用:选人的唯一依据是"员工能力档案与本步任务的匹配度"——把每个环节交给能力最专精的员工(安全审查给安全专家、接口契约给后端架构、页面交互给前端、文案给内容运营、验收给测试员),读能力档案的身份/规则/交付/判定选出真正对口的人;一个员工能胜任连续几步就让他连做,不要为了"多角色协作/用满部门"而换人或硬塞员工;宁可3个真正对口的员工,也不要6个勉强沾边的;只有本步确需现有员工不具备的专精时才跨部门借调。员工数由任务真实需要决定,不由"看起来专业/热闹"决定。部门有标准流程的按流程顺序,不需要的可选环节跳过;3)每步 prompt 自包含可直接执行,明确产出物(创建哪些文件),并写明"参考上游交接备忘"(上游产出会自动注入)、写明内容丰满度要求(示例数据条数、字段完整性、空态/错误态);4)不假设存在外部文档;5)非代码类员工产出 Markdown 文档,写明文件名;6)凡产出需要安装依赖/构建/启动服务的项目,计划中必须有一步交付根目录 README.md(技术栈/安装/启动命令与端口/默认账号/常见问题),并在最后安排一步"按 README 从零跑通"的真实自测——不能只靠代码审查;7)前端若用构建工具(Vite/Webpack),要求执行 npm run build 产出 dist 并确认构建通过(发布上架依赖构建产物)。只输出 JSON,不要解释。`
     + (feedback ? `\n\n⚠ 上次拆分存在这些问题,请修正后重新拆分(员工 id 必须取目录中真实存在的,step id 不得重复,每步须指派员工):${feedback}` : '')
     + `\n任务: ${text}`;
   const { output } = await claude.run({ prompt, workdir: metaDir(), onLine: () => {} });
@@ -262,7 +262,7 @@ function lintPlan(plan, hasRole) {
     if (!s || s.id == null) { problems.push('存在无 id 的步骤'); return; }
     if (seen.has(s.id)) problems.push('步骤 id 重复:' + s.id);
     seen.add(s.id);
-    if (s.type === 'loop' || s.type === 'session') { if (!Array.isArray(s.body) || !s.body.length) problems.push(s.type + ' 步骤「' + s.id + '」缺 body 子步骤'); walk(s.body); }
+    if (s.type === 'loop') { if (!Array.isArray(s.body) || !s.body.length) problems.push('loop 步骤「' + s.id + '」缺 body 子步骤'); walk(s.body); }
     else {
       if (hasRole ? (!s.role && !s.agent) : !s.agent) problems.push('步骤「' + s.id + '」未指派' + (hasRole ? '员工(role)' : '执行器(agent)'));
       if (!String(s.prompt || '').trim()) problems.push('步骤「' + s.id + '」缺 prompt');
@@ -295,7 +295,6 @@ function diagnosePlan(plan, taskText, deptFlow) {
   const walk = (arr, loop) => (arr || []).forEach((s) => {
     if (!s) return;
     if (s.type === 'loop') { loops.push(s); walk(s.body, s); }
-    else if (s.type === 'session') { walk(s.body, loop); } // 展开开发会话 body,否则漏检各阶段产出(误报 missing_backend_dir 等)
     else leaves.push({ step: s, loop });
   });
   walk(plan && plan.steps);
@@ -395,42 +394,6 @@ function sanitizeDeps(plan) {
 // 执行顺序 = 确认顺序(用户硬性要求):①按依赖做稳定拓扑重排,steps 数组顺序即拓扑顺序(画布/列表展示序=执行序);
 // ②给每个实现步补上"依赖前一个实现步"的链式约束 → 严格按确认的列表顺序逐步执行,不再乱序并行。
 // 会议步(meetIds/decideId)保持原设计不入链(由会议室接管,不真并发执行);loop 步整体视作一个节点(body 内部本就串行)。
-// 测试/验收/质量门步:实现者测自己有盲区,必须独立成步换人把关,不并入开发会话
-function isTestish(s, roleMap) {
-  if (!s) return false;
-  if (s.isGate || s.type === 'loop') return true;
-  const r = (roleMap && roleMap[s.role]) || {};
-  const hay = [s.id, s.role, r.name, r.dept, s.expected_outcome].join(' ').toLowerCase();
-  return /test|qa|review|accept|verif|audit|验收|测试|核查|审查|复核|质量门|评审/.test(hay);
-}
-// 连续开发会话:把全部开发实现步折叠成一个 session 步,让整个开发在同一个 CLI 会话里连续完成
-// (思路/技术选型/代码风格全程一致 + 免冷启动)。画布仍按 body 节点显示各开发阶段。测试/验收/门排除在外。
-function foldDevSession(plan, roleMap) {
-  if (!plan || !Array.isArray(plan.steps)) return plan;
-  const meet = new Set([...((plan.meeting && plan.meeting.meetIds) || []), plan.meeting && plan.meeting.decideId].filter(Boolean));
-  // 只折叠员工模式的开发步(有 role):纯执行器编排(agent-only)步骤少、语义单一,保留原样不折叠
-  const isDev = (s) => s && s.id && !meet.has(s.id) && s.type !== 'loop' && s.type !== 'session' && s.role && !isTestish(s, roleMap);
-  const devs = plan.steps.filter(isDev);
-  if (devs.length < 2) return plan; // 0-1 个开发步本就一个会话,无需折叠
-  const devIds = new Set(devs.map((d) => d.id));
-  // driver 执行器:开发步里出现最多的 agent(整个会话在这一个 CLI 里跑,跨员工的视角靠各 body 阶段 prompt 切换)
-  const tally = {}; devs.forEach((d) => { if (d.agent) tally[d.agent] = (tally[d.agent] || 0) + 1; });
-  const driver = Object.keys(tally).sort((a, b) => tally[b] - tally[a])[0] || devs[0].agent;
-  const session = {
-    id: 'dev_session', type: 'session', agent: driver, role: devs[0].role,
-    deps: [...new Set((devs[0].deps || []).filter((d) => !devIds.has(d)))], // 继承首个开发步的外部依赖(如 decide_plan)
-    body: devs.map((d) => Object.assign({}, d, { deps: [] })), // body 内顺序执行,清内部 deps(画布展开时按顺序重建)
-    expected_outcome: '全部开发阶段完成并自测:' + devs.map((d) => d.id).join('、'),
-  };
-  const out = [];
-  plan.steps.forEach((s) => {
-    if (s.id === devs[0].id) out.push(session);
-    else if (devIds.has(s.id)) return; // 已并入 session
-    else { s.deps = [...new Set((s.deps || []).map((d) => devIds.has(d) ? 'dev_session' : d))]; out.push(s); }
-  });
-  plan.steps = out;
-  return plan;
-}
 function sequentializeSteps(plan) {
   if (!plan || !Array.isArray(plan.steps) || plan.steps.length < 2) return plan;
   const meet = new Set([...((plan.meeting && plan.meeting.meetIds) || []), plan.meeting && plan.meeting.decideId].filter(Boolean));
@@ -891,11 +854,7 @@ function validateCrewPlan(plan, roles, text) {
   const roleMap = {};
   (roles || []).forEach((r) => { if (r && r.id) roleMap[r.id] = r; });
   const flat = flattenSteps((plan && plan.steps) || [], []);
-  // 容器步(loop/session)id 也是有效依赖目标:下游可依赖 dev_session/质量环整体(flattenSteps 只留叶子会漏掉容器 id)
-  const containerIds = [];
-  const collectContainers = (arr) => (arr || []).forEach((s) => { if (s && Array.isArray(s.body)) { if (s.id) containerIds.push(s.id); collectContainers(s.body); } });
-  collectContainers((plan && plan.steps) || []);
-  const ids = new Set([...flat.map((s) => s.id), ...containerIds].filter(Boolean));
+  const ids = new Set(flat.map((s) => s.id).filter(Boolean));
   const errors = [];
   const warnings = [];
   flat.forEach((s, index) => {
@@ -1078,7 +1037,6 @@ async function makePlan(text, opts) {
   const finish = (p, route, extra) => {
     if (p && typeof p === 'object') {
       sequentializeSteps(p); // 执行顺序=确认顺序:所有计划出口统一拓扑重排+链式化(用户编辑计划的 edit-plan 路径不走这里,保留自定义)
-      foldDevSession(p, roleMap); // 全部开发实现步折叠成一个连续 CLI 会话(测试/验收/门保持独立换人)
       attachProcessMeta(p, text, intent, roleMap);
       attachDeliveryBlueprint(p, text);
       if (Array.isArray(p.steps) && p.steps.length) attachPlanDiagnostics(p, text, deptFlow);
@@ -1166,4 +1124,4 @@ async function makePlan(text, opts) {
   return finish(mark(diag(ensureStepContracts({ task: text, steps: [{ id: 'build', agent: allowed[0], prompt: brief, deps: [] }] }, roleMap))), 'fallback');
 }
 
-module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, sequentializeSteps, foldDevSession, isTestish, lintPlan, thinPrompts, flowGaps, diagnosePlan, attachPlanDiagnostics, mergeEditedPlan, extractJson, fill, prependMeeting, ensureStepContracts, isRiskText, makeProcessMeta, validateCrewPlan };
+module.exports = { fromTemplate, fromLLM, fromLLMRoles, pickMainDept, makePlan, validate, validateRoles, resolveRoles, refineBrief, coerceRoles, badRoles, sanitizeDeps, sequentializeSteps, lintPlan, thinPrompts, flowGaps, diagnosePlan, attachPlanDiagnostics, mergeEditedPlan, extractJson, fill, prependMeeting, ensureStepContracts, isRiskText, makeProcessMeta, validateCrewPlan };

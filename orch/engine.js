@@ -180,7 +180,6 @@ async function runStep(step, ctx, prevOutput) {
     const runOnce = () => adapter.run({
       prompt, workdir, model, effort,
       permission: step.permission, // #18 'read'=只读沙箱(审查/分析步)| 缺省 write(现有行为)
-      timeoutScale: step.timeoutScale, // 连续开发会话按阶段数放大步超时
       onLine: (line) => ctx.onLog(step.id, line),
       onChild: (child) => { ctx.onChild && ctx.onChild(child); },
       onUsage: (u) => { ctx.onUsage && ctx.onUsage(step.id, step.agent, u); },
@@ -222,33 +221,6 @@ function gateFailed(out) {
   const fi = s.search(/\bFAIL\b/), pi = s.search(/\bPASS\b/);
   if (fi >= 0 && (pi < 0 || fi < pi)) return true;
   return false;
-}
-
-// 连续开发会话:全部开发阶段(body)在同一个 CLI 进程里一次完成——开发思路/技术选型/代码风格全程一致,
-// 免去每步 spawn 的冷启动与上下文丢失;画布仍按 body 节点展示进度(靠流式【阶段完成:id】标记实时点亮)。
-// 测试/验收/质量门不进 session(拆解层保证),仍独立成步换人把关。
-async function runSession(step, ctx, prevOutput) {
-  const stages = step.body || [];
-  if (!stages.length) return runStep(step, ctx, prevOutput);
-  const header = '【连续开发会话】以下 ' + stages.length + ' 个开发阶段由你一人在本次会话中按顺序连续完成(这是同一件开发工作,保持思路、技术选型与代码风格一致,中途不要停下等确认)。'
-    + '各阶段标注了该阶段的角色视角与要求,切换阶段即切换视角。'
-    + '每完成一个阶段,必须单独输出一行「【阶段完成:阶段id】」再进入下一阶段;若某阶段产物已存在(此前中断的进度),快速核对无误后同样输出该标记。'
-    + '全部阶段完成后,写一份总的【交接备忘】。\n\n';
-  const partTxt = stages.map((s, i) => '========== 阶段 ' + (i + 1) + '/' + stages.length + '「' + s.id + '」 ==========\n' + s.prompt).join('\n\n');
-  const merged = Object.assign({}, step, { prompt: header + partTxt, timeoutScale: stages.length });
-  delete merged.body; delete merged.type;
-  // 流式阶段标记 → body 节点实时点亮(画布/接力可见"做到哪个阶段")
-  const seen = new Set();
-  const watch = (line) => {
-    const m = /【阶段完成[::]\s*([A-Za-z0-9_\-]+)】/.exec(String(line || ''));
-    if (m && !seen.has(m[1]) && stages.some((s) => s.id === m[1])) { seen.add(m[1]); ctx.onStatus(m[1], 'done'); ctx.onLog(step.id, '✅ 阶段完成: ' + m[1]); }
-  };
-  const ctx2 = Object.assign({}, ctx, { onLog: (sid, line) => { watch(line); ctx.onLog(sid, line); } });
-  stages.forEach((s) => ctx.onStatus(s.id, 'waiting')); // 阶段节点先亮排队态,避免画布显示空白
-  const res = await runStep(merged, ctx2, prevOutput);
-  // 成功:没输出标记的阶段补标 done(员工可能忘写标记,但整体成功=各阶段完成);失败:未标记的阶段标失败
-  stages.forEach((s) => { if (!seen.has(s.id)) ctx.onStatus(s.id, res.success ? 'done' : 'failed'); });
-  return res;
 }
 
 async function runLoop(step, ctx, prevOutput) {
@@ -307,7 +279,7 @@ async function runPlan(plan, ctx) {
       const prev = s.deps.length === 1
         ? ((done[s.deps[0]] && done[s.deps[0]].success === false ? '【上游 ' + s.deps[0] + ' 失败' + tag(s.deps[0]).slice(2) + '】\n' : '') + handoff(done[s.deps[0]]?.output) + ptr(s.deps[0]))
         : s.deps.map((d) => done[d] && done[d].output ? ('【来自 ' + d + ' 的交接' + tag(d) + '】\n' + handoff(done[d].output) + ptr(d)) : '').filter(Boolean).join('\n\n');
-      const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : s.type === 'session' ? await runSession(s, ctx, prev) : await runStep(s, ctx, prev);
+      const r = s.type === 'loop' ? await runLoop(s, ctx, prev) : await runStep(s, ctx, prev);
       if (r && r.needDecision) { decision = { stepId: s.id, question: r.needDecision }; return; } // 不计 done
       if (r && r.needReplan) { replan = { stepId: s.id, reason: r.needReplan }; return; } // 需重规划:不计 done,冒泡
       done[s.id] = r;
@@ -338,4 +310,4 @@ async function runPlan(plan, ctx) {
   return done;
 }
 
-module.exports = { runPlan, runSession, AUTONOMY, ASK, REPLAN, sem, metaSem, getFindings };
+module.exports = { runPlan, AUTONOMY, ASK, REPLAN, sem, metaSem, getFindings };

@@ -15,8 +15,8 @@ function buildArgs({ model, effort, permission }) {
   return args;
 }
 module.exports = {
-  run({ prompt, workdir, model, effort, permission, onLine, onChild, onUsage, timeoutScale }) {
-    return runJsonl({ cmd: 'claude', args: buildArgs({ model, effort, permission }), workdir, parse: parseClaudeStream, onLine, onChild, onUsage, input: String(prompt == null ? '' : prompt), timeoutScale });
+  run({ prompt, workdir, model, effort, permission, onLine, onChild, onUsage }) {
+    return runJsonl({ cmd: 'claude', args: buildArgs({ model, effort, permission }), workdir, parse: parseClaudeStream, onLine, onChild, onUsage, input: String(prompt == null ? '' : prompt) });
   },
   buildArgs,
 };

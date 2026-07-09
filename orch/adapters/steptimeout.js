@@ -49,11 +49,9 @@ function killTree(c) {
   } catch (e) {}
 }
 
-// 给子进程装超时;返回 { clear, timedOut }。ORCH_STEP_TIMEOUT_MS=0 关闭,默认 20 分钟。
-// scale:连续开发会话(session 步)一次完成多个阶段,超时按阶段数放大(封顶 3 倍,防失控挂死)
-function arm(child, scale) {
-  const base = process.env.ORCH_STEP_TIMEOUT_MS != null ? Number(process.env.ORCH_STEP_TIMEOUT_MS) : 1200000;
-  const ms = base * Math.min(Math.max(1, Number(scale) || 1), 3);
+// 给子进程装超时;返回 { clear, timedOut }。ORCH_STEP_TIMEOUT_MS=0 关闭,默认 20 分钟
+function arm(child) {
+  const ms = process.env.ORCH_STEP_TIMEOUT_MS != null ? Number(process.env.ORCH_STEP_TIMEOUT_MS) : 1200000;
   if (!ms || ms < 0) return { clear() {}, timedOut: () => false };
   let to = false;
   const t = setTimeout(() => { to = true; killTree(child); }, ms);
