@@ -157,7 +157,7 @@ function writePlanFile(taskId, store, dir) {
     });
     const mark = { done: '✓ 完成', running: '▶ 进行中', failed: '✗ 失败' };
     const flat = [];
-    const walk = (arr, loopTag) => (arr || []).forEach((s) => { if (s.body) walk(s.body, '(质量环)'); else flat.push({ id: s.id, role: s.role || s.agent, tag: loopTag || '', outcome: s.expected_outcome || '' }); });
+    const walk = (arr, loopTag) => (arr || []).forEach((s) => { if (s.body) walk(s.body, s.type === 'session' ? '(开发会话)' : '(质量环)'); else flat.push({ id: s.id, role: s.role || s.agent, tag: loopTag || '', outcome: s.expected_outcome || '' }); });
     walk(plan.steps);
     const lines = ['# 任务计划(引擎自动维护,请勿手改)', '', '## 目标', t.text || ''];
     if (plan.process) {

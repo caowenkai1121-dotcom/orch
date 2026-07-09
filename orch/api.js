@@ -392,15 +392,16 @@ function relay(store, id) {
   });
   const costs = store.stepCosts ? store.stepCosts(id) : {};
   // loop 包装步骤 id:接力里标注为"质量环",避免空署名看着像坏行
-  const loopIds = new Set(); const outcomes = {};
+  const loopIds = new Set(); const sessionIds = new Set(); const outcomes = {};
   try {
-    const walk = (steps) => (steps || []).forEach((s) => { if (s.type === 'loop') { loopIds.add(s.id); walk(s.body); } else if (s && s.id) outcomes[s.id] = s.expected_outcome || ''; });
+    const walk = (steps) => (steps || []).forEach((s) => { if (s.type === 'loop') { loopIds.add(s.id); walk(s.body); } else if (s.type === 'session') { sessionIds.add(s.id); walk(s.body); } else if (s && s.id) outcomes[s.id] = s.expected_outcome || ''; });
     walk(JSON.parse(t.plan).steps || []);
   } catch (e) {}
   return (t.steps || []).map((s) => {
     const isLoop = loopIds.has(s.step_id);
-    const emp = !isLoop && stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
-    const r = isLoop ? { label: '🔁 质量环', color: '#7C6FD9', av: '🔁' } : (ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' });
+    const isSession = sessionIds.has(s.step_id);
+    const emp = !isLoop && !isSession && stepRole[s.step_id] && RV[stepRole[s.step_id]]; // 员工(部门角色)
+    const r = isLoop ? { label: '🔁 质量环', color: '#7C6FD9', av: '🔁' } : isSession ? { label: '🛠 开发会话', color: '#2E9E5B', av: '🛠' } : (ROLE[s.agent] || { label: s.agent, color: '#A39E94', av: 'A' });
     let last = ''; for (let i = logs.length - 1; i >= 0; i--) if (logs[i].step_id === s.step_id) { last = logs[i].line; break; }
     const outFull = (s.output && s.output.trim()) ? s.output.trim() : '';
     const summary = outFull ? outFull.slice(-300) : (last || ('状态: ' + s.status));
@@ -460,14 +461,15 @@ function plan(store, id) {
     const skillTags = skillTagsOf(planSkillText, s.id, s.prompt, s.role, s.expected_outcome, emp && emp.name);
     out.push({ n: ++n, stepId: s.id, title: s.id, shortTitle: shortStepTitle(s, emp), agent: emp ? (emp.deptName + '·' + emp.name) : r.label, roleLine, executorLabel, durationLabel, metaLine, avatar: emp ? emp.emoji : r.av, color: emp ? emp.color : r.color, sk: 'queued', eta: '', dep: dep || (deps && deps.length ? '依赖 ' + deps.join(',') : ''), deps: deps || [], outcome: s.expected_outcome || '', assignWhy: s.why || '', knowledgeLabel: know.length ? know.join('、') : '', healthLabel, logPreview, logText, processType: process.type || '', processLabel: processLabels[process.type] || '', orchestrationReason: process.reason || '', meetingAgenda, skillTags, skillLabel: skillTags.join('、'), traceSummary });
   };
-  // 展开 loop 为串联 body,并把依赖链重写到子步骤(保证画布连线不断):
-  // body[0] 继承 loop.deps, body[i] 依赖 body[i-1];下游引用 loop id → 改指最后一个 body
-  const tail = {}; // loop id → 最后一个 body id
-  p.steps.forEach((s) => { if (s.type === 'loop' && s.body && s.body.length) tail[s.id] = s.body[s.body.length - 1].id; });
+  // 展开 loop/session 为串联 body,并把依赖链重写到子步骤(保证画布连线不断):
+  // body[0] 继承父步 deps, body[i] 依赖 body[i-1];下游引用父 id → 改指最后一个 body
+  const tail = {}; // 父 id → 最后一个 body id
+  p.steps.forEach((s) => { if ((s.type === 'loop' || s.type === 'session') && s.body && s.body.length) tail[s.id] = s.body[s.body.length - 1].id; });
   const remap = (deps) => (deps || []).map((d) => tail[d] || d);
   p.steps.forEach((s) => {
-    if (s.type === 'loop' && s.body && s.body.length) {
-      s.body.forEach((b, i) => push(b, i ? '回退环' : '', i === 0 ? remap(s.deps) : [s.body[i - 1].id]));
+    if ((s.type === 'loop' || s.type === 'session') && s.body && s.body.length) {
+      const tag = s.type === 'session' ? '开发会话' : '回退环';
+      s.body.forEach((b, i) => push(b, i ? tag : '', i === 0 ? remap(s.deps) : [s.body[i - 1].id]));
     } else push(s, '', remap(s.deps));
   });
   (t.steps || []).forEach((st) => { const e = out.find((o) => o.title === st.step_id); if (e) { e.sk = stepSk(st.status); e.rawStatus = st.status; } });

@@ -11,13 +11,13 @@ const parse = (line) => {
 };
 
 module.exports = {
-  run({ prompt, workdir, model, effort, permission, onLine, onChild, onUsage }) {
+  run({ prompt, workdir, model, effort, permission, onLine, onChild, onUsage, timeoutScale }) {
     const args = ['exec', '--json', '--skip-git-repo-check'];
     if (permission === 'read') args.push('--sandbox', 'read-only'); // #18 只读档
     else args.push('--dangerously-bypass-approvals-and-sandbox');
     if (model) args.push('--model', model);
     if (effort) args.push('-c', 'model_reasoning_effort="' + effort + '"');
     args.push('-'); // prompt 走 stdin(codex exec - 读 stdin,已实测):避开 Windows ~8K 命令行上限与引号转义
-    return runJsonl({ cmd: 'codex', args, workdir, parse, onLine, onChild, onUsage, input: String(prompt == null ? '' : prompt) });
+    return runJsonl({ cmd: 'codex', args, workdir, parse, onLine, onChild, onUsage, input: String(prompt == null ? '' : prompt), timeoutScale });
   },
 };
